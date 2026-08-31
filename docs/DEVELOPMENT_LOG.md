@@ -30,3 +30,8 @@
 - Built regex command recognizer for Cisco show commands (show running-config, cdp neighbors, ip int brief, ip route, vlan brief, int trunk, mac address-table).
 - Implemented terminal noise sanitizer (stripping --More--, ANSI escapes, carriage returns).
 - Verified with 3 automated unit tests in tests/test_sanitizer.py (all passing).
+
+### Task 3: Cisco Command Parsers
+- Created comprehensive parsers in src/parsers.py (running-config, cdp neighbors, ip int brief, ip route, vlan brief, int trunk, mac address-table).
+- Added canonical device and interface name resolvers.
+- Verified with 3 automated unit tests in tests/test_parsers.py (all 9 total tests passing).
