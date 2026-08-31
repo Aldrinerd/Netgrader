@@ -40,3 +40,8 @@
 - Built Noisy-OR mathematical fusion engine in src/fusion_engine.py.
 - Combined Layer 2 (CDP, Trunk, MAC) and Layer 3 (Subnets, Routes, Descriptions) signals into edge confidence ratings.
 - Verified with 3 automated unit tests in tests/test_fusion_engine.py (all 12 total tests passing).
+
+### Task 5: Relational Cross-Device Conflict & Anomaly Detector
+- Implemented cross-device error detectors (subnet mismatch across physical links, administratively down interfaces, duplicate IPs, trunk native VLAN mismatch).
+- Generates structured citations with exact file and line numbers.
+- Verified with 3 automated unit tests in tests/test_conflict_detector.py (all 15 total tests passing).
