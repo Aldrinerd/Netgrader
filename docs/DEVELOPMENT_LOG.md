@@ -20,3 +20,8 @@
 
 ---
 *(Log will be updated after each implementation step)*
+
+### Task 1: Environment Setup & Pydantic Data Models
+- Installed fastapi, uvicorn, pydantic, pytest, python-multipart.
+- Created domain models in src/models.py (InterfaceData, ParsedDevice, DiscoveredLink, ContributingSignal, ConflictIssue, TopologyResult).
+- Verified with 3 automated unit tests in tests/test_models.py (all passing).
