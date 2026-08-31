@@ -45,3 +45,7 @@
 - Implemented cross-device error detectors (subnet mismatch across physical links, administratively down interfaces, duplicate IPs, trunk native VLAN mismatch).
 - Generates structured citations with exact file and line numbers.
 - Verified with 3 automated unit tests in tests/test_conflict_detector.py (all 15 total tests passing).
+
+### Task 6: Built-in Demo Scenarios & Fixtures Generator
+- Implemented preset catalog in src/presets.py with 3 presentation showcase scenarios (Clean OSPF Ring, Subnet Mismatch & Cabling Down Error, VLAN Trunk Native Mismatch).
+- Verified with 4 automated unit tests in tests/test_presets.py (all 19 total tests passing).
