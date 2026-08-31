@@ -41,11 +41,21 @@ def split_command_sections(raw_text: str) -> dict[str, tuple[str, int]]:
         return {"show running-config": (sanitized, 1)}
 
     sections: dict[str, tuple[str, int]] = {}
+    
+    # Check if there is preamble content before the first command match
+    if matches and matches[0][0] > 1:
+        first_cmd_line = matches[0][0]
+        preamble_lines = lines[0:first_cmd_line - 1]
+        preamble_text = "\n".join(preamble_lines).strip()
+        if preamble_text:
+            sections["show running-config"] = (preamble_text, 1)
+
     for i in range(len(matches)):
         start_line_idx, cmd = matches[i]
         end_line_idx = matches[i+1][0] - 1 if i + 1 < len(matches) else len(lines)
         section_lines = lines[start_line_idx:end_line_idx]
         section_content = "\n".join(section_lines)
+        # If running-config is explicitly declared, it overrides preamble
         sections[cmd] = (section_content, start_line_idx + 1)
     
     return sections

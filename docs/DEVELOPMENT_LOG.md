@@ -35,3 +35,8 @@
 - Created comprehensive parsers in src/parsers.py (running-config, cdp neighbors, ip int brief, ip route, vlan brief, int trunk, mac address-table).
 - Added canonical device and interface name resolvers.
 - Verified with 3 automated unit tests in tests/test_parsers.py (all 9 total tests passing).
+
+### Task 4: Multi-Signal Fusion & Topology Graph Inference Engine
+- Built Noisy-OR mathematical fusion engine in src/fusion_engine.py.
+- Combined Layer 2 (CDP, Trunk, MAC) and Layer 3 (Subnets, Routes, Descriptions) signals into edge confidence ratings.
+- Verified with 3 automated unit tests in tests/test_fusion_engine.py (all 12 total tests passing).
