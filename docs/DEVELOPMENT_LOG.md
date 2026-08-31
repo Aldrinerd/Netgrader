@@ -25,3 +25,8 @@
 - Installed fastapi, uvicorn, pydantic, pytest, python-multipart.
 - Created domain models in src/models.py (InterfaceData, ParsedDevice, DiscoveredLink, ContributingSignal, ConflictIssue, TopologyResult).
 - Verified with 3 automated unit tests in tests/test_models.py (all passing).
+
+### Task 2: Section Tokenizer & Terminal Sanitizer
+- Built regex command recognizer for Cisco show commands (show running-config, cdp neighbors, ip int brief, ip route, vlan brief, int trunk, mac address-table).
+- Implemented terminal noise sanitizer (stripping --More--, ANSI escapes, carriage returns).
+- Verified with 3 automated unit tests in tests/test_sanitizer.py (all passing).
