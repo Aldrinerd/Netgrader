@@ -91,3 +91,28 @@ def test_detect_trunk_native_vlan_mismatch():
     conflicts = detect_conflicts(devices, links)
     categories = [c.category for c in conflicts]
     assert "vlan_trunk_mismatch" in categories
+
+def test_conflict_detector_ignores_placeholder_devices():
+    from src.models import ParsedDevice, DiscoveredLink, ContributingSignal
+    dev = ParsedDevice(hostname="R1", canonical_name="R1", raw_filename="R1.txt")
+    placeholder = ParsedDevice(
+        hostname="???",
+        canonical_name="UNKNOWN_R1_Gi0/0",
+        display_name="???",
+        is_placeholder=True,
+        device_type="unknown"
+    )
+    devices = {"R1": dev, "UNKNOWN_R1_Gi0/0": placeholder}
+    link = DiscoveredLink(
+        source_device="R1",
+        source_interface="GigabitEthernet0/0",
+        target_device="UNKNOWN_R1_Gi0/0",
+        target_interface="Unspecified",
+        confidence=0.5,
+        classification="inferred",
+        signals=[ContributingSignal(signal_type="ACTIVE_PORT_CARRIER", description="Active port carrier", weight=0.5)]
+    )
+    conflicts = detect_conflicts(devices, [link])
+    assert not any(c.category == "subnet_mismatch" for c in conflicts)
+    assert not any(c.category == "vlan_trunk_mismatch" for c in conflicts)
+

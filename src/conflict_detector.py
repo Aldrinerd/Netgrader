@@ -19,7 +19,7 @@ def detect_conflicts(devices: dict[str, ParsedDevice], links: list[DiscoveredLin
         dev_a = devices.get(link.source_device)
         dev_b = devices.get(link.target_device)
         
-        if dev_a and dev_b and link.source_interface != "Unspecified" and link.target_interface != "Unspecified":
+        if dev_a and dev_b and not dev_a.is_placeholder and not dev_b.is_placeholder and link.source_interface != "Unspecified" and link.target_interface != "Unspecified":
             intf_a = dev_a.interfaces.get(link.source_interface)
             intf_b = dev_b.interfaces.get(link.target_interface)
             
@@ -46,6 +46,8 @@ def detect_conflicts(devices: dict[str, ParsedDevice], links: list[DiscoveredLin
 
     # 2. Check Interface Down / Cabling / Admin Down Errors
     for dev in devices.values():
+        if dev.is_placeholder:
+            continue
         for intf_name, intf in dev.interfaces.items():
             if intf.ip_address:
                 if intf.admin_status == "administratively down" or intf.line_status == "down":
@@ -57,7 +59,7 @@ def detect_conflicts(devices: dict[str, ParsedDevice], links: list[DiscoveredLin
                         severity="error" if is_admin_down else "warning",
                         category="interface_down",
                         title=f"Interface Inactive on {dev.hostname} ({intf_name})",
-                        description=f"Interface {intf_name} has IP address {intf_a.ip_address if 'intf_a' in locals() and intf_a else intf.ip_address} configured, but status is {intf.admin_status}/{intf.line_status} due to {reason}.",
+                        description=f"Interface {intf_name} has IP address {intf.ip_address} configured, but status is {intf.admin_status}/{intf.line_status} due to {reason}.",
                         involved_devices=[dev.hostname],
                         involved_interfaces=[intf_name],
                         evidence_citations=[f"{dev.raw_filename}: line {line_no} ({intf_name} is {intf.admin_status})"]
@@ -66,6 +68,8 @@ def detect_conflicts(devices: dict[str, ParsedDevice], links: list[DiscoveredLin
     # 3. Check Duplicate IP Allocations Across All Devices
     ip_registry: dict[str, list[tuple[str, str, str, int]]] = {}  # ip -> [(device, intf, filename, line)]
     for dev in devices.values():
+        if dev.is_placeholder:
+            continue
         for intf_name, intf in dev.interfaces.items():
             if intf.ip_address and intf.ip_address not in ("0.0.0.0", "127.0.0.1"):
                 line_no = intf.evidence_lines.get("ip", 1)
@@ -93,7 +97,7 @@ def detect_conflicts(devices: dict[str, ParsedDevice], links: list[DiscoveredLin
     for link in links:
         dev_a = devices.get(link.source_device)
         dev_b = devices.get(link.target_device)
-        if dev_a and dev_b and dev_a.device_type == "switch" and dev_b.device_type == "switch":
+        if dev_a and dev_b and not dev_a.is_placeholder and not dev_b.is_placeholder and dev_a.device_type == "switch" and dev_b.device_type == "switch":
             intf_a = dev_a.interfaces.get(link.source_interface)
             intf_b = dev_b.interfaces.get(link.target_interface)
             if intf_a and intf_b and intf_a.switchport_mode == "trunk" and intf_b.switchport_mode == "trunk":
