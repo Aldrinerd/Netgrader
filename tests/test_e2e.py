@@ -57,3 +57,19 @@ def test_end_to_end_custom_upload():
     assert len(data["links"]) == 1
     assert len(data["conflicts"]) >= 1
     assert any(c["category"] == "vlan_trunk_mismatch" for c in data["conflicts"])
+
+def test_pasig_edge_rtr1_analysis_generates_unknown_nodes():
+    with open("captures/PASIG_EDGE_RTR1.txt", "rb") as f:
+        content = f.read()
+    files = [("files", ("PASIG_EDGE_RTR1.txt", content, "text/plain"))]
+    response = client.post("/api/analyze", files=files)
+    assert response.status_code == 200
+    data = response.json()
+    
+    placeholders = [d for d in data["devices"].values() if d.get("is_placeholder")]
+    assert len(placeholders) > 0
+    for p in placeholders:
+        assert p["display_name"] == "???"
+        assert p["hostname"] == "???"
+        assert p["device_type"] == "unknown"
+

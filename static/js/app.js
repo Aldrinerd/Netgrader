@@ -167,10 +167,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const centerY = height / 2;
         const radius = Math.min(width, height) * 0.32;
 
-        simulationNodes = devices.map((d, idx) => {
-            const angle = (idx / devices.length) * 2 * Math.PI - Math.PI / 2;
+        const devEntries = Object.entries(data.devices || {});
+        simulationNodes = devEntries.map(([devKey, d], idx) => {
+            const angle = (idx / devEntries.length) * 2 * Math.PI - Math.PI / 2;
             return {
-                id: d.hostname,
+                id: devKey,
                 device: d,
                 x: centerX + radius * Math.cos(angle),
                 y: centerY + radius * Math.sin(angle),
@@ -178,6 +179,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 vy: 0
             };
         });
+
 
         simulationLinks = links.map(l => {
             const source = simulationNodes.find(n => n.id === l.source_device);
@@ -280,15 +282,21 @@ document.addEventListener('DOMContentLoaded', () => {
             nodeGroup.classList.add('graph-node-group');
             nodeGroup.style.cursor = 'grab';
 
+            const isPlaceholder = dev.is_placeholder || dev.display_name === '???';
             const isSwitch = dev.device_type === 'switch';
-            const nodeColor = isSwitch ? '#10B981' : '#3B82F6';
+            let nodeColor = '#3B82F6';
+            if (isPlaceholder) {
+                nodeColor = '#9CA3AF';
+            } else if (isSwitch) {
+                nodeColor = '#10B981';
+            }
 
             // Outer Glow Circle
             const glowCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
             glowCircle.setAttribute('cx', node.x);
             glowCircle.setAttribute('cy', node.y);
             glowCircle.setAttribute('r', '28');
-            glowCircle.setAttribute('fill', isSwitch ? 'rgba(16, 185, 129, 0.15)' : 'rgba(59, 130, 246, 0.15)');
+            glowCircle.setAttribute('fill', isPlaceholder ? 'rgba(156, 163, 175, 0.15)' : (isSwitch ? 'rgba(16, 185, 129, 0.15)' : 'rgba(59, 130, 246, 0.15)'));
             nodeGroup.appendChild(glowCircle);
 
             // Main Circle
@@ -299,9 +307,12 @@ document.addEventListener('DOMContentLoaded', () => {
             circle.setAttribute('fill', '#1F2937');
             circle.setAttribute('stroke', nodeColor);
             circle.setAttribute('stroke-width', '2');
+            if (isPlaceholder) {
+                circle.setAttribute('stroke-dasharray', '4,3');
+            }
             nodeGroup.appendChild(circle);
 
-            // Icon Text (R / SW)
+            // Icon Text (R / SW / ?)
             const iconText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
             iconText.setAttribute('x', node.x);
             iconText.setAttribute('y', node.y + 4);
@@ -310,7 +321,7 @@ document.addEventListener('DOMContentLoaded', () => {
             iconText.setAttribute('font-size', '11px');
             iconText.setAttribute('font-weight', 'bold');
             iconText.setAttribute('font-family', 'Outfit, sans-serif');
-            iconText.textContent = isSwitch ? 'SW' : 'R';
+            iconText.textContent = isPlaceholder ? '?' : (isSwitch ? 'SW' : 'R');
             nodeGroup.appendChild(iconText);
 
             // Hostname Label Below
@@ -322,7 +333,7 @@ document.addEventListener('DOMContentLoaded', () => {
             label.setAttribute('font-size', '12px');
             label.setAttribute('font-weight', '600');
             label.setAttribute('font-family', 'JetBrains Mono, monospace');
-            label.textContent = dev.hostname;
+            label.textContent = isPlaceholder ? '???' : (dev.display_name || dev.hostname);
             nodeGroup.appendChild(label);
 
             // Node Interactions
@@ -416,6 +427,47 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function openNodeDiagnosticDrawer(dev) {
         diagnosticDrawer.style.display = 'flex';
+        const isPlaceholder = dev.is_placeholder || dev.display_name === '???';
+
+        if (isPlaceholder) {
+            drawerEntityType.textContent = 'UNKNOWN DEVICE / PEER';
+            drawerEntityType.className = 'drawer-badge badge-amber';
+            drawerTitle.textContent = `??? (Unknown Connection)`;
+
+            let html = `
+                <div class="diag-section">
+                    <div class="diag-section-title">Connection Overview</div>
+                    <div style="font-size:13px;color:#E5E7EB;margin-bottom:12px;line-height:1.5;">
+                        This node represents an active physical or logical connection where the remote peer configuration was not uploaded or is an external/unmanaged device.
+                    </div>
+            `;
+            if (dev.placeholder_for_device) {
+                html += `
+                    <div class="signal-row">
+                        <div>
+                            <div style="font-size:10px;color:#9CA3AF;text-transform:uppercase;letter-spacing:0.5px;">Discovered Peer ID</div>
+                            <div style="font-size:14px;font-weight:700;color:#F59E0B;font-family:JetBrains Mono;margin-top:2px;">${dev.placeholder_for_device}</div>
+                            <div style="font-size:11px;color:#9CA3AF;margin-top:2px;">Identified via discovery protocols (CDP/LLDP). Configuration file was not submitted.</div>
+                        </div>
+                    </div>
+                `;
+            }
+            if (dev.placeholder_for_interface) {
+                html += `
+                    <div class="signal-row">
+                        <div>
+                            <div style="font-size:10px;color:#9CA3AF;text-transform:uppercase;letter-spacing:0.5px;">Local Connected Port</div>
+                            <div style="font-size:14px;font-weight:700;color:#60A5FA;font-family:JetBrains Mono;margin-top:2px;">${dev.placeholder_for_interface}</div>
+                            <div style="font-size:11px;color:#9CA3AF;margin-top:2px;">Port has active carrier status (up/up).</div>
+                        </div>
+                    </div>
+                `;
+            }
+            html += `</div>`;
+            drawerBody.innerHTML = html;
+            return;
+        }
+
         drawerEntityType.textContent = 'DEVICE PROFILE';
         drawerEntityType.className = 'drawer-badge badge-blue';
         drawerTitle.textContent = `${dev.hostname} (${dev.device_type.toUpperCase()})`;
