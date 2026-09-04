@@ -85,3 +85,41 @@ def test_infer_switch_trunk_link():
     signal_types = [s.signal_type for s in link.signals]
     assert "CDP_NEIGHBOR_DETAIL" in signal_types
     assert "TRUNK_CONFIG_PAIR" in signal_types
+
+def test_infer_links_to_unknown_cdp_neighbor():
+    r1_txt = """
+    hostname R1
+    interface GigabitEthernet0/0
+     ip address 10.0.0.1 255.255.255.252
+    show cdp neighbors detail
+    Device ID: ISP_ROUTER
+    Interface: GigabitEthernet0/0,  Port ID (outgoing port): GigabitEthernet0/1
+    """
+    d1 = parse_device_bundle(r1_txt, "R1.txt")
+    devices = {"R1": d1}
+    
+    links = infer_topology_links(devices)
+    assert any(d.is_placeholder and d.display_name == "???" for d in devices.values())
+    assert any(l.target_device.startswith("UNKNOWN_") or l.source_device.startswith("UNKNOWN_") for l in links)
+
+def test_infer_links_to_active_unconnected_interface():
+    r1_txt = """
+    hostname R1
+    interface GigabitEthernet0/1
+     ip address 192.168.1.1 255.255.255.0
+    show ip interface brief
+    GigabitEthernet0/1     192.168.1.1     YES NVRAM  up                    up
+    Loopback0              1.1.1.1         YES NVRAM  up                    up
+    """
+    d1 = parse_device_bundle(r1_txt, "R1.txt")
+    devices = {"R1": d1}
+    
+    links = infer_topology_links(devices)
+    carrier_links = [l for l in links if any(s.signal_type == "ACTIVE_PORT_CARRIER" for s in l.signals)]
+    assert len(carrier_links) == 1
+    carrier_link = carrier_links[0]
+    assert carrier_link.source_interface == "GigabitEthernet0/1" or carrier_link.target_interface == "GigabitEthernet0/1"
+    placeholder_id = carrier_link.target_device if carrier_link.source_device == "R1" else carrier_link.source_device
+    assert placeholder_id in devices
+    assert devices[placeholder_id].display_name == "???"
+    assert devices[placeholder_id].is_placeholder is True

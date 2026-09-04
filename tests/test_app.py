@@ -25,7 +25,8 @@ def test_api_load_preset():
     assert "devices" in data
     assert "links" in data
     assert "conflicts" in data
-    assert len(data["links"]) == 3
+    verified_links = [l for l in data["links"] if l["classification"] == "verified"]
+    assert len(verified_links) == 3
 
 def test_api_analyze_upload():
     r1_content = """hostname R1

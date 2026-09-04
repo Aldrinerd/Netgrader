@@ -17,6 +17,7 @@ SIGNAL_WEIGHTS: dict[str, float] = {
     "MAC_TABLE_UPLINK": 0.70,
     "SHARED_SUBNET_24": 0.35,
     "DESCRIPTION_HINT": 0.25,
+    "ACTIVE_PORT_CARRIER": 0.50,
 }
 
 def calculate_noisy_or(weights: list[float]) -> float:
@@ -85,7 +86,25 @@ def infer_topology_links(devices: dict[str, ParsedDevice]) -> list[DiscoveredLin
     for dev in device_list:
         for cdp in dev.cdp_neighbors:
             target_dev = devices.get(cdp.device_id)
-            target_hostname = target_dev.hostname if target_dev else cdp.device_id
+            if not target_dev and "." in cdp.device_id:
+                target_dev = devices.get(cdp.device_id.split(".")[0])
+            
+            if target_dev:
+                target_hostname = target_dev.hostname
+            else:
+                placeholder_id = f"UNKNOWN_PEER_{dev.hostname}_{cdp.local_interface}"
+                if placeholder_id not in devices:
+                    devices[placeholder_id] = ParsedDevice(
+                        hostname="???",
+                        canonical_name=placeholder_id,
+                        display_name="???",
+                        is_placeholder=True,
+                        placeholder_for_device=cdp.device_id,
+                        placeholder_for_interface=cdp.local_interface,
+                        device_type="unknown",
+                        raw_filename=""
+                    )
+                target_hostname = placeholder_id
             
             ev = [f"{dev.raw_filename} (CDP Neighbor to {cdp.device_id} on {cdp.local_interface})"]
             add_signal(
@@ -200,6 +219,49 @@ def infer_topology_links(devices: dict[str, ParsedDevice]) -> list[DiscoveredLin
                                 f"Interface description explicitly mentions peer {dev_b.hostname}",
                                 ev
                             )
+
+    # --- Signal 7: Active Physical / Link Carrier (Unknown Endpoint) ---
+    connected_ports = set()
+    for key in candidate_edges.keys():
+        src_d, src_i, tgt_d, tgt_i = key
+        connected_ports.add((src_d, src_i))
+        connected_ports.add((tgt_d, tgt_i))
+
+    for dev in device_list:
+        if dev.is_placeholder:
+            continue
+        for intf_name, intf in dev.interfaces.items():
+            if intf.admin_status == "up" and intf.line_status == "up":
+                lower_name = intf_name.lower()
+                if lower_name.startswith(("loopback", "null", "vlan")):
+                    continue
+                if (dev.hostname, intf_name) in connected_ports:
+                    continue
+                
+                placeholder_id = f"UNKNOWN_PORT_{dev.hostname}_{intf_name}"
+                if placeholder_id not in devices:
+                    devices[placeholder_id] = ParsedDevice(
+                        hostname="???",
+                        canonical_name=placeholder_id,
+                        display_name="???",
+                        is_placeholder=True,
+                        placeholder_for_device=None,
+                        placeholder_for_interface=intf_name,
+                        device_type="unknown",
+                        raw_filename=""
+                    )
+                
+                ev = [f"{dev.raw_filename}:{intf_name} (status up/up)"]
+                add_signal(
+                    dev.hostname,
+                    intf_name,
+                    placeholder_id,
+                    "Unspecified",
+                    "ACTIVE_PORT_CARRIER",
+                    f"Active physical/link carrier on {dev.hostname}:{intf_name} with unknown peer",
+                    ev
+                )
+                connected_ports.add((dev.hostname, intf_name))
 
     # Clean up any orphaned Unspecified edges if specific edges exist or if confidence < 0.40
     filtered_edges = {}

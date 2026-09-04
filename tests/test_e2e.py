@@ -18,7 +18,8 @@ def test_full_pipeline_all_presets():
         assert "devices" in data
         assert "links" in data
         assert "conflicts" in data
-        assert len(data["devices"]) == preset["device_count"]
+        primary_devices = [d for d in data["devices"].values() if not d.get("is_placeholder")]
+        assert len(primary_devices) == preset["device_count"]
         
         # Ensure all links have valid confidence and classification
         for link in data["links"]:
