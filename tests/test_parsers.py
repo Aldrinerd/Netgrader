@@ -153,3 +153,45 @@ def test_parse_switch_bundle():
     assert len(device.mac_table) == 3
     mac_fa1 = [m for m in device.mac_table if m.port == "FastEthernet0/1"]
     assert len(mac_fa1) == 2
+
+def test_parse_split_filtered_router_bundle():
+    filtered_text = """
+    R1# show run | include hostname
+    hostname PASIG_EDGE_RTR1
+    !
+    R1# show run | include interface|ip address|ipv6 address|description|switchport
+    interface GigabitEthernet0/0
+     description TO PASIG CORE SW1
+     ip address 172.16.254.5 255.255.255.252
+     ipv6 address 2001:DB8:ACAD:FF::2/127
+    !
+    interface GigabitEthernet0/1
+     description TO PASIG CORE SW2
+     ip address 172.16.254.9 255.255.255.252
+    !
+    R1# show run | include router |network |neighbor |ip route|ipv6 route|ip routing
+    ip route 10.10.10.0 255.255.255.0 172.16.254.6
+    !
+    R1# show cdp neighbors detail
+    Device ID: PASIG_CORE_SW1
+    Interface: GigabitEthernet0/0, Port ID: GigabitEthernet0/1
+    !
+    R1# show ip interface brief
+    Interface              IP-Address      OK? Method Status Protocol
+    GigabitEthernet0/0     172.16.254.5    YES manual up     up
+    GigabitEthernet0/1     172.16.254.9    YES manual up     up
+    !
+    R1# show ip route
+    C    172.16.254.4/30 is directly connected, GigabitEthernet0/0
+    """
+    dev = parse_device_bundle(filtered_text, "PASIG_EDGE_RTR1.txt")
+    assert dev.hostname == "PASIG_EDGE_RTR1"
+    assert "GigabitEthernet0/0" in dev.interfaces
+    assert dev.interfaces["GigabitEthernet0/0"].ip_address == "172.16.254.5"
+    assert dev.interfaces["GigabitEthernet0/0"].ipv6_address == "2001:DB8:ACAD:FF::2/127"
+    assert dev.interfaces["GigabitEthernet0/0"].description == "TO PASIG CORE SW1"
+    assert len(dev.cdp_neighbors) == 1
+    assert dev.cdp_neighbors[0].device_id == "PASIG_CORE_SW1"
+    assert any(r.network == "10.10.10.0" and r.protocol == "S" for r in dev.routes)
+
+

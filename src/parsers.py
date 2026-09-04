@@ -78,6 +78,30 @@ def parse_running_config(content: str, start_line: int, device: ParsedDevice) ->
             current_intf = None
             continue
         
+        # Static routes from config
+        route_match = re.match(r"^ip\s+route\s+([0-9\.]+)\s+([0-9\.]+)\s+([0-9\.]+|[a-zA-Z0-9_\-\.\/]+)", stripped, re.IGNORECASE)
+        if route_match:
+            net, mask, nh = route_match.group(1), route_match.group(2), route_match.group(3)
+            try:
+                net_obj = ipaddress.IPv4Network(f"{net}/{mask}", strict=False)
+                cidr = net_obj.prefixlen
+                net_addr = str(net_obj.network_address)
+            except Exception:
+                cidr = 24
+                net_addr = net
+            
+            if not any(r.network == net_addr and r.cidr == cidr and r.protocol == "S" for r in device.routes):
+                device.routes.append(RouteEntry(
+                    network=net_addr,
+                    cidr=cidr,
+                    protocol="S",
+                    next_hop=nh if re.match(r"^\d+\.\d+\.\d+\.\d+$", nh) else None,
+                    outgoing_interface=normalize_interface_name(nh) if not re.match(r"^\d+\.\d+\.\d+\.\d+$", nh) else None,
+                    evidence_line=line_no
+                ))
+            continue
+
+        
         # Inside interface block
         if current_intf is not None:
             # IP Address
@@ -92,12 +116,20 @@ def parse_running_config(content: str, start_line: int, device: ParsedDevice) ->
                 current_intf.evidence_lines["ip"] = line_no
                 continue
             
+            # IPv6 Address
+            ipv6_match = re.match(r"^ipv6\s+address\s+([0-9a-fA-F\:\/]+)", stripped, re.IGNORECASE)
+            if ipv6_match:
+                current_intf.ipv6_address = ipv6_match.group(1).strip()
+                current_intf.evidence_lines["ipv6"] = line_no
+                continue
+            
             # Description
             desc_match = re.match(r"^description\s+(.+)$", stripped, re.IGNORECASE)
             if desc_match:
                 current_intf.description = desc_match.group(1).strip()
                 current_intf.evidence_lines["description"] = line_no
                 continue
+
             
             # Switchport mode
             if "switchport mode trunk" in stripped.lower():

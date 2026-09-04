@@ -55,7 +55,12 @@ def split_command_sections(raw_text: str) -> dict[str, tuple[str, int]]:
         end_line_idx = matches[i+1][0] - 1 if i + 1 < len(matches) else len(lines)
         section_lines = lines[start_line_idx:end_line_idx]
         section_content = "\n".join(section_lines)
-        # If running-config is explicitly declared, it overrides preamble
-        sections[cmd] = (section_content, start_line_idx + 1)
+        
+        if cmd in sections:
+            prev_content, prev_line = sections[cmd]
+            sections[cmd] = (prev_content + "\n" + section_content, prev_line)
+        else:
+            sections[cmd] = (section_content, start_line_idx + 1)
     
     return sections
+
