@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 class InterfaceData(BaseModel):
     name: str
     ip_address: str | None = None
+    ipv6_address: str | None = None
     subnet_mask: str | None = None
     cidr: int | None = None
     network_address: str | None = None
@@ -17,6 +18,7 @@ class InterfaceData(BaseModel):
     trunk_native_vlan: int = 1
     description: str | None = None
     evidence_lines: dict[str, int] = Field(default_factory=dict)
+
 
 class CDPNeighbor(BaseModel):
     device_id: str
@@ -46,8 +48,12 @@ class MACTableEntry(BaseModel):
 class ParsedDevice(BaseModel):
     hostname: str
     canonical_name: str
-    device_type: Literal["router", "switch", "l3_switch", "host"] = "router"
-    raw_filename: str
+    display_name: str = ""
+    is_placeholder: bool = False
+    placeholder_for_device: str | None = None
+    placeholder_for_interface: str | None = None
+    device_type: Literal["router", "switch", "l3_switch", "host", "unknown"] = "router"
+    raw_filename: str = ""
     interfaces: dict[str, InterfaceData] = Field(default_factory=dict)
     cdp_neighbors: list[CDPNeighbor] = Field(default_factory=list)
     routes: list[RouteEntry] = Field(default_factory=list)

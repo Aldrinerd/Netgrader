@@ -72,3 +72,20 @@ def test_conflict_issue_and_topology_result():
     )
     assert len(result.conflicts) == 1
     assert result.conflicts[0].category == "subnet_mismatch"
+
+def test_placeholder_parsed_device():
+    dev = ParsedDevice(
+        hostname="???",
+        canonical_name="UNKNOWN_R1_Gi0/1",
+        display_name="???",
+        is_placeholder=True,
+        device_type="unknown",
+        placeholder_for_device="PLDT",
+        placeholder_for_interface="GigabitEthernet0/1",
+        raw_filename=""
+    )
+    assert dev.is_placeholder is True
+    assert dev.display_name == "???"
+    assert dev.device_type == "unknown"
+    assert dev.placeholder_for_device == "PLDT"
+    assert dev.placeholder_for_interface == "GigabitEthernet0/1"
