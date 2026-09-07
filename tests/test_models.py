@@ -89,3 +89,27 @@ def test_placeholder_parsed_device():
     assert dev.device_type == "unknown"
     assert dev.placeholder_for_device == "PLDT"
     assert dev.placeholder_for_interface == "GigabitEthernet0/1"
+
+def test_parsed_device_coordinates_and_cable_type():
+    dev = ParsedDevice(
+        hostname="Router1",
+        canonical_name="Router1",
+        x_coord=1250.5,
+        y_coord=890.25
+    )
+    assert dev.x_coord == 1250.5
+    assert dev.y_coord == 890.25
+    
+    link = DiscoveredLink(
+        source_device="Router1",
+        source_interface="FastEthernet0/0",
+        target_device="Router2",
+        target_interface="FastEthernet0/1",
+        confidence=1.0,
+        classification="verified",
+        cable_type="eCrossOver",
+        signals=[ContributingSignal(signal_type="PACKET_TRACER_PHYSICAL_CABLE", description="CrossOver cable", weight=1.0)]
+    )
+    assert link.cable_type == "eCrossOver"
+    assert link.confidence == 1.0
+

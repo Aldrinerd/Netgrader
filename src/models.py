@@ -54,6 +54,8 @@ class ParsedDevice(BaseModel):
     placeholder_for_interface: str | None = None
     device_type: Literal["router", "switch", "l3_switch", "host", "unknown"] = "router"
     raw_filename: str = ""
+    x_coord: float | None = None
+    y_coord: float | None = None
     interfaces: dict[str, InterfaceData] = Field(default_factory=dict)
     cdp_neighbors: list[CDPNeighbor] = Field(default_factory=list)
     routes: list[RouteEntry] = Field(default_factory=list)
@@ -73,9 +75,11 @@ class DiscoveredLink(BaseModel):
     target_interface: str
     confidence: float
     classification: Literal["verified", "inferred", "unverified"]
+    cable_type: str | None = None
     signals: list[ContributingSignal] = Field(default_factory=list)
     is_bidirectional: bool = True
     conflicts: list[str] = Field(default_factory=list)
+
 
 class ConflictIssue(BaseModel):
     severity: Literal["error", "warning", "info"]
