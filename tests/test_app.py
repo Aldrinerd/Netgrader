@@ -54,3 +54,22 @@ Interface: GigabitEthernet0/0, Port ID (outgoing port): GigabitEthernet0/0
     assert "R2" in data["devices"]
     assert len(data["links"]) == 1
     assert data["links"][0]["confidence"] >= 0.95
+
+def test_upload_pkt_xml_endpoint():
+    import os
+    trial_xml_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cisco-pka-to-xml", "trial.xml")
+    with open(trial_xml_path, "rb") as f:
+        xml_content = f.read()
+    
+    response = client.post(
+        "/api/analyze",
+        files=[("files", ("trial.xml", xml_content, "application/xml"))]
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "devices" in data
+    assert "Router1" in data["devices"]
+    assert "Switch2" in data["devices"]
+    assert "L1" in data["devices"]
+    assert len(data["links"]) >= 10
+
