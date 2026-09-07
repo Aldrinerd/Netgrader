@@ -119,4 +119,28 @@ def detect_conflicts(devices: dict[str, ParsedDevice], links: list[DiscoveredLin
                         ]
                     ))
 
+    # 5. Check Physical Cable Type Inconsistencies
+    for link in links:
+        dev_a = devices.get(link.source_device)
+        dev_b = devices.get(link.target_device)
+        if not dev_a or not dev_b or dev_a.is_placeholder or dev_b.is_placeholder:
+            continue
+
+        ctype = link.cable_type or ""
+        # Direct Router-to-Router FastEthernet with Straight-Through
+        if dev_a.device_type == "router" and dev_b.device_type == "router":
+            if "fastethernet" in link.source_interface.lower() and "fastethernet" in link.target_interface.lower():
+                if ctype == "eStraightThrough":
+                    link.conflicts.append(f"Cabling Warning: Router-to-Router FastEthernet link using Straight-Through cable ({ctype})")
+                    conflicts.append(ConflictIssue(
+                        severity="warning",
+                        category="cabling_error",
+                        title=f"Incorrect Cable Type between {dev_a.hostname} and {dev_b.hostname}",
+                        description=f"Direct FastEthernet connection between {dev_a.hostname}:{link.source_interface} and {dev_b.hostname}:{link.target_interface} is using a Straight-Through cable ({ctype}). A Crossover cable (eCrossOver) is recommended for direct router-to-router FastEthernet interfaces without auto-MDIX.",
+                        involved_devices=[dev_a.hostname, dev_b.hostname],
+                        involved_interfaces=[link.source_interface, link.target_interface],
+                        evidence_citations=[f"Physical Cable: {ctype} connecting {dev_a.hostname}:{link.source_interface} <--> {dev_b.hostname}:{link.target_interface}"]
+                    ))
+
     return conflicts
+

@@ -116,3 +116,28 @@ def test_conflict_detector_ignores_placeholder_devices():
     assert not any(c.category == "subnet_mismatch" for c in conflicts)
     assert not any(c.category == "vlan_trunk_mismatch" for c in conflicts)
 
+def test_cabling_type_conflict_detection():
+    from src.models import ParsedDevice, InterfaceData, DiscoveredLink, ContributingSignal
+    from src.conflict_detector import detect_conflicts
+    
+    r1 = ParsedDevice(hostname="R1", canonical_name="R1", device_type="router")
+    r2 = ParsedDevice(hostname="R2", canonical_name="R2", device_type="router")
+    
+    # Direct router-router FastEthernet link using straight-through
+    link = DiscoveredLink(
+        source_device="R1",
+        source_interface="FastEthernet0/0",
+        target_device="R2",
+        target_interface="FastEthernet0/0",
+        confidence=1.0,
+        classification="verified",
+        cable_type="eStraightThrough",
+        signals=[ContributingSignal(signal_type="PACKET_TRACER_PHYSICAL_CABLE", description="Physical cable", weight=1.0)]
+    )
+    
+    conflicts = detect_conflicts({"R1": r1, "R2": r2}, [link])
+    cabling_conflicts = [c for c in conflicts if c.category == "cabling_error"]
+    assert len(cabling_conflicts) > 0
+    assert "Straight-Through" in cabling_conflicts[0].description
+
+
