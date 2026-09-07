@@ -60,16 +60,17 @@
                         <span class="card-icon">📂</span>
                         <h3>Custom Lab Bundle Ingest</h3>
                     </div>
-                    <p class="card-desc">Upload student <code>.txt</code> command outputs or <code>.zip</code> archives containing show command bundles:</p>
+                    <p class="card-desc">Upload student <code>.txt</code> command outputs, <code>.pkt</code> / <code>.pka</code> / <code>.xml</code> Packet Tracer files, or <code>.zip</code> archives:</p>
                     
                     <div id="drop-zone" class="dropzone">
-                        <input type="file" id="file-input" multiple accept=".txt,.zip,.log" style="display:none;">
+                        <input type="file" id="file-input" multiple accept=".pkt,.pka,.xml,.zip,.txt,.log" style="display:none;">
                         <div class="dropzone-content">
                             <div class="upload-icon">📥</div>
-                            <p class="dropzone-text"><strong>Drag & Drop</strong> student .txt files here</p>
+                            <p class="dropzone-text"><strong>Drag & Drop</strong> .pkt, .pka, .xml, or .zip files here</p>
                             <span class="dropzone-hint">or <button id="browse-btn" class="link-btn" type="button">browse files</button> from device</span>
                         </div>
                     </div>
+
 
                     <div id="file-preview-list" class="file-preview-list" style="display: none;">
                         <div class="preview-header">

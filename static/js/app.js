@@ -168,17 +168,52 @@ document.addEventListener('DOMContentLoaded', () => {
         const radius = Math.min(width, height) * 0.32;
 
         const devEntries = Object.entries(data.devices || {});
-        simulationNodes = devEntries.map(([devKey, d], idx) => {
-            const angle = (idx / devEntries.length) * 2 * Math.PI - Math.PI / 2;
-            return {
-                id: devKey,
-                device: d,
-                x: centerX + radius * Math.cos(angle),
-                y: centerY + radius * Math.sin(angle),
-                vx: 0,
-                vy: 0
-            };
-        });
+        const hasCoordinates = devEntries.some(([_, d]) => d.x_coord !== null && d.y_coord !== null);
+
+        if (hasCoordinates) {
+            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+            devEntries.forEach(([_, d]) => {
+                if (d.x_coord !== null && d.y_coord !== null) {
+                    minX = Math.min(minX, d.x_coord);
+                    maxX = Math.max(maxX, d.x_coord);
+                    minY = Math.min(minY, d.y_coord);
+                    maxY = Math.max(maxY, d.y_coord);
+                }
+            });
+            const spanX = (maxX - minX) || 1;
+            const spanY = (maxY - minY) || 1;
+            const padding = 70;
+
+            simulationNodes = devEntries.map(([devKey, d], idx) => {
+                let x = centerX + radius * Math.cos((idx / devEntries.length) * 2 * Math.PI - Math.PI / 2);
+                let y = centerY + radius * Math.sin((idx / devEntries.length) * 2 * Math.PI - Math.PI / 2);
+                if (d.x_coord !== null && d.y_coord !== null) {
+                    x = padding + ((d.x_coord - minX) / spanX) * (width - 2 * padding);
+                    y = padding + ((d.y_coord - minY) / spanY) * (height - 2 * padding);
+                }
+                return {
+                    id: devKey,
+                    device: d,
+                    x: x,
+                    y: y,
+                    vx: 0,
+                    vy: 0
+                };
+            });
+        } else {
+            simulationNodes = devEntries.map(([devKey, d], idx) => {
+                const angle = (idx / devEntries.length) * 2 * Math.PI - Math.PI / 2;
+                return {
+                    id: devKey,
+                    device: d,
+                    x: centerX + radius * Math.cos(angle),
+                    y: centerY + radius * Math.sin(angle),
+                    vx: 0,
+                    vy: 0
+                };
+            });
+        }
+
 
 
         simulationLinks = links.map(l => {
