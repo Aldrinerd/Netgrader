@@ -195,3 +195,42 @@ def test_parse_split_filtered_router_bundle():
     assert any(r.network == "10.10.10.0" and r.protocol == "S" for r in dev.routes)
 
 
+def test_parse_security_and_ospf_from_config():
+    raw_config = """
+    hostname CoreRouter
+    service password-encryption
+    enable secret 5 $1$mERr$hx5rVt7rPNoS4wqbXKX7x0
+    !
+    interface GigabitEthernet0/0
+     description Connection_to_Dist1
+     ip address 10.0.0.1 255.255.255.252
+    !
+    router ospf 10
+     network 10.0.0.0 0.0.0.3 area 0
+     network 192.168.1.0 0.0.0.255 area 0
+    !
+    line vty 0 4
+     login
+     password 7 0822455B0A0A
+    !
+    """
+    dev = parse_device_bundle(raw_config, "CoreRouter.txt")
+    assert dev.has_enable_secret is True
+    assert dev.has_password_encryption is True
+    assert dev.has_vty_login is True
+    assert dev.interfaces["GigabitEthernet0/0"].description == "Connection_to_Dist1"
+    assert len(dev.ospf_processes) == 1
+    assert dev.ospf_processes[0]["process_id"] == 10
+    assert len(dev.ospf_processes[0]["networks"]) == 2
+    assert dev.ospf_processes[0]["networks"][0]["area"] == 0
+
+
+def test_parse_switch_default_gateway():
+    raw_config = """
+    hostname SW1
+    ip default-gateway 192.168.1.1
+    """
+    dev = parse_device_bundle(raw_config, "SW1.txt")
+    assert dev.default_gateway == "192.168.1.1"
+
+

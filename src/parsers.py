@@ -50,6 +50,8 @@ def ip_and_mask_to_network(ip_str: str, mask_str: str) -> tuple[str, int, str]:
 def parse_running_config(content: str, start_line: int, device: ParsedDevice) -> None:
     lines = content.splitlines()
     current_intf: InterfaceData | None = None
+    in_vty_block = False
+    current_ospf: dict | None = None
     
     for idx, line in enumerate(lines):
         line_no = start_line + idx
@@ -62,6 +64,60 @@ def parse_running_config(content: str, start_line: int, device: ParsedDevice) ->
             device.canonical_name = canonical_device_name(device.hostname)
             continue
         
+        # Security Baseline
+        if re.match(r"^enable\s+(?:secret|password)\b", stripped, re.IGNORECASE):
+            device.has_enable_secret = True
+            continue
+
+        if re.match(r"^service\s+password-encryption\b", stripped, re.IGNORECASE):
+            device.has_password_encryption = True
+            continue
+
+        # Default Gateway (Switches / Hosts)
+        gw_match = re.match(r"^ip\s+default-gateway\s+([0-9\.]+)", stripped, re.IGNORECASE)
+        if gw_match:
+            device.default_gateway = gw_match.group(1).strip()
+            continue
+
+        # Line VTY Block
+        if re.match(r"^line\s+vty\b", stripped, re.IGNORECASE):
+            in_vty_block = True
+            current_intf = None
+            current_ospf = None
+            continue
+        
+        if in_vty_block:
+            if re.match(r"^(?:login|password)\b", stripped, re.IGNORECASE):
+                device.has_vty_login = True
+            elif not line.startswith(" ") and not line.startswith("\t") and stripped.startswith("!"):
+                in_vty_block = False
+            elif re.match(r"^[a-zA-Z]", stripped) and not stripped.startswith("login") and not stripped.startswith("password"):
+                in_vty_block = False
+
+        # Router OSPF Block
+        ospf_match = re.match(r"^router\s+ospf\s+(\d+)", stripped, re.IGNORECASE)
+        if ospf_match:
+            pid = int(ospf_match.group(1))
+            current_ospf = {"process_id": pid, "networks": []}
+            device.ospf_processes.append(current_ospf)
+            current_intf = None
+            in_vty_block = False
+            continue
+
+        if current_ospf is not None:
+            net_match = re.match(r"^network\s+([0-9\.]+)\s+([0-9\.]+)\s+area\s+(\d+)", stripped, re.IGNORECASE)
+            if net_match:
+                current_ospf["networks"].append({
+                    "network": net_match.group(1),
+                    "wildcard": net_match.group(2),
+                    "area": int(net_match.group(3))
+                })
+                continue
+            elif not line.startswith(" ") and not line.startswith("\t") and stripped.startswith("!"):
+                current_ospf = None
+            elif re.match(r"^[a-zA-Z]", stripped) and not stripped.startswith("network"):
+                current_ospf = None
+
         # Interface block start
         intf_match = re.match(r"^interface\s+([a-zA-Z0-9_\-\./]+)", stripped, re.IGNORECASE)
         if intf_match:
@@ -71,6 +127,8 @@ def parse_running_config(content: str, start_line: int, device: ParsedDevice) ->
                 device.interfaces[norm_intf_name] = InterfaceData(name=norm_intf_name)
             current_intf = device.interfaces[norm_intf_name]
             current_intf.evidence_lines["interface"] = line_no
+            in_vty_block = False
+            current_ospf = None
             continue
         
         # Exit interface block on ! or other root commands
