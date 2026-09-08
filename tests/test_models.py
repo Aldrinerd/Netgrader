@@ -115,7 +115,7 @@ def test_parsed_device_coordinates_and_cable_type():
 
 
 def test_evaluation_policies_defaults():
-    from src.models import EvaluationPolicies, EvaluationCriteria
+    from src.models import EvaluationPolicies
     policies = EvaluationPolicies()
     assert policies.allow_dynamic_subnetting is False
     assert policies.enforce_prefix_length is True
@@ -127,7 +127,62 @@ def test_evaluation_policies_defaults():
     assert policies.grade_security_baseline is False
     assert policies.grade_interface_descriptions is False
 
-    crit = EvaluationCriteria(lab_title="Test Lab", lab_description="Desc", policies=policies)
-    assert crit.policies.allow_dynamic_subnetting is False
-    assert crit.policies.enforce_prefix_length is True
+
+def test_criteria_with_policies_and_new_categories():
+    from src.models import EvaluationCriteria, EvaluationPolicies, EvaluationRule
+    policies = EvaluationPolicies(
+        allow_dynamic_subnetting=True,
+        grade_security_baseline=True
+    )
+    rule1 = EvaluationRule(
+        rule_id="rel_subnet_r1_r2",
+        category="relational_subnet",
+        description="Verify mutual /30 point-to-point subnet between R1 and R2",
+        points=15.0,
+        target_device="R1",
+        target_interface="GigabitEthernet0/0",
+        expected_value={
+            "peer_device": "R2",
+            "peer_interface": "GigabitEthernet0/0",
+            "expected_prefixlen": 30,
+            "link_type": "point_to_point"
+        }
+    )
+    rule2 = EvaluationRule(
+        rule_id="sec_r1_secret",
+        category="security",
+        description="Enable secret password configured on R1",
+        points=5.0,
+        target_device="R1",
+        expected_value={"check_type": "enable_secret"}
+    )
+    criteria = EvaluationCriteria(
+        lab_title="Dynamic Subnetting Lab",
+        policies=policies,
+        rules=[rule1, rule2]
+    )
+    assert criteria.policies.allow_dynamic_subnetting is True
+    assert criteria.policies.grade_security_baseline is True
+    assert len(criteria.rules) == 2
+    assert criteria.rules[0].category == "relational_subnet"
+    assert criteria.rules[1].category == "security"
+
+
+def test_parsed_device_security_and_gateway_attributes():
+    dev = ParsedDevice(
+        hostname="R1",
+        canonical_name="R1",
+        device_type="router",
+        default_gateway="192.168.1.1",
+        has_enable_secret=True,
+        has_password_encryption=True,
+        has_vty_login=True,
+        ospf_processes=[{"process_id": 1, "networks": [{"network": "10.0.0.0", "wildcard": "0.0.0.3", "area": 0}]}]
+    )
+    assert dev.default_gateway == "192.168.1.1"
+    assert dev.has_enable_secret is True
+    assert dev.has_password_encryption is True
+    assert dev.has_vty_login is True
+    assert len(dev.ospf_processes) == 1
+    assert dev.ospf_processes[0]["process_id"] == 1
 

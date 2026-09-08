@@ -56,6 +56,11 @@ class ParsedDevice(BaseModel):
     raw_filename: str = ""
     x_coord: float | None = None
     y_coord: float | None = None
+    default_gateway: str | None = None
+    has_enable_secret: bool = False
+    has_password_encryption: bool = False
+    has_vty_login: bool = False
+    ospf_processes: list[dict] = Field(default_factory=list)
     interfaces: dict[str, InterfaceData] = Field(default_factory=dict)
     cdp_neighbors: list[CDPNeighbor] = Field(default_factory=list)
     routes: list[RouteEntry] = Field(default_factory=list)
@@ -96,7 +101,7 @@ class TopologyResult(BaseModel):
     conflicts: list[ConflictIssue] = Field(default_factory=list)
 
 
-# --- Evaluation & Grading Models ---
+# --- Evaluation & Policy Models ---
 class EvaluationPolicies(BaseModel):
     # IP & Subnetting Policies
     allow_dynamic_subnetting: bool = False      # If True: verifies mutual subnet matching, CIDR & uniqueness rather than exact IP
@@ -119,13 +124,13 @@ class EvaluationRule(BaseModel):
     category: Literal[
         "device",
         "interface_ip",
-        "relational_subnet",
         "interface_status",
         "cabling",
         "vlan_trunk",
         "routing",
-        "security_baseline",
-        "interface_description"
+        "relational_subnet",
+        "security",
+        "documentation"
     ]
     description: str
     points: float = 10.0
