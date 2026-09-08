@@ -113,3 +113,34 @@ def test_api_criteria_generate_and_evaluate_flow():
     assert eval_data["failed_count"] == 0
 
 
+def test_api_generate_criteria_with_policy_form_data():
+    import os
+    trial_xml_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cisco-pka-to-xml", "trial.xml")
+    with open(trial_xml_path, "rb") as f:
+        xml_content = f.read()
+
+    response = client.post(
+        "/api/criteria/generate",
+        files=[("files", ("trial.xml", xml_content, "application/xml"))],
+        data={
+            "lab_title": "Dynamic Subnetting Campus Lab",
+            "total_points": 100.0,
+            "allow_dynamic_subnetting": "true",
+            "enforce_prefix_length": "true",
+            "allow_custom_hostnames": "true",
+            "strict_cable_type": "false",
+            "grade_security_baseline": "true"
+        }
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "criteria" in data
+    criteria = data["criteria"]
+    policies = criteria["policies"]
+    assert policies["allow_dynamic_subnetting"] is True
+    assert policies["allow_custom_hostnames"] is True
+    assert policies["strict_cable_type"] is False
+    assert policies["grade_security_baseline"] is True
+    assert "DYNAMIC & RELATIONAL SUBNETTING POLICY" in data["instructions_txt"]
+
+

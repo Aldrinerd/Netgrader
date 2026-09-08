@@ -177,7 +177,16 @@ async def api_generate_criteria(
     files: list[UploadFile] = File(...),
     lab_title: str = Form("Packet Tracer Lab Assignment"),
     lab_description: str = Form(""),
-    total_points: float = Form(100.0)
+    total_points: float = Form(100.0),
+    allow_dynamic_subnetting: bool = Form(False),
+    enforce_prefix_length: bool = Form(True),
+    verify_default_gateways: bool = Form(True),
+    allow_custom_hostnames: bool = Form(False),
+    strict_port_matching: bool = Form(True),
+    strict_cable_type: bool = Form(True),
+    allow_flexible_process_ids: bool = Form(True),
+    grade_security_baseline: bool = Form(False),
+    grade_interface_descriptions: bool = Form(False)
 ):
     """
     Teacher Studio: Ingests an instructor's reference Packet Tracer file (.pkt/.xml)
@@ -187,11 +196,25 @@ async def api_generate_criteria(
     if not topology.devices:
         raise HTTPException(status_code=400, detail="No valid device configurations or topology discovered from reference file.")
 
+    from src.models import EvaluationPolicies
+    policies = EvaluationPolicies(
+        allow_dynamic_subnetting=allow_dynamic_subnetting,
+        enforce_prefix_length=enforce_prefix_length,
+        verify_default_gateways=verify_default_gateways,
+        allow_custom_hostnames=allow_custom_hostnames,
+        strict_port_matching=strict_port_matching,
+        strict_cable_type=strict_cable_type,
+        allow_flexible_process_ids=allow_flexible_process_ids,
+        grade_security_baseline=grade_security_baseline,
+        grade_interface_descriptions=grade_interface_descriptions
+    )
+
     criteria = generate_criteria_from_topology(
         topology=topology,
         lab_title=lab_title,
         lab_description=lab_description,
-        target_total_points=total_points
+        target_total_points=total_points,
+        policies=policies
     )
     instructions_txt = format_criteria_to_instructions_txt(criteria)
 
