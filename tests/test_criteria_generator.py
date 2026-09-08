@@ -70,41 +70,64 @@ def test_generate_criteria_from_ospf_preset():
     assert parsed.lab_title == "OSPF Ring Lab"
 
 
-def test_generate_criteria_with_dynamic_policies():
+def test_parse_invalid_instructions_txt():
+    with pytest.raises(ValueError, match="Instructions document is empty"):
+        parse_instructions_txt("")
+
+    with pytest.raises(ValueError, match="Missing '--- CRITERIA SPEC START ---'"):
+        parse_instructions_txt("This is just a random text file with no spec block.")
+
+
+def test_generate_criteria_with_dynamic_subnetting_policy():
     from src.models import EvaluationPolicies
     bundle = load_preset("ospf_clean")
     top = process_bundle_dict(bundle)
-
+    
     policies = EvaluationPolicies(
         allow_dynamic_subnetting=True,
         enforce_prefix_length=True,
-        allow_custom_hostnames=True,
-        strict_cable_type=False,
-        grade_security_baseline=True,
-        grade_interface_descriptions=True,
+        allow_flexible_process_ids=True
     )
-
     criteria = generate_criteria_from_topology(
         top,
-        lab_title="Dynamic Subnetting & OSPF Lab",
-        policies=policies,
+        lab_title="Dynamic OSPF Challenge",
+        policies=policies
     )
-
     assert criteria.policies.allow_dynamic_subnetting is True
-    assert criteria.policies.allow_custom_hostnames is True
-
-    # Relational subnet rules should be present
-    subnet_rules = [r for r in criteria.rules if r.category == "relational_subnet"]
-    assert len(subnet_rules) > 0
-
-    # Instructions text formatting should include policy summary
+    
+    # Check that relational_subnet rules were generated instead of static interface_ip rules for connected links
+    rel_rules = [r for r in criteria.rules if r.category == "relational_subnet"]
+    assert len(rel_rules) > 0
+    assert rel_rules[0].expected_value.get("link_type") == "point_to_point" or "expected_prefixlen" in rel_rules[0].expected_value
+    
+    # Format and verify instructions text
     txt = format_criteria_to_instructions_txt(criteria)
     assert "Dynamic Subnetting" in txt
-    assert "Custom Hostnames" in txt or "Custom /" in txt
-    assert "--- CRITERIA SPEC START ---" in txt
-
-    # Parse back and verify policies preserved
+    assert "DYNAMIC & RELATIONAL SUBNETTING POLICY" in txt or "Relational Subnet" in txt
+    
+    # Parse back
     parsed = parse_instructions_txt(txt)
     assert parsed.policies.allow_dynamic_subnetting is True
-    assert parsed.policies.strict_cable_type is False
-    assert parsed.policies.grade_security_baseline is True
+    assert parsed.policies.enforce_prefix_length is True
+    assert len(parsed.rules) == len(criteria.rules)
+
+
+def test_generate_criteria_with_security_and_description_policies():
+    from src.models import EvaluationPolicies
+    bundle = load_preset("ospf_clean")
+    top = process_bundle_dict(bundle)
+    
+    policies = EvaluationPolicies(
+        grade_security_baseline=True,
+        grade_interface_descriptions=True
+    )
+    criteria = generate_criteria_from_topology(
+        top,
+        lab_title="Hardened OSPF Network",
+        policies=policies
+    )
+    assert criteria.policies.grade_security_baseline is True
+    assert criteria.policies.grade_interface_descriptions is True
+    
+    sec_rules = [r for r in criteria.rules if r.category == "security"]
+    assert len(sec_rules) >= 3  # enable_secret, password_encryption, vty_login

@@ -19,7 +19,7 @@ def generate_criteria_from_topology(
 ) -> EvaluationCriteria:
     """
     Generates an EvaluationCriteria object with discrete grading rules extracted
-    from an instructor's gold-standard reference topology and specified instructor policies.
+    from an instructor's gold-standard reference topology according to evaluation policies.
     """
     if policies is None:
         policies = EvaluationPolicies()
@@ -31,15 +31,6 @@ def generate_criteria_from_topology(
         if r.rule_id not in seen_rule_ids:
             seen_rule_ids.add(r.rule_id)
             raw_rules.append(r)
-
-    # Build a lookup for connected links to find peer interfaces
-    link_peer_map: dict[tuple[str, str], tuple[str, str]] = {}
-    for link in topology.links:
-        src = link.source_device
-        tgt = link.target_device
-        if src and tgt and not src.startswith("UNKNOWN") and not tgt.startswith("UNKNOWN"):
-            link_peer_map[(src, link.source_interface)] = (tgt, link.target_interface)
-            link_peer_map[(tgt, link.target_interface)] = (src, link.source_interface)
 
     # 1. Device Presence Rules
     for hostname, dev in topology.devices.items():
@@ -55,84 +46,52 @@ def generate_criteria_from_topology(
             expected_value={"device_type": dev.device_type, "hostname": dev.hostname, "display_name": dev_name}
         ))
 
-        # Baseline Security Rules (if enabled)
+        # Security Baseline Rules (if enabled)
         if policies.grade_security_baseline and dev.device_type in ("router", "switch", "l3_switch"):
             add_rule(EvaluationRule(
                 rule_id=f"sec_secret_{dev.hostname.lower()}",
-                category="security_baseline",
-                description=f"Configure encrypted privileged access password ('enable secret') on {dev_name}",
-                points=5.0,
+                category="security",
+                description=f"Configure encrypted privileged EXEC password ('enable secret') on {dev_name}",
+                points=4.0,
                 target_device=dev.hostname,
-                expected_value={"feature": "enable_secret"}
+                expected_value={"check_type": "enable_secret"}
             ))
             add_rule(EvaluationRule(
-                rule_id=f"sec_enc_{dev.hostname.lower()}",
-                category="security_baseline",
-                description=f"Enable global service password encryption ('service password-encryption') on {dev_name}",
-                points=5.0,
+                rule_id=f"sec_pwenc_{dev.hostname.lower()}",
+                category="security",
+                description=f"Enable Cisco password encryption service ('service password-encryption') on {dev_name}",
+                points=3.0,
                 target_device=dev.hostname,
-                expected_value={"feature": "service_password_encryption"}
+                expected_value={"check_type": "password_encryption"}
+            ))
+            add_rule(EvaluationRule(
+                rule_id=f"sec_vty_{dev.hostname.lower()}",
+                category="security",
+                description=f"Secure Virtual Terminal lines with login authentication ('line vty 0 4') on {dev_name}",
+                points=3.0,
+                target_device=dev.hostname,
+                expected_value={"check_type": "vty_login"}
             ))
 
-        # 2. Interface IP Addressing & Status Rules
+        # Interface Operational Status & IP / Relational Subnet Rules
         for intf_name, intf in dev.interfaces.items():
             safe_intf = intf_name.replace("/", "_").replace(" ", "_").replace(".", "_")
 
-            # Documentation practice (if enabled)
-            if policies.grade_interface_descriptions and intf.description:
+            # Interface Description Documentation Rule (if enabled)
+            if policies.grade_interface_descriptions and (intf.ip_address or intf.switchport_mode):
                 add_rule(EvaluationRule(
                     rule_id=f"desc_{dev.hostname.lower()}_{safe_intf.lower()}",
-                    category="interface_description",
-                    description=f"Configure descriptive interface label on {dev_name} {intf_name}",
-                    points=4.0,
+                    category="documentation",
+                    description=f"Configure meaningful interface description label on {dev_name} {intf_name}",
+                    points=2.0,
                     target_device=dev.hostname,
                     target_interface=intf_name,
-                    expected_value={"description": intf.description}
+                    expected_value={"require_description": True}
                 ))
 
             if intf.ip_address:
-                cidr_val = intf.cidr or 24
-                peer_info = link_peer_map.get((dev.hostname, intf_name))
-
-                if policies.allow_dynamic_subnetting:
-                    # Dynamic / Relational Subnet Checkpoint
-                    if peer_info:
-                        peer_dev, peer_intf = peer_info
-                        rule_id = f"dyn_sub_{dev.hostname.lower()}_{safe_intf.lower()}"
-                        add_rule(EvaluationRule(
-                            rule_id=rule_id,
-                            category="relational_subnet",
-                            description=f"Configure dynamic /{cidr_val} subnet on link {dev_name} ({intf_name}) ⟷ {peer_dev} ({peer_intf}) (Must share matching subnet with peer)",
-                            points=10.0,
-                            target_device=dev.hostname,
-                            target_interface=intf_name,
-                            expected_value={
-                                "source_device": dev.hostname,
-                                "source_interface": intf_name,
-                                "target_device": peer_dev,
-                                "target_interface": peer_intf,
-                                "expected_cidr": cidr_val,
-                                "is_p2p": True
-                            }
-                        ))
-                    else:
-                        rule_id = f"dyn_lan_{dev.hostname.lower()}_{safe_intf.lower()}"
-                        add_rule(EvaluationRule(
-                            rule_id=rule_id,
-                            category="relational_subnet",
-                            description=f"Configure LAN /{cidr_val} subnet on {dev_name} {intf_name} (Must match connected LAN default gateways)",
-                            points=10.0,
-                            target_device=dev.hostname,
-                            target_interface=intf_name,
-                            expected_value={
-                                "target_device": dev.hostname,
-                                "target_interface": intf_name,
-                                "expected_cidr": cidr_val,
-                                "is_p2p": False
-                            }
-                        ))
-                else:
-                    # Strict IP Matching Checkpoint
+                # If Dynamic Subnetting is NOT enabled, create strict IP rules
+                if not policies.allow_dynamic_subnetting:
                     cidr_str = f"/{intf.cidr}" if intf.cidr else ""
                     add_rule(EvaluationRule(
                         rule_id=f"ip_{dev.hostname.lower()}_{safe_intf.lower()}",
@@ -149,7 +108,7 @@ def generate_criteria_from_topology(
                         }
                     ))
 
-                # If router/L3 switch interface is configured, check no shutdown (admin status up)
+                # Operational status (no shutdown)
                 if dev.device_type in ("router", "l3_switch") and intf.admin_status == "up":
                     add_rule(EvaluationRule(
                         rule_id=f"status_{dev.hostname.lower()}_{safe_intf.lower()}",
@@ -161,7 +120,7 @@ def generate_criteria_from_topology(
                         expected_value={"admin_status": "up", "line_status": "up"}
                     ))
 
-            # 3. VLAN & Switchport Rules
+            # VLAN & Switchport Rules
             if intf.switchport_mode == "trunk":
                 add_rule(EvaluationRule(
                     rule_id=f"trunk_{dev.hostname.lower()}_{safe_intf.lower()}",
@@ -190,7 +149,7 @@ def generate_criteria_from_topology(
                     }
                 ))
 
-    # 4. Physical Cabling & Connectivity Rules
+    # 2. Physical Cabling & Relational Subnet Rules
     seen_link_pairs = set()
     for link in topology.links:
         src = link.source_device
@@ -207,7 +166,6 @@ def generate_criteria_from_topology(
         safe_tgt_intf = link.target_interface.replace("/", "_").replace(" ", "_")
         link_id = f"cabling_{src.lower()}_{safe_src_intf.lower()}__to__{tgt.lower()}_{safe_tgt_intf.lower()}"
 
-        cable_desc = link.cable_type or "cabling"
         add_rule(EvaluationRule(
             rule_id=link_id,
             category="cabling",
@@ -224,6 +182,32 @@ def generate_criteria_from_topology(
             }
         ))
 
+        # Dynamic Relational Subnet Rule generation for L3 connected pairs
+        if policies.allow_dynamic_subnetting:
+            src_dev_obj = topology.devices.get(src)
+            tgt_dev_obj = topology.devices.get(tgt)
+            if src_dev_obj and tgt_dev_obj:
+                src_intf_obj = src_dev_obj.interfaces.get(link.source_interface)
+                tgt_intf_obj = tgt_dev_obj.interfaces.get(link.target_interface)
+                if src_intf_obj and tgt_intf_obj and src_intf_obj.ip_address and tgt_intf_obj.ip_address:
+                    expected_cidr = src_intf_obj.cidr or 30
+                    add_rule(EvaluationRule(
+                        rule_id=f"rel_subnet_{src.lower()}_{safe_src_intf.lower()}__to__{tgt.lower()}_{safe_tgt_intf.lower()}",
+                        category="relational_subnet",
+                        description=f"Dynamic Subnet: Configure valid mutual /{expected_cidr} subnet between {src} ({link.source_interface}) and {tgt} ({link.target_interface})",
+                        points=12.0,
+                        target_device=src,
+                        target_interface=link.source_interface,
+                        expected_value={
+                            "source_device": src,
+                            "source_interface": link.source_interface,
+                            "target_device": tgt,
+                            "target_interface": link.target_interface,
+                            "expected_prefixlen": expected_cidr,
+                            "link_type": "point_to_point" if expected_cidr == 30 else "broadcast_lan"
+                        }
+                    ))
+
     # Point Normalization so total equals target_total_points (e.g. 100.0 pts)
     if raw_rules:
         raw_total = sum(r.points for r in raw_rules)
@@ -231,7 +215,6 @@ def generate_criteria_from_topology(
         allocated = 0.0
         for i, r in enumerate(raw_rules):
             if i == len(raw_rules) - 1:
-                # Last rule takes remainder to ensure exact target sum
                 r.points = round(target_total_points - allocated, 1)
             else:
                 pts = round(r.points * scale, 1)
@@ -245,11 +228,12 @@ def generate_criteria_from_topology(
         "link_count": len(topology.links),
         "rule_count": len(raw_rules),
         "ip_count": len([r for r in raw_rules if r.category in ("interface_ip", "relational_subnet")]),
+        "policy_summary": policies.model_dump()
     }
 
     return EvaluationCriteria(
         lab_title=lab_title,
-        lab_description=lab_description or "Configure physical cabling, IP addressing, and interface operational states as specified.",
+        lab_description=lab_description or "Configure physical cabling, IP addressing, and operational states according to instructor policies.",
         total_points=target_total_points,
         policies=policies,
         rules=raw_rules,
@@ -260,7 +244,7 @@ def generate_criteria_from_topology(
 def format_criteria_to_instructions_txt(criteria: EvaluationCriteria) -> str:
     """
     Formats the evaluation criteria into a clean, human-readable student lab instructions document
-    with an embedded machine-verifiable criteria schema at the end.
+    with policy indicators and an embedded machine-verifiable criteria schema at the end.
     """
     lines: list[str] = []
     lines.append("=" * 80)
@@ -278,34 +262,42 @@ def format_criteria_to_instructions_txt(criteria: EvaluationCriteria) -> str:
     lines.append("to the automated evaluation engine for instant grading and diagnostic feedback.")
     lines.append("")
 
-    # Section 2: Policy Directives
-    lines.append("2. INSTRUCTOR EVALUATION POLICIES & CONSTRAINTS")
+    # Instructor Policy Summary
+    p = criteria.policies
+    lines.append("2. INSTRUCTOR EVALUATION POLICIES")
     lines.append("-" * 80)
-    pol = criteria.policies
-    lines.append(f"• Dynamic Subnetting  : {'[ENABLED] Student-designed IP addressing permitted (mutual link matching enforced)' if pol.allow_dynamic_subnetting else '[DISABLED] Exact IP address matching enforced'}")
-    lines.append(f"• Device Naming       : {'[FLEXIBLE] Custom hostnames allowed (matched by topological role)' if pol.allow_custom_hostnames else '[STRICT] Exact hostnames required'}")
-    lines.append(f"• Physical Port Match : {'[STRICT] Exact interface numbers required' if pol.strict_port_matching else '[FLEXIBLE] Equivalent ports of same class allowed'}")
-    lines.append(f"• Cable Medium Match  : {'[STRICT] Exact cable type required' if pol.strict_cable_type else '[FLEXIBLE] Auto-MDIX copper link equivalence permitted'}")
-    lines.append(f"• Routing Process IDs : {'[FLEXIBLE] Any locally-significant OSPF process ID permitted' if pol.allow_flexible_process_ids else '[STRICT] Exact process ID required'}")
+    lines.append(f"• Dynamic Subnetting     : {'ENABLED (Custom IP schemes permitted; relational mutual subnets checked)' if p.allow_dynamic_subnetting else 'STRICT (Exact assigned IP addresses required)'}")
+    lines.append(f"• Prefix Enforcement     : {'ENABLED (Prefix lengths /30, /24 must match)' if p.enforce_prefix_length else 'FLEXIBLE'}")
+    lines.append(f"• Default Gateway Check  : {'ENABLED (Host/Switch gateway must match router subnet)' if p.verify_default_gateways else 'DISABLED'}")
+    lines.append(f"• Hostname Matching      : {'FLEXIBLE (Matched by topological role & degree)' if p.allow_custom_hostnames else 'STRICT (Exact hostname required)'}")
+    lines.append(f"• Interface Speed Class  : {'FLEXIBLE (Equivalent ports accepted)' if not p.strict_port_matching else 'STRICT (Exact port numbering)'}")
+    lines.append(f"• Cabling Media / Auto-M : {'FLEXIBLE (Auto-MDIX copper equivalence accepted)' if not p.strict_cable_type else 'STRICT (Exact cable types required)'}")
+    lines.append(f"• Routing Process IDs    : {'FLEXIBLE (Locally significant IDs ignored; Area/adjacencies checked)' if p.allow_flexible_process_ids else 'STRICT'}")
+    lines.append(f"• Security Baseline      : {'GRADED (enable secret, service pw-enc, vty required)' if p.grade_security_baseline else 'NOT GRADED'}")
+    lines.append(f"• Interface Descriptions : {'GRADED (Descriptive interface labels required)' if p.grade_interface_descriptions else 'NOT GRADED'}")
     lines.append("")
 
-    # Section 3: IP Addressing Specification (Strict vs Dynamic)
-    if pol.allow_dynamic_subnetting:
-        dyn_rules = [r for r in criteria.rules if r.category == "relational_subnet"]
-        if dyn_rules:
-            lines.append("3. DYNAMIC IP SUBNETTING REQUIREMENTS")
-            lines.append("-" * 80)
-            lines.append(f"{'Device':<18} | {'Interface':<20} | {'Req. Prefix':<14} | {'Addressing Guideline':<30}")
-            lines.append("-" * 80)
-            for r in dyn_rules:
-                exp = r.expected_value or {}
-                cidr_str = f"/{exp.get('expected_cidr', 24)}"
-                if exp.get("is_p2p"):
-                    guideline = f"Custom {cidr_str} subnet (must match {exp.get('target_device')} {exp.get('target_interface')})"
-                else:
-                    guideline = f"Custom {cidr_str} LAN subnet (must match connected host gateway)"
-                lines.append(f"{r.target_device:<18} | {r.target_interface or '':<20} | {cidr_str:<14} | {guideline:<30}")
-            lines.append("")
+    # Addressing Section
+    if p.allow_dynamic_subnetting:
+        rel_rules = [r for r in criteria.rules if r.category == "relational_subnet"]
+        lines.append("3. DYNAMIC & RELATIONAL SUBNETTING POLICY")
+        lines.append("-" * 80)
+        lines.append("You are free to design and apply your own custom IPv4 subnetting plan subject to the following rules:")
+        lines.append(" 1. Mutual Subnet: Connected device interfaces must share the same IPv4 network address.")
+        lines.append(" 2. Host Uniqueness: IP addresses on each link must be unique (no IP collisions).")
+        if p.enforce_prefix_length:
+            lines.append(" 3. Prefix Length: Each link must use the specified CIDR prefix length (e.g. /30 for P2P links, /24 for LANs).")
+        lines.append("")
+        lines.append(f"{'Endpoint A':<22} | {'Endpoint B':<22} | {'Required CIDR':<15} | {'Link Type':<15}")
+        lines.append("-" * 80)
+        for r in rel_rules:
+            exp = r.expected_value or {}
+            ep_a = f"{exp.get('source_device')}:{exp.get('source_interface')}"
+            ep_b = f"{exp.get('target_device')}:{exp.get('target_interface')}"
+            cidr = f"/{exp.get('expected_prefixlen', 24)}"
+            ltype = exp.get('link_type', 'point_to_point')
+            lines.append(f"{ep_a:<22} | {ep_b:<22} | {cidr:<15} | {ltype:<15}")
+        lines.append("")
     else:
         ip_rules = [r for r in criteria.rules if r.category == "interface_ip"]
         if ip_rules:
@@ -320,7 +312,7 @@ def format_criteria_to_instructions_txt(criteria: EvaluationCriteria) -> str:
                 lines.append(f"{r.target_device:<18} | {r.target_interface or '':<20} | {ip_cidr:<22} | {mask:<16}")
             lines.append("")
 
-    # Section 4: Cabling Table
+    # Cabling Table
     cabling_rules = [r for r in criteria.rules if r.category == "cabling"]
     if cabling_rules:
         lines.append("4. PHYSICAL CABLING & PORT CONNECTIONS")
@@ -332,7 +324,7 @@ def format_criteria_to_instructions_txt(criteria: EvaluationCriteria) -> str:
             lines.append(f"{exp.get('source_device', ''):<18} | {exp.get('source_interface', ''):<16} | {exp.get('target_device', ''):<18} | {exp.get('target_interface', ''):<16}")
         lines.append("")
 
-    # Section 5: VLAN & Switchport Requirements
+    # VLAN & Switchport Requirements
     vlan_rules = [r for r in criteria.rules if r.category == "vlan_trunk"]
     if vlan_rules:
         lines.append("5. SWITCHING & VLAN SPECIFICATIONS")
@@ -346,7 +338,7 @@ def format_criteria_to_instructions_txt(criteria: EvaluationCriteria) -> str:
                 lines.append(f"• {r.target_device} on {r.target_interface}: Access Port in VLAN {exp.get('access_vlan', 1)}")
         lines.append("")
 
-    # Section 6: Evaluation Checklist
+    # Evaluation Checklist
     lines.append("6. RUBRIC & POINT BREAKDOWN")
     lines.append("-" * 80)
     for i, r in enumerate(criteria.rules, 1):
@@ -370,7 +362,6 @@ def parse_instructions_txt(content: str) -> EvaluationCriteria:
     if not content or not content.strip():
         raise ValueError("Instructions document is empty.")
 
-    # Check for embedded specification block
     pattern = r"--- CRITERIA SPEC START ---\s*(.*?)\s*--- CRITERIA SPEC END ---"
     match = re.search(pattern, content, re.DOTALL)
     if match:
@@ -381,7 +372,6 @@ def parse_instructions_txt(content: str) -> EvaluationCriteria:
         except Exception as e:
             raise ValueError(f"Failed to parse embedded criteria specification: {e}")
 
-    # Fallback: Check if the entire file is valid JSON
     try:
         data = json.loads(content)
         return EvaluationCriteria(**data)

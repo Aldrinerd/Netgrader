@@ -182,6 +182,7 @@ def parse_pkt_xml(xml_content: str | bytes, filename: str = "topology.xml") -> T
                     
                     ip_val = ip_elem.text.strip() if (ip_elem is not None and ip_elem.text) else None
                     sub_val = sub_elem.text.strip() if (sub_elem is not None and sub_elem.text) else None
+                    gw_val = gw_elem.text.strip() if (gw_elem is not None and gw_elem.text) else None
                     if gw_val:
                         device.default_gateway = gw_val
 
