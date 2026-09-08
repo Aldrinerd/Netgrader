@@ -142,6 +142,103 @@
                                 <input type="number" id="teacher-total-points" class="form-input" value="100" min="10" max="1000">
                             </div>
 
+                            <!-- Instructor Policy Control Center -->
+                            <div class="policy-control-panel">
+                                <div class="policy-panel-header">
+                                    <span class="policy-header-title">🛡️ Instructor Grading Strictness & Policies</span>
+                                    <span class="policy-badge-info">Deterministic & Offline</span>
+                                </div>
+                                
+                                <div class="policy-grid">
+                                    <!-- Group 1: IP & Subnetting -->
+                                    <div class="policy-group-card">
+                                        <div class="policy-group-title">🌐 IP & Subnetting Policies</div>
+                                        <label class="toggle-control">
+                                            <input type="checkbox" id="policy-allow-dynamic-subnetting">
+                                            <span class="toggle-slider"></span>
+                                            <span class="toggle-label">
+                                                <strong>Allow Dynamic Subnetting</strong>
+                                                <small>Permit custom IP schemes; checks mutual link subnets & host uniqueness</small>
+                                            </span>
+                                        </label>
+                                        <label class="toggle-control">
+                                            <input type="checkbox" id="policy-enforce-prefix-length" checked>
+                                            <span class="toggle-slider"></span>
+                                            <span class="toggle-label">
+                                                <strong>Enforce Prefix Length</strong>
+                                                <small>Requires custom subnets to match required CIDR (/30, /24)</small>
+                                            </span>
+                                        </label>
+                                        <label class="toggle-control">
+                                            <input type="checkbox" id="policy-verify-default-gateways" checked>
+                                            <span class="toggle-slider"></span>
+                                            <span class="toggle-label">
+                                                <strong>Verify Default Gateways</strong>
+                                                <small>Ensures PC/Switch gateway matches connected router interface</small>
+                                            </span>
+                                        </label>
+                                    </div>
+
+                                    <!-- Group 2: Topology & Hardware -->
+                                    <div class="policy-group-card">
+                                        <div class="policy-group-title">🗺️ Topology & Hardware Policies</div>
+                                        <label class="toggle-control">
+                                            <input type="checkbox" id="policy-allow-custom-hostnames">
+                                            <span class="toggle-slider"></span>
+                                            <span class="toggle-label">
+                                                <strong>Allow Custom Hostnames</strong>
+                                                <small>Matches devices by topological role & degree if name differs</small>
+                                            </span>
+                                        </label>
+                                        <label class="toggle-control">
+                                            <input type="checkbox" id="policy-strict-port-matching" checked>
+                                            <span class="toggle-slider"></span>
+                                            <span class="toggle-label">
+                                                <strong>Strict Port Matching</strong>
+                                                <small>Require exact interface numbers vs same speed class</small>
+                                            </span>
+                                        </label>
+                                        <label class="toggle-control">
+                                            <input type="checkbox" id="policy-strict-cable-type" checked>
+                                            <span class="toggle-slider"></span>
+                                            <span class="toggle-label">
+                                                <strong>Strict Cable Type</strong>
+                                                <small>Enforce exact Straight-Through vs Cross-Over vs Auto-MDIX</small>
+                                            </span>
+                                        </label>
+                                    </div>
+
+                                    <!-- Group 3: Routing & Security -->
+                                    <div class="policy-group-card">
+                                        <div class="policy-group-title">⚙️ Routing & Security Policies</div>
+                                        <label class="toggle-control">
+                                            <input type="checkbox" id="policy-allow-flexible-process-ids" checked>
+                                            <span class="toggle-slider"></span>
+                                            <span class="toggle-label">
+                                                <strong>Flexible OSPF Process IDs</strong>
+                                                <small>Accept any local process ID if Area 0 & networks match</small>
+                                            </span>
+                                        </label>
+                                        <label class="toggle-control">
+                                            <input type="checkbox" id="policy-grade-security-baseline">
+                                            <span class="toggle-slider"></span>
+                                            <span class="toggle-label">
+                                                <strong>Grade Security Baseline</strong>
+                                                <small>Verify enable secret, service password-encryption, line vty</small>
+                                            </span>
+                                        </label>
+                                        <label class="toggle-control">
+                                            <input type="checkbox" id="policy-grade-interface-descriptions">
+                                            <span class="toggle-slider"></span>
+                                            <span class="toggle-label">
+                                                <strong>Grade Interface Descriptions</strong>
+                                                <small>Require descriptive labels on active links</small>
+                                            </span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
                             <!-- Reference File Dropzone -->
                             <div id="teacher-drop-zone" class="dropzone teacher-dropzone">
                                 <input type="file" id="teacher-file-input" multiple accept=".pkt,.pka,.xml,.zip,.txt" style="display:none;">
