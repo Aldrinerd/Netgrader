@@ -163,59 +163,82 @@ def _evaluate_relational_subnet(
     exp_prefix = exp.get("expected_prefixlen")
 
     dev_a = _find_student_device(devices, src_dev_name, device_mapping)
-    dev_b = _find_student_device(devices, tgt_dev_name, device_mapping)
-
-    if not dev_a or not dev_b:
-        missing = src_dev_name if not dev_a else tgt_dev_name
-        return False, 0.0, "Missing Device", f"Cannot verify dynamic subnet: Device '{missing}' is missing in submission."
+    if not dev_a:
+        return False, 0.0, "Missing Device", f"Cannot verify dynamic subnet: Device '{src_dev_name}' is missing in submission."
 
     intf_a = _find_student_interface(dev_a.interfaces, src_intf_name, criteria.policies.strict_port_matching)
-    intf_b = _find_student_interface(dev_b.interfaces, tgt_intf_name, criteria.policies.strict_port_matching)
+    if not intf_a:
+        return False, 0.0, "Missing Interface", f"Cannot verify dynamic subnet: Interface '{src_dev_name} {src_intf_name}' is missing."
 
-    if not intf_a or not intf_b:
-        missing_intf = f"{src_dev_name} {src_intf_name}" if not intf_a else f"{tgt_dev_name} {tgt_intf_name}"
-        return False, 0.0, "Missing Interface", f"Cannot verify dynamic subnet: Interface '{missing_intf}' is missing."
-
-    if not intf_a.ip_address or not intf_b.ip_address:
-        unconfig = f"{src_dev_name}:{src_intf_name}" if not intf_a.ip_address else f"{tgt_dev_name}:{tgt_intf_name}"
-        return False, 0.0, "Unassigned IP", f"Endpoint {unconfig} has no IPv4 address configured."
+    if not intf_a.ip_address:
+        return False, 0.0, "Unassigned IP", f"Interface {src_dev_name}:{src_intf_name} has no IPv4 address configured."
 
     try:
         iface_a = ipaddress.IPv4Interface(f"{intf_a.ip_address}/{intf_a.subnet_mask or intf_a.cidr or 24}")
-        iface_b = ipaddress.IPv4Interface(f"{intf_b.ip_address}/{intf_b.subnet_mask or intf_b.cidr or 24}")
     except Exception as e:
-        return False, 0.0, "Invalid IP Syntax", f"Malformed IPv4 configuration: {e}"
+        return False, 0.0, "Invalid IP Syntax", f"Malformed IPv4 configuration on {src_dev_name}:{src_intf_name}: {e}"
 
-    if iface_a.network != iface_b.network:
-        actual_val = f"{intf_a.ip_address}/{iface_a.network.prefixlen} vs {intf_b.ip_address}/{iface_b.network.prefixlen}"
-        return False, 0.0, actual_val, f"Subnet mismatch: {src_dev_name} ({intf_a.ip_address}) and {tgt_dev_name} ({intf_b.ip_address}) are on different subnets ({iface_a.network} vs {iface_b.network})."
+    dev_b = _find_student_device(devices, tgt_dev_name, device_mapping) if tgt_dev_name else None
+    intf_b = _find_student_interface(dev_b.interfaces, tgt_intf_name, criteria.policies.strict_port_matching) if (dev_b and tgt_intf_name) else None
 
-    if iface_a.ip == iface_b.ip:
-        return False, round(rule.points * 0.3, 1), f"Duplicate IP ({iface_a.ip})", f"IP Collision: Both {src_dev_name} and {tgt_dev_name} configured with identical IP {iface_a.ip}."
+    # Case 1: 2-Endpoint Mutual Link (both have IP)
+    if dev_b and intf_b and intf_b.ip_address:
+        try:
+            iface_b = ipaddress.IPv4Interface(f"{intf_b.ip_address}/{intf_b.subnet_mask or intf_b.cidr or 24}")
+        except Exception as e:
+            return False, 0.0, "Invalid IP Syntax", f"Malformed IPv4 configuration on {tgt_dev_name}:{tgt_intf_name}: {e}"
 
-    if criteria.policies.enforce_prefix_length and exp_prefix is not None:
-        if iface_a.network.prefixlen != exp_prefix:
-            return False, round(rule.points * 0.6, 1), f"/{iface_a.network.prefixlen}", f"Subnet matches ({iface_a.network}), but CIDR prefix /{iface_a.network.prefixlen} does not match required /{exp_prefix}."
+        # 1. Mutual Subnet Check
+        if iface_a.network != iface_b.network:
+            actual_val = f"{intf_a.ip_address}/{iface_a.network.prefixlen} vs {intf_b.ip_address}/{iface_b.network.prefixlen}"
+            return False, 0.0, actual_val, f"Subnet mismatch: {src_dev_name} ({intf_a.ip_address}) and {tgt_dev_name} ({intf_b.ip_address}) are on different subnets ({iface_a.network} vs {iface_b.network})."
 
-    net_str = str(iface_a.network)
-    link_key = tuple(sorted([f"{src_dev_name}:{src_intf_name}", f"{tgt_dev_name}:{tgt_intf_name}"]))
-    if net_str in used_subnets and used_subnets[net_str] != link_key:
-        return False, round(rule.points * 0.5, 1), f"Duplicate Subnet {net_str}", f"Subnet {net_str} is already used on another link. Point-to-point subnets must be globally unique."
-    used_subnets[net_str] = link_key
+        # 2. Host Uniqueness (no duplicate IP)
+        if iface_a.ip == iface_b.ip:
+            return False, round(rule.points * 0.3, 1), f"Duplicate IP ({iface_a.ip})", f"IP Collision: Both {src_dev_name} and {tgt_dev_name} configured with identical IP {iface_a.ip}."
 
-    if criteria.policies.verify_default_gateways:
-        for host_dev, router_dev, r_intf in [(dev_a, dev_b, intf_b), (dev_b, dev_a, intf_a)]:
-            if host_dev.device_type in ("host", "switch") and host_dev.default_gateway:
-                try:
-                    gw_ip = ipaddress.IPv4Address(host_dev.default_gateway)
-                    if gw_ip != ipaddress.IPv4Address(r_intf.ip_address):
-                        return False, round(rule.points * 0.7, 1), f"Gateway {host_dev.default_gateway}", f"{host_dev.hostname} default gateway ({host_dev.default_gateway}) does not match router interface IP ({r_intf.ip_address})."
-                except Exception:
-                    pass
+        # 3. Prefix Length Enforcement
+        if criteria.policies.enforce_prefix_length and exp_prefix is not None:
+            if iface_a.network.prefixlen != exp_prefix:
+                return False, round(rule.points * 0.6, 1), f"/{iface_a.network.prefixlen}", f"Subnet matches ({iface_a.network}), but CIDR prefix /{iface_a.network.prefixlen} does not match required /{exp_prefix}."
 
-    actual_str = f"{iface_a.ip} ⟷ {iface_b.ip} ({iface_a.network})"
-    feedback_str = f"Mutual subnet ({iface_a.network}) verified between {src_dev_name}:{src_intf_name} ({intf_a.ip_address}) and {tgt_dev_name}:{tgt_intf_name} ({intf_b.ip_address})."
-    return True, rule.points, actual_str, feedback_str
+        # 4. Conflict Resistance (Subnet Reuse Collision)
+        net_str = str(iface_a.network)
+        link_key = tuple(sorted([f"{src_dev_name}:{src_intf_name}", f"{tgt_dev_name}:{tgt_intf_name}"]))
+        if net_str in used_subnets and used_subnets[net_str] != link_key:
+            return False, round(rule.points * 0.5, 1), f"Duplicate Subnet {net_str}", f"Subnet {net_str} is already used on another link. Point-to-point subnets must be globally unique."
+        used_subnets[net_str] = link_key
+
+        # 5. Default Gateway Consistency
+        if criteria.policies.verify_default_gateways:
+            for host_dev, router_dev, r_intf in [(dev_a, dev_b, intf_b), (dev_b, dev_a, intf_a)]:
+                if host_dev.device_type in ("host", "switch") and host_dev.default_gateway:
+                    try:
+                        gw_ip = ipaddress.IPv4Address(host_dev.default_gateway)
+                        if gw_ip != ipaddress.IPv4Address(r_intf.ip_address):
+                            return False, round(rule.points * 0.7, 1), f"Gateway {host_dev.default_gateway}", f"{host_dev.hostname} default gateway ({host_dev.default_gateway}) does not match router interface IP ({r_intf.ip_address})."
+                    except Exception:
+                        pass
+
+        actual_str = f"{iface_a.ip} ⟷ {iface_b.ip} ({iface_a.network})"
+        feedback_str = f"Mutual subnet ({iface_a.network}) verified between {src_dev_name}:{src_intf_name} ({intf_a.ip_address}) and {tgt_dev_name}:{tgt_intf_name} ({intf_b.ip_address})."
+        return True, rule.points, actual_str, feedback_str
+
+    # Case 2: LAN / Broadcast Gateway Interface
+    else:
+        if criteria.policies.enforce_prefix_length and exp_prefix is not None:
+            if iface_a.network.prefixlen != exp_prefix:
+                return False, round(rule.points * 0.6, 1), f"/{iface_a.network.prefixlen}", f"Configured prefix /{iface_a.network.prefixlen} does not match required /{exp_prefix} on {src_dev_name} {src_intf_name}."
+
+        net_str = str(iface_a.network)
+        link_key = tuple(sorted([f"{src_dev_name}:{src_intf_name}"]))
+        if net_str in used_subnets and used_subnets[net_str] != link_key:
+            return False, round(rule.points * 0.5, 1), f"Duplicate Subnet {net_str}", f"Subnet {net_str} is already used on another interface. Subnets must be distinct."
+        used_subnets[net_str] = link_key
+
+        actual_str = f"{iface_a.ip} ({iface_a.network})"
+        feedback_str = f"Valid dynamic subnet ({iface_a.network}) verified on {src_dev_name} {src_intf_name} ({iface_a.ip})."
+        return True, rule.points, actual_str, feedback_str
 
 
 def evaluate_student_submission(

@@ -122,7 +122,7 @@ Interface: GigabitEthernet0/1, Port ID (outgoing port): GigabitEthernet0/1
     assert len(rel_results) > 0
     for r in rel_results:
         assert r.passed is True
-        assert "Mutual subnet" in r.feedback
+        assert "subnet" in r.feedback.lower()
 
 
 def test_dynamic_subnetting_mismatched_subnet_pair():

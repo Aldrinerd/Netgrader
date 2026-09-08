@@ -151,6 +151,8 @@ def generate_criteria_from_topology(
 
     # 2. Physical Cabling & Relational Subnet Rules
     seen_link_pairs = set()
+    covered_l3_interfaces = set()
+
     for link in topology.links:
         src = link.source_device
         tgt = link.target_device
@@ -182,14 +184,19 @@ def generate_criteria_from_topology(
             }
         ))
 
-        # Dynamic Relational Subnet Rule generation for L3 connected pairs
+        # Dynamic Relational Subnet Rule generation for L3 connected pairs or host connections
         if policies.allow_dynamic_subnetting:
             src_dev_obj = topology.devices.get(src)
             tgt_dev_obj = topology.devices.get(tgt)
             if src_dev_obj and tgt_dev_obj:
                 src_intf_obj = src_dev_obj.interfaces.get(link.source_interface)
                 tgt_intf_obj = tgt_dev_obj.interfaces.get(link.target_interface)
-                if src_intf_obj and tgt_intf_obj and src_intf_obj.ip_address and tgt_intf_obj.ip_address:
+                has_src_ip = src_intf_obj and src_intf_obj.ip_address
+                has_tgt_ip = tgt_intf_obj and tgt_intf_obj.ip_address
+
+                if has_src_ip and has_tgt_ip:
+                    covered_l3_interfaces.add((src, link.source_interface))
+                    covered_l3_interfaces.add((tgt, link.target_interface))
                     expected_cidr = src_intf_obj.cidr or 30
                     add_rule(EvaluationRule(
                         rule_id=f"rel_subnet_{src.lower()}_{safe_src_intf.lower()}__to__{tgt.lower()}_{safe_tgt_intf.lower()}",
@@ -205,6 +212,57 @@ def generate_criteria_from_topology(
                             "target_interface": link.target_interface,
                             "expected_prefixlen": expected_cidr,
                             "link_type": "point_to_point" if expected_cidr == 30 else "broadcast_lan"
+                        }
+                    ))
+                elif has_src_ip or has_tgt_ip:
+                    l3_dev = src if has_src_ip else tgt
+                    l3_intf = link.source_interface if has_src_ip else link.target_interface
+                    l3_obj = src_intf_obj if has_src_ip else tgt_intf_obj
+                    l2_dev = tgt if has_src_ip else src
+                    l2_intf = link.target_interface if has_src_ip else link.source_interface
+                    safe_l3_intf = l3_intf.replace("/", "_").replace(" ", "_")
+                    cidr_val = l3_obj.cidr or 24
+
+                    covered_l3_interfaces.add((l3_dev, l3_intf))
+                    add_rule(EvaluationRule(
+                        rule_id=f"rel_subnet_{l3_dev.lower()}_{safe_l3_intf.lower()}",
+                        category="relational_subnet",
+                        description=f"Dynamic Subnet: Configure valid /{cidr_val} subnet on {l3_dev} ({l3_intf}) connected to {l2_dev} ({l2_intf})",
+                        points=10.0,
+                        target_device=l3_dev,
+                        target_interface=l3_intf,
+                        expected_value={
+                            "source_device": l3_dev,
+                            "source_interface": l3_intf,
+                            "target_device": l2_dev,
+                            "target_interface": l2_intf,
+                            "expected_prefixlen": cidr_val,
+                            "link_type": "broadcast_lan"
+                        }
+                    ))
+
+    # Also catch any standalone/unlinked L3 interfaces under dynamic subnetting
+    if policies.allow_dynamic_subnetting:
+        for hostname, dev in topology.devices.items():
+            if dev.is_placeholder:
+                continue
+            for intf_name, intf in dev.interfaces.items():
+                if intf.ip_address and (hostname, intf_name) not in covered_l3_interfaces:
+                    covered_l3_interfaces.add((hostname, intf_name))
+                    safe_intf = intf_name.replace("/", "_").replace(" ", "_").replace(".", "_")
+                    cidr_val = intf.cidr or 24
+                    add_rule(EvaluationRule(
+                        rule_id=f"rel_subnet_{hostname.lower()}_{safe_intf.lower()}",
+                        category="relational_subnet",
+                        description=f"Dynamic Subnet: Configure valid /{cidr_val} IPv4 subnet on {dev.display_name or hostname} ({intf_name})",
+                        points=10.0,
+                        target_device=hostname,
+                        target_interface=intf_name,
+                        expected_value={
+                            "source_device": hostname,
+                            "source_interface": intf_name,
+                            "expected_prefixlen": cidr_val,
+                            "link_type": "point_to_point" if cidr_val == 30 else "broadcast_lan"
                         }
                     ))
 
