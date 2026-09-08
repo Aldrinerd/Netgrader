@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Network Topology Discovery & Diagnostic Engine</title>
+    <title>Network Topology Discovery & Automated Evaluation Engine</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css?v=3.2">
 </head>
 <body class="dark-theme">
     <div class="app-layout">
@@ -17,98 +17,303 @@
                 <div class="brand-badge">FCPC CAPSTONE</div>
                 <h1 class="app-title">Network Configuration Evaluation & Topology Discovery Tool</h1>
             </div>
+
+            <!-- Main Mode Navigation Switcher -->
+            <nav class="main-mode-switcher" aria-label="Application Modes">
+                <button id="nav-mode-visualizer" class="mode-tab-btn active" data-mode="visualizer">
+                    <span class="mode-icon">⚡</span>
+                    <span class="mode-text">Topology Discovery</span>
+                </button>
+                <button id="nav-mode-teacher" class="mode-tab-btn" data-mode="teacher">
+                    <span class="mode-icon">👨‍🏫</span>
+                    <span class="mode-text">Instructor Studio</span>
+                </button>
+                <button id="nav-mode-student" class="mode-tab-btn" data-mode="student">
+                    <span class="mode-icon">👨‍🎓</span>
+                    <span class="mode-text">Student Grading</span>
+                </button>
+            </nav>
+
             <div class="nav-controls">
                 <div class="system-status-indicator">
                     <span class="status-dot pulsing"></span>
-                    <span class="status-label">Inference Engine: Active</span>
+                    <span class="status-label" id="engine-status-label">Inference Engine: Active</span>
                 </div>
-                <button id="reset-btn" class="btn btn-outline" title="Clear current analysis">Reset View</button>
+                <button id="reset-btn" class="btn btn-outline btn-sm" title="Clear current workspace">Reset View</button>
             </div>
         </header>
 
         <!-- Main Workspace -->
         <main class="workspace-grid">
-            <!-- Left Side: Ingestion & Controls -->
+            <!-- Left Side: Dynamic Control Panels according to Mode -->
             <section class="control-panel">
-                <!-- 1-Click Presentation Presets -->
-                <div class="panel-card presets-card">
-                    <div class="card-header">
-                        <span class="card-icon">⚡</span>
-                        <h3>Showcase Demo Scenarios</h3>
-                    </div>
-                    <p class="card-desc">Instantly load preconfigured lab bundles to demonstrate multi-signal inference and error detection during defense:</p>
-                    <div class="presets-list">
-                        {% for preset in presets %}
-                        <div class="preset-item" data-preset-id="{{ preset.id }}">
-                            <div class="preset-top">
-                                <span class="preset-name">{{ preset.name }}</span>
-                                <span class="badge badge-{{ preset.badge_color }}">{{ preset.badge }}</span>
+                
+                <!-- MODE 1: LIVE TOPOLOGY DISCOVERY & SHOWCASE SCENARIOS -->
+                <div id="panel-mode-visualizer" class="mode-panel active">
+                    <!-- 1-Click Presentation Presets -->
+                    <div class="panel-card presets-card">
+                        <div class="card-header">
+                            <span class="card-icon">⚡</span>
+                            <h3>Showcase Demo Scenarios</h3>
+                        </div>
+                        <p class="card-desc">Load preconfigured lab bundles to demonstrate multi-signal inference and error detection during defense:</p>
+                        <div class="presets-list">
+                            {% for preset in presets %}
+                            <div class="preset-item" data-preset-id="{{ preset.id }}">
+                                <div class="preset-top">
+                                    <span class="preset-name">{{ preset.name }}</span>
+                                    <span class="badge badge-{{ preset.badge_color }}">{{ preset.badge }}</span>
+                                </div>
+                                <p class="preset-description">{{ preset.description }}</p>
+                                <div class="preset-meta">
+                                    <span class="device-tag">💻 {{ preset.device_count }} Devices</span>
+                                    <span class="load-btn-text">Click to Run Analysis →</span>
+                                </div>
                             </div>
-                            <p class="preset-description">{{ preset.description }}</p>
-                            <div class="preset-meta">
-                                <span class="device-tag">💻 {{ preset.device_count }} Devices</span>
-                                <span class="load-btn-text">Click to Run Analysis →</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <!-- Custom Upload Area -->
+                    <div class="panel-card upload-card">
+                        <div class="card-header">
+                            <span class="card-icon">📂</span>
+                            <h3>Custom Lab Bundle Ingest</h3>
+                        </div>
+                        <p class="card-desc">Upload student <code>.txt</code> command outputs, <code>.pkt</code> / <code>.pka</code> / <code>.xml</code> Packet Tracer files, or <code>.zip</code> archives:</p>
+                        
+                        <div id="drop-zone" class="dropzone">
+                            <input type="file" id="file-input" multiple accept=".pkt,.pka,.xml,.zip,.txt,.log" style="display:none;">
+                            <div class="dropzone-content">
+                                <div class="upload-icon">📥</div>
+                                <p class="dropzone-text"><strong>Drag & Drop</strong> .pkt, .pka, .xml, or .zip files here</p>
+                                <span class="dropzone-hint">or <button id="browse-btn" class="link-btn" type="button">browse files</button> from device</span>
                             </div>
                         </div>
-                        {% endfor %}
+
+                        <div id="file-preview-list" class="file-preview-list" style="display: none;">
+                            <div class="preview-header">
+                                <span id="file-count">0 files selected</span>
+                                <button id="clear-files-btn" class="btn-text">Clear</button>
+                            </div>
+                            <ul id="selected-files-ul"></ul>
+                            <button id="analyze-btn" class="btn btn-primary btn-block">
+                                <span>Analyze Topology & Relational Rules</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Conflict Summary Counter -->
+                    <div class="panel-card conflict-summary-card" id="conflict-summary-card" style="display: none;">
+                        <div class="card-header">
+                            <span class="card-icon">⚠️</span>
+                            <h3>Relational Audit Findings</h3>
+                            <span id="conflict-badge-count" class="badge badge-red">0 Issues</span>
+                        </div>
+                        <div id="conflict-items-list" class="conflict-items-list">
+                            <!-- Populated by JS -->
+                        </div>
                     </div>
                 </div>
 
-                <!-- Custom Upload Area -->
-                <div class="panel-card upload-card">
-                    <div class="card-header">
-                        <span class="card-icon">📂</span>
-                        <h3>Custom Lab Bundle Ingest</h3>
+                <!-- MODE 2: INSTRUCTOR STUDIO (CREATE CRITERIA / INSTRUCTIONS.TXT) -->
+                <div id="panel-mode-teacher" class="mode-panel">
+                    <div class="panel-card teacher-authoring-card">
+                        <div class="card-header">
+                            <span class="card-icon">👨‍🏫</span>
+                            <h3>Author Lab Rubric & Instructions</h3>
+                            <span class="badge badge-blue">Teacher Studio</span>
+                        </div>
+                        <p class="card-desc">Upload a gold-standard reference Packet Tracer file (<code>.pkt</code> / <code>.xml</code>) or configuration bundle to auto-generate a student assignment instruction sheet and grading rubric:</p>
+                        
+                        <form id="teacher-gen-form" onsubmit="return false;">
+                            <div class="form-group">
+                                <label for="teacher-lab-title">Lab Assignment Title:</label>
+                                <input type="text" id="teacher-lab-title" class="form-input" value="CCNA Multi-Tier Topology & VLAN Lab" placeholder="e.g. OSPF Routing and Switching Lab">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="teacher-lab-desc">Objectives & Student Instructions:</label>
+                                <textarea id="teacher-lab-desc" class="form-textarea" rows="2" placeholder="Describe the lab objectives, required tasks, and deliverables for students..."></textarea>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="teacher-total-points">Total Possible Points:</label>
+                                <input type="number" id="teacher-total-points" class="form-input" value="100" min="10" max="1000">
+                            </div>
+
+                            <!-- Reference File Dropzone -->
+                            <div id="teacher-drop-zone" class="dropzone teacher-dropzone">
+                                <input type="file" id="teacher-file-input" multiple accept=".pkt,.pka,.xml,.zip,.txt" style="display:none;">
+                                <div class="dropzone-content">
+                                    <div class="upload-icon">📑</div>
+                                    <p class="dropzone-text"><strong>Upload Reference Packet Tracer / Config File</strong></p>
+                                    <span class="dropzone-hint">or <button id="teacher-browse-btn" class="link-btn" type="button">browse files</button></span>
+                                </div>
+                            </div>
+
+                            <div id="teacher-file-preview" class="file-preview-list" style="display: none;">
+                                <div class="preview-header">
+                                    <span id="teacher-file-name">0 files</span>
+                                    <button id="teacher-clear-btn" class="btn-text">Clear</button>
+                                </div>
+                                <ul id="teacher-files-ul"></ul>
+                            </div>
+
+                            <button id="teacher-generate-btn" class="btn btn-primary btn-block" style="margin-top: 12px;">
+                                <span>⚡ Generate Rubric & instructions.txt</span>
+                            </button>
+                        </form>
                     </div>
-                    <p class="card-desc">Upload student <code>.txt</code> command outputs, <code>.pkt</code> / <code>.pka</code> / <code>.xml</code> Packet Tracer files, or <code>.zip</code> archives:</p>
-                    
-                    <div id="drop-zone" class="dropzone">
-                        <input type="file" id="file-input" multiple accept=".pkt,.pka,.xml,.zip,.txt,.log" style="display:none;">
-                        <div class="dropzone-content">
-                            <div class="upload-icon">📥</div>
-                            <p class="dropzone-text"><strong>Drag & Drop</strong> .pkt, .pka, .xml, or .zip files here</p>
-                            <span class="dropzone-hint">or <button id="browse-btn" class="link-btn" type="button">browse files</button> from device</span>
+
+                    <!-- Teacher Output & Download Card -->
+                    <div class="panel-card teacher-result-card" id="teacher-result-card" style="display: none;">
+                        <div class="card-header">
+                            <span class="card-icon">✅</span>
+                            <h3>Generated Instructions Sheet</h3>
+                            <span id="teacher-rules-count-badge" class="badge badge-green">0 Rules</span>
+                        </div>
+                        <p class="card-desc">The student instructions and machine-verifiable evaluation specification have been generated:</p>
+                        
+                        <div class="instructions-preview-box">
+                            <pre id="teacher-instructions-preview"><code><!-- Generated instructions.txt content --></code></pre>
+                        </div>
+
+                        <div class="card-actions-row">
+                            <button id="teacher-download-btn" class="btn btn-primary btn-sm">
+                                <span>📥 Download instructions.txt</span>
+                            </button>
+                            <button id="teacher-copy-btn" class="btn btn-outline btn-sm">
+                                <span>📋 Copy to Clipboard</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MODE 3: STUDENT SUBMISSION & AUTOMATED GRADING -->
+                <div id="panel-mode-student" class="mode-panel">
+                    <!-- Step 1: Upload Instructions -->
+                    <div class="panel-card student-step-card">
+                        <div class="card-header">
+                            <span class="card-icon">1️⃣</span>
+                            <h3>Upload Teacher's Instructions</h3>
+                            <span id="student-inst-status" class="badge badge-amber">Required</span>
+                        </div>
+                        <p class="card-desc">Upload the <code>instructions.txt</code> provided by your instructor:</p>
+                        
+                        <div id="student-inst-drop-zone" class="dropzone student-dropzone">
+                            <input type="file" id="student-inst-input" accept=".txt,.json" style="display:none;">
+                            <div class="dropzone-content">
+                                <div class="upload-icon">📄</div>
+                                <p class="dropzone-text"><strong>Drag & Drop</strong> instructions.txt here</p>
+                                <span class="dropzone-hint">or <button id="student-inst-browse-btn" class="link-btn" type="button">browse file</button></span>
+                            </div>
+                        </div>
+                        <div id="student-inst-info" class="criteria-info-box" style="display: none;">
+                            <div class="criteria-info-title" id="criteria-lab-title">Lab Title</div>
+                            <div class="criteria-info-meta">
+                                <span id="criteria-points-tag">100 pts</span>
+                                <span id="criteria-rules-tag">0 checkpoints</span>
+                            </div>
                         </div>
                     </div>
 
-
-                    <div id="file-preview-list" class="file-preview-list" style="display: none;">
-                        <div class="preview-header">
-                            <span id="file-count">0 files selected</span>
-                            <button id="clear-files-btn" class="btn-text">Clear</button>
+                    <!-- Step 2: Upload Solution -->
+                    <div class="panel-card student-step-card">
+                        <div class="card-header">
+                            <span class="card-icon">2️⃣</span>
+                            <h3>Upload Your Solution</h3>
                         </div>
-                        <ul id="selected-files-ul"></ul>
-                        <button id="analyze-btn" class="btn btn-primary btn-block">
-                            <span>Analyze Topology & Relational Rules</span>
+                        <p class="card-desc">Upload your completed Packet Tracer (<code>.pkt</code> / <code>.xml</code>) or Cisco config bundle (<code>.zip</code> / <code>.txt</code>):</p>
+                        
+                        <div id="student-sub-drop-zone" class="dropzone student-dropzone">
+                            <input type="file" id="student-sub-input" multiple accept=".pkt,.pka,.xml,.zip,.txt,.log" style="display:none;">
+                            <div class="dropzone-content">
+                                <div class="upload-icon">📥</div>
+                                <p class="dropzone-text"><strong>Drag & Drop</strong> your completed lab files</p>
+                                <span class="dropzone-hint">or <button id="student-sub-browse-btn" class="link-btn" type="button">browse files</button></span>
+                            </div>
+                        </div>
+
+                        <div id="student-sub-preview" class="file-preview-list" style="display: none;">
+                            <div class="preview-header">
+                                <span id="student-sub-count">0 files selected</span>
+                                <button id="student-sub-clear-btn" class="btn-text">Clear</button>
+                            </div>
+                            <ul id="student-sub-files-ul"></ul>
+                        </div>
+
+                        <button id="student-evaluate-btn" class="btn btn-primary btn-block" style="margin-top: 12px;">
+                            <span>🚀 Submit & Evaluate Lab Assignment</span>
+                        </button>
+                    </div>
+
+                    <!-- Evaluation Scorecard Report -->
+                    <div class="panel-card student-report-card" id="student-report-card" style="display: none;">
+                        <div class="card-header">
+                            <span class="card-icon">🏆</span>
+                            <h3>Automated Evaluation Scorecard</h3>
+                        </div>
+
+                        <!-- Hero Score Banner -->
+                        <div class="score-hero">
+                            <div class="score-grade-badge" id="report-grade-letter">A</div>
+                            <div class="score-details">
+                                <div class="score-points">
+                                    <span id="report-earned-score">90.0</span> / <span id="report-max-score">100.0</span> <span class="score-unit">pts</span>
+                                </div>
+                                <div class="score-progress-bar">
+                                    <div id="report-progress-fill" class="score-progress-fill" style="width: 90%;"></div>
+                                </div>
+                                <div class="score-meta-counts">
+                                    <span class="badge badge-green" id="report-passed-tag">✅ 10 Passed</span>
+                                    <span class="badge badge-red" id="report-failed-tag">❌ 2 Failed</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Rule Filter Tabs -->
+                        <div class="report-filters-row">
+                            <button class="filter-chip active" data-filter="all">All (<span id="filter-count-all">0</span>)</button>
+                            <button class="filter-chip" data-filter="failed">Failed (<span id="filter-count-failed">0</span>)</button>
+                            <button class="filter-chip" data-filter="passed">Passed (<span id="filter-count-passed">0</span>)</button>
+                        </div>
+
+                        <!-- Itemized Checklist -->
+                        <div id="report-results-list" class="report-results-list">
+                            <!-- Populated by JS -->
+                        </div>
+
+                        <button id="student-download-report-btn" class="btn btn-outline btn-block" style="margin-top: 12px;">
+                            <span>📥 Download Grade Report (.txt)</span>
                         </button>
                     </div>
                 </div>
 
-                <!-- Conflict Summary Counter -->
-                <div class="panel-card conflict-summary-card" id="conflict-summary-card" style="display: none;">
-                    <div class="card-header">
-                        <span class="card-icon">⚠️</span>
-                        <h3>Relational Audit Findings</h3>
-                        <span id="conflict-badge-count" class="badge badge-red">0 Issues</span>
-                    </div>
-                    <div id="conflict-items-list" class="conflict-items-list">
-                        <!-- Populated by JS -->
-                    </div>
-                </div>
             </section>
 
             <!-- Center/Right: Interactive Topology Visualizer & Diagnostic Drawer -->
             <section class="visualizer-container">
                 <div class="visualizer-header">
                     <div class="canvas-controls">
-                        <span class="canvas-title">Interactive Topology Map</span>
+                        <span class="canvas-title" id="canvas-main-title">Topology Map</span>
                         <div class="graph-legend">
-                            <span class="legend-item"><span class="legend-dot green"></span> Verified Link (≥80%)</span>
-                            <span class="legend-item"><span class="legend-dot amber"></span> Inferred Link (40-79%)</span>
-                            <span class="legend-item"><span class="legend-dot red"></span> Conflict / Down Link</span>
+                            <span class="legend-item"><span class="legend-dot green"></span> Verified</span>
+                            <span class="legend-item"><span class="legend-dot amber"></span> Inferred</span>
+                            <span class="legend-item"><span class="legend-dot red"></span> Error</span>
                         </div>
                     </div>
                     <div class="canvas-actions">
+                        <div class="toggle-group">
+                            <button id="toggle-ports-btn" class="btn btn-sm toggle-btn active" title="Toggle Port Labels (Fa0/0, Gi0/1)">
+                                <span class="toggle-icon">🏷️</span>
+                                <span>Ports</span>
+                            </button>
+                            <button id="toggle-ips-btn" class="btn btn-sm toggle-btn" title="Toggle IP Address Labels">
+                                <span class="toggle-icon">🌐</span>
+                                <span>IP Addresses</span>
+                            </button>
+                        </div>
                         <button id="zoom-fit-btn" class="btn btn-sm btn-outline">Fit View</button>
                     </div>
                 </div>
@@ -117,13 +322,13 @@
                 <div class="canvas-viewport" id="canvas-viewport">
                     <div id="empty-state" class="empty-state">
                         <div class="empty-icon">🌐</div>
-                        <h3>No Network Loaded</h3>
-                        <p>Select a 1-Click Demo Scenario on the left or upload student Cisco .txt files to run multi-signal topology discovery.</p>
+                        <h3 id="empty-state-title">No Network Loaded</h3>
+                        <p id="empty-state-desc">Select a 1-Click Demo Scenario on the left, upload student Cisco files, or switch to Instructor Studio to author a new lab assignment.</p>
                     </div>
                     <svg id="topology-svg" class="topology-svg" width="100%" height="100%"></svg>
                 </div>
 
-                <!-- Bottom / Side Diagnostic & Evidence Drawer -->
+                <!-- Diagnostic & Evidence Drawer -->
                 <aside id="diagnostic-drawer" class="diagnostic-drawer" style="display: none;">
                     <div class="drawer-header">
                         <div class="drawer-title-group">
@@ -140,6 +345,9 @@
         </main>
     </div>
 
-    <script src="/static/js/app.js"></script>
+    <!-- Toast Notification Overlay -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <script src="/static/js/app.js?v=3.2"></script>
 </body>
 </html>

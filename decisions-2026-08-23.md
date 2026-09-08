@@ -1,7 +1,7 @@
-# Technical Decisions — 23 August 2026
+# Technical Decisions â 23 August 2026
 
 **Network Configuration Evaluation and Topology Discovery Tool**
-Group 1 — Peña, Owapin, Edem, Torres, Biglang-awa · First City Providential College
+Group 1 â PeÃ±a, Owapin, Edem, Torres, Biglang-awa Â· First City Providential College
 
 Ito ang talaan ng mga napagdesisyunan ngayong araw, kasama ang dahilan ng bawat isa.
 Ang buong technical detail ay nasa [technical-answers.md](technical-answers.md);
@@ -14,18 +14,18 @@ ang topology signals ay nasa [topology-discovery-signals.md](topology-discovery-
 | # | Tanong | Desisyon |
 |---|---|---|
 | 1 | Backend | **Python 3 + FastAPI** (Uvicorn) |
-| 2 | Frontend | **Jinja2 + sariling CSS + vanilla JS** — walang React/Vue |
-| 3 | Database | **Wala** — stateless request-response |
+| 2 | Frontend | **Jinja2 + sariling CSS + vanilla JS** â walang React/Vue |
+| 3 | Database | **Wala** â stateless request-response |
 | 4 | Input / parsing | **`.txt` bundle** ng show commands; **sariling parser**, hindi `.pkt` |
 | 5 | Topology | **Multi-signal inference** + confidence fusion + conflict detection |
-| 6 | Libraries | **Minimal** — FastAPI, Ollama, at networkx (kondisyonal) |
+| 6 | Libraries | **Minimal** â FastAPI, Ollama, at networkx (kondisyonal) |
 | 7 | Hosting | **Local lab server, buong offline** |
-| — | AI | **Lokal na Llama 3.2 3B** via Ollama, few-shot; fine-tune as Phase 2 |
-| — | Output | **On-screen + CSV** — walang PDF |
+| â | AI | **Lokal na Llama 3.2 3B** via Ollama, few-shot; fine-tune as Phase 2 |
+| â | Output | **On-screen + CSV** â walang PDF |
 
 ---
 
-## 1. Backend — Python 3 + FastAPI
+## 1. Backend â Python 3 + FastAPI
 
 Locked ng paper: *"a web-based monitoring system that is driven by Python"* (Ch. I,
 Significance). Python-exclusive din ang mga Cisco parsing tool.
@@ -37,7 +37,7 @@ docs sa `/docs` (libreng API documentation para sa Ch. III SRS section), at
 
 ---
 
-## 2. Frontend — Jinja2 + sariling CSS + vanilla JS
+## 2. Frontend â Jinja2 + sariling CSS + vanilla JS
 
 Walang React/Vue, walang npm, walang build step. Server-rendered Jinja2 (kasama na ng
 FastAPI) para sa display pages, plain `fetch()` para sa interactive fragments.
@@ -47,12 +47,12 @@ HTML/CSS/JS. Ang React ay magdadagdag ng toolchain para sa zero benefit.
 
 ---
 
-## 3. Database — WALA
+## 3. Database â WALA
 
-Stateless: upload → parse in-memory → evaluate → render → CSV export. Walang accounts,
+Stateless: upload â parse in-memory â evaluate â render â CSV export. Walang accounts,
 walang session storage, walang persistence.
 
-**Dahilan:** sumusunod sa Figure 1 paradigm — isang linear na daloy. Walang aktwal na
+**Dahilan:** sumusunod sa Figure 1 paradigm â isang linear na daloy. Walang aktwal na
 kailangang itago; ang CSV na kinukuha ng instructor ang "storage," sa labas ng system.
 
 **Bonus:** pinakamalinis na sagot sa RA 10173 (Data Privacy Act). Walang database =
@@ -65,7 +65,7 @@ walang data breach surface.
 ### `.txt` bundle, hindi `.pkt`
 
 Ang `.pkt` ay proprietary, compressed binary. Ang reverse-engineering nito ay nagbabago
-kada Packet Tracer version — hindi matibay na foundation para sa capstone (audit R4-3).
+kada Packet Tracer version â hindi matibay na foundation para sa capstone (audit R4-3).
 
 ### Ang bundle kada device
 
@@ -93,7 +93,7 @@ show spanning-tree
 show version
 ```
 
-**PC / End device** — Packet Tracer: *Desktop → Command Prompt*
+**PC / End device** â Packet Tracer: *Desktop â Command Prompt*
 ```
 ipconfig /all
 arp -a
@@ -104,17 +104,17 @@ arp -a
 
 ### Praktikal na detalye
 
-- `terminal length 0` muna — kung hindi, puputulin ng `--More--` ang output
-- **Huwag tanggalin ang prompt at command echo** — ito ang magiging delimiter ng parser:
+- `terminal length 0` muna â kung hindi, puputulin ng `--More--` ang output
+- **Huwag tanggalin ang prompt at command echo** â ito ang magiging delimiter ng parser:
   `re.compile(r"^(\S+)#(show .+)$", re.M)`
 - Naming: `ACTIVITY_STUDENTID_DEVICE.txt`, o isang ZIP per estudyante
-- Limitado ang scrollback buffer ng PT CLI — i-run isa-isa, i-copy agad
-- May validation gate na nagre-reject ng malformed submission **bago** mag-grade —
+- Limitado ang scrollback buffer ng PT CLI â i-run isa-isa, i-copy agad
+- May validation gate na nagre-reject ng malformed submission **bago** mag-grade â
   kailanman ay hindi silent zero (fairness, audit R4-4)
 
 ### Sariling parser, hindi `ciscoconfparse2`
 
-Ang core nito ay indentation-based block splitting — mga 150 linya kasama ang banner
+Ang core nito ay indentation-based block splitting â mga 150 linya kasama ang banner
 handling.
 
 **Dahilan (hindi LOC ang pangunahin):** sabi ng audit sa F-2, ang **semantic
@@ -128,7 +128,7 @@ i-parse.
 
 ---
 
-## 5. Topology Discovery — multi-signal inference
+## 5. Topology Discovery â multi-signal inference
 
 Hindi isang technique. Higit **tatlumpung signal**, pinagsasama sa confidence weighting.
 
@@ -138,18 +138,18 @@ Hindi isang technique. Higit **tatlumpung signal**, pinagsasama sa confidence we
 |---|---|
 | **Serial DCE clock rate** | Ang `clock rate 64000` ay nasa isang dulo lang. May clock rate + katapat na wala, parehong subnet = kumpirmadong serial pair |
 | **PPP CHAP username** | Ang `username R2 password cisco` sa R1 ay literal na pangalan ng katapat |
-| **HSRP / VRRP group** | Parehong `standby 1 ip ...` = **kinakailangang** iisang broadcast domain. Hindi inference — physics |
+| **HSRP / VRRP group** | Parehong `standby 1 ip ...` = **kinakailangang** iisang broadcast domain. Hindi inference â physics |
 | **Router-on-a-stick** | `encapsulation dot1Q 10` = may trunk papunta sa switch na may VLAN 10 |
 | **Port security static MAC** | Literal na MAC ng naka-attach na end device |
-| **Duplicate IP** | Walang iisang device ang makakaalam — purong cross-file finding |
+| **Duplicate IP** | Walang iisang device ang makakaalam â purong cross-file finding |
 
 ### Ang tatlong sumisira sa "hard ceiling" ng R4-2
 
-1. **`show ip interface brief`** — tamang config pero `down/down` = **cabling error o
+1. **`show ip interface brief`** â tamang config pero `down/down` = **cabling error o
    missing `no shutdown`.** Ito ang sagot sa *"cabling errors are undetectable."*
-2. **`show mac address-table`** — port na may maraming MAC = uplink; isang MAC = end
+2. **`show mac address-table`** â port na may maraming MAC = uplink; isang MAC = end
    device. Klasikong L2 topology algorithm.
-3. **`show spanning-tree`** — nagbubunyag ng **blocked ports**, mga link na umiiral pero
+3. **`show spanning-tree`** â nagbubunyag ng **blocked ports**, mga link na umiiral pero
    hindi ginagamit. Invisible sa L3 inference.
 
 ### Confidence-weighted fusion
@@ -169,11 +169,11 @@ def edge_confidence(signals):
     return 1 - p
 ```
 
-`≥0.80` verified · `0.40–0.79` inferred (dashed) · `<0.40` itinatapon pero nila-log.
+`â¥0.80` verified Â· `0.40â0.79` inferred (dashed) Â· `<0.40` itinatapon pero nila-log.
 
-### Conflict detection — ang pinakamahalagang bahagi
+### Conflict detection â ang pinakamahalagang bahagi
 
-Kapag **hindi** magkasundo ang mga signal, **hindi iyon failure ng system — iyon ang
+Kapag **hindi** magkasundo ang mga signal, **hindi iyon failure ng system â iyon ang
 detected error.** Ito ang sagot sa *"paano kung mali ang inference mo?"*
 
 | Salungatan | Ibig sabihin |
@@ -194,14 +194,14 @@ L4 SERVICE   : DHCP, NTP, syslog, AAA
 
 ---
 
-## 6. Libraries — pinaliit
+## 6. Libraries â pinaliit
 
 ### Ang natitira
 
 ```
 fastapi          # kasama na ang Jinja2 + Pydantic
 uvicorn          # server
-networkx         # KUNG gagawin ang F-11 — tingnan ang open items
+networkx         # KUNG gagawin ang F-11 â tingnan ang open items
 ollama           # runtime, hindi pip package
 ```
 
@@ -209,8 +209,8 @@ Stdlib: `ipaddress`, `csv`, `re`, `json`
 
 ### Ano ang tinanggal at bakit
 
-**matplotlib — tinanggal.** ~50MB kasama ang numpy, para sa pagguhit ng bilog at linya
-sa 3–10 node. Ang SVG ay text lang:
+**matplotlib â tinanggal.** ~50MB kasama ang numpy, para sa pagguhit ng bilog at linya
+sa 3â10 node. Ang SVG ay text lang:
 
 ```python
 f'<line class="{cls}" x1="{l.x1}" y1="{l.y1}" x2="{l.x2}" y2="{l.y2}"/>'
@@ -218,26 +218,26 @@ f'<circle cx="{n.x}" cy="{n.y}" r="26"/>'
 ```
 
 **Mas maganda pa ang resulta.** Ang matplotlib ay naglalabas ng magulong path-based SVG
-na halos hindi ma-style. Ang hand-written ay may `class` at `data-host` attributes —
+na halos hindi ma-style. Ang hand-written ay may `class` at `data-host` attributes â
 kaya mong i-highlight ang error links at gawing interactive gamit ang CSS/JS.
 
 **Layout:** hindi kailangan ng `spring_layout`. Alam mo na ang device role, kaya
-**tiered layout** — routers sa taas, switches sa gitna, hosts sa baba. ~8 linya,
+**tiered layout** â routers sa taas, switches sa gitna, hosts sa baba. ~8 linya,
 deterministic, at mas mukhang totoong network diagram.
 
-**ciscoconfparse2 — tinanggal.** Tingnan ang §4.
+**ciscoconfparse2 â tinanggal.** Tingnan ang Â§4.
 
-**WeasyPrint / PDF — tinanggal.** Walang PDF report. On-screen + CSV.
+**WeasyPrint / PDF â tinanggal.** Walang PDF report. On-screen + CSV.
 
 ### Presyo ng desisyong ito
 
-Mga **200–250 linya** ng dagdag na code, **3–5 araw**. Kapalit: walang version
+Mga **200â250 linya** ng dagdag na code, **3â5 araw**. Kapalit: walang version
 breakage sa gitna ng defense season, mas magandang topology rendering, at ang system
-ay ginawa mo talaga — hindi glue code sa paligid ng apat na library.
+ay ginawa mo talaga â hindi glue code sa paligid ng apat na library.
 
 ---
 
-## 7. Hosting — local lab server, buong offline
+## 7. Hosting â local lab server, buong offline
 
 LAN-only (`http://192.168.x.x:8000`). **Walang internet na kailangan kahit kailan.**
 
@@ -246,12 +246,12 @@ Sinasara nito nang sabay ang tatlong objection ng audit:
 
 | Objection | Nasosolusyunan |
 |---|---|
-| RA 10173 — student work papuntang third-party API | Walang lumalabas na data |
+| RA 10173 â student work papuntang third-party API | Walang lumalabas na data |
 | *"a lab where the network may be the thing under test"* | Buong offline |
 | API cost, rate limits, model deprecation | Zero recurring cost |
 
-**Ang linya para sa panel:** *"Ang buong pipeline — parsing, topology discovery,
-scoring, at feedback generation — ay tumatakbo sa loob ng lab machine. Ang tool ay
+**Ang linya para sa panel:** *"Ang buong pipeline â parsing, topology discovery,
+scoring, at feedback generation â ay tumatakbo sa loob ng lab machine. Ang tool ay
 gumagana kahit ang network mismo ang bagay na sinusuri."*
 
 **Hardware:** isang lab PC na may 8GB RAM. Ang 3B model na Q4-quantized ay ~2GB,
@@ -259,17 +259,17 @@ kayang patakbuhin ng CPU.
 
 ---
 
-## Ang AI layer — lokal, at hindi humahawak ng grado
+## Ang AI layer â lokal, at hindi humahawak ng grado
 
 ### Ang hangganan (audit R4-1)
 
 ```
-[1] PARSER           → normalised config model      (deterministic)
-[2] NORMALISER       → semantic equivalence         (deterministic)
-[3] TOPOLOGY BUILDER → multi-layer graph            (deterministic)
-[4] RULE ENGINE      → SCORE + evidence line numbers
+[1] PARSER           â normalised config model      (deterministic)
+[2] NORMALISER       â semantic equivalence         (deterministic)
+[3] TOPOLOGY BUILDER â multi-layer graph            (deterministic)
+[4] RULE ENGINE      â SCORE + evidence line numbers
                        *** DITO NAGDEDESISYON ANG SCORE. TAPOS. ***
-[5] EXPLANATION      → lokal na LLM: wording lang
+[5] EXPLANATION      â lokal na LLM: wording lang
                        *** HINDI KAYANG BAGUHIN ANG SCORE. ***
 ```
 
@@ -280,9 +280,9 @@ rule engine para sa **accuracy** at **consistency of grading**; ang LLM layer pa
 At sinasagot nito ang apat na objection sa pure-LLM grading: non-determinism,
 hallucination, walang audit trail para sa appeals, at data privacy.
 
-### Phase 1 — ngayon: few-shot
+### Phase 1 â ngayon: few-shot
 
-Llama 3.2 3B (o Qwen2.5 3B) sa **Ollama**, 15–20 halimbawa sa prompt. Ang input ay
+Llama 3.2 3B (o Qwen2.5 3B) sa **Ollama**, 15â20 halimbawa sa prompt. Ang input ay
 structured JSON mula sa rule engine, hindi raw config:
 
 ```json
@@ -294,29 +294,29 @@ structured JSON mula sa rule engine, hindi raw config:
 **Fallback:** template-based feedback kapag hindi available ang model. Deterministic,
 instant, at maayos naman talaga.
 
-### Phase 2 — nakaplano: fine-tuning
+### Phase 2 â nakaplano: fine-tuning
 
 | Bagay | Detalye |
 |---|---|
 | Method | QLoRA via Unsloth |
 | Base | Parehong 3B model |
-| Dataset | 300–500 pairs — **ang few-shot examples ang simula nito** |
-| Hardware | **Kaggle free tier** (2× T4, 30 oras/linggo) |
+| Dataset | 300â500 pairs â **ang few-shot examples ang simula nito** |
+| Hardware | **Kaggle free tier** (2Ã T4, 30 oras/linggo) |
 | Training time | **~30 minuto** (3B, 500 examples, 3 epochs) |
-| Inference | Parehong Ollama — walang pagbabago sa app |
+| Inference | Parehong Ollama â walang pagbabago sa app |
 
 **Mahalagang hardware note:** ang **RX 6600 (`gfx1032`) ay hindi magagamit sa training**
-— hindi ito nasa official ROCm support list, at CUDA-only ang Unsloth. Kaya **cloud ang
+â hindi ito nasa official ROCm support list, at CUDA-only ang Unsloth. Kaya **cloud ang
 training, lokal ang inference.** Buo pa rin ang offline claim ng deployed system.
 
-**Ang totoong timeline:** ~30 minuto ang training, pero **2–3 linggo ang paggawa ng
-dataset.** Hindi GPU ang bottleneck. Kaya few-shot muna — walang nasasayang kasi ang
+**Ang totoong timeline:** ~30 minuto ang training, pero **2â3 linggo ang paggawa ng
+dataset.** Hindi GPU ang bottleneck. Kaya few-shot muna â walang nasasayang kasi ang
 mga halimbawa ay training data mismo.
 
 ### Ang Chapter IV finding na binubuksan nito
 
-Tatlong bersyon ng feedback para sa parehong findings — (a) base model, (b) fine-tuned,
-(c) sulat ng instructor — irarate ng mga instructor nang **blind** sa clarity,
+Tatlong bersyon ng feedback para sa parehong findings â (a) base model, (b) fine-tuned,
+(c) sulat ng instructor â irarate ng mga instructor nang **blind** sa clarity,
 correctness, at pedagogical usefulness.
 
 Ito ang **unang aktwal na paraan** para masukat ang *"reliability of generated
@@ -324,7 +324,7 @@ feedback"* na RQ. Wala pang ibang mekanismo para doon sa ngayon.
 
 ---
 
-## Output — on-screen + CSV
+## Output â on-screen + CSV
 
 Walang PDF. Ang bawat resulta ay on-screen; ang batch ay CSV via `csv` stdlib.
 
@@ -334,12 +334,12 @@ writer.writerow([student_id, activity, score, missed_count])
 
 **Dahilan:** ang problema sa Ch. I ay *"manual checking for large batches."* Kung
 on-screen lang at walang maiuuwi, babalik ang mismong problema. Ang CSV ay bubuksan sa
-Excel at direktang papasok sa gradebook — walang layout engine, walang bagong
+Excel at direktang papasok sa gradebook â walang layout engine, walang bagong
 dependency.
 
 ---
 
-## Mga bukas pa — kailangang desisyunan
+## Mga bukas pa â kailangang desisyunan
 
 | # | Item | Bakit mahalaga |
 |---|---|---|
@@ -358,15 +358,15 @@ Ang mga desisyon sa itaas ay sumasagot sa **R4-1** (architecture contradiction),
 
 | ID | Finding | Status |
 |---|---|---|
-| **C-1** | Figure 1 (LLM) vs. Chapter II (rule-based) — magkasalungat | ⚠️ Nasagot na sa arkitektura; **kailangan pang isulat sa paper** |
-| **C-2** | Hindi nabanggit ang **Packet Tracer Activity Wizard / Activity Grader** — libre, Cisco-native, nasa loob mismo ng ginagamit na tool | ❌ Bukas. Ito ang *"why does this need to exist?"* sa pinaka-mapanganib na anyo |
-| **C-3** | Ang buong problem statement ay nakasandal sa isang pangungusap: *"According to local observations..."* — walang time data, walang grade variance, walang survey | ❌ Bukas. Sabi ng audit, ito ang **highest-value work available** — puwedeng simulan ngayon |
-| — | Framework naming: **"IDE"** (line 23) vs **"DIE"** (line 71) vs **"D.I.E."** (criteria.md) | ❌ Madaling ayusin. Piliin ang **D.I.E. — Development, Implementation, Evaluation** |
-| — | Scope: sinasabing qualitative pero apat na quantitative ang tanong | ❌ Bukas |
-| — | Significance section: mukhang ibang project ang inilalarawan | ❌ Bukas |
+| **C-1** | Figure 1 (LLM) vs. Chapter II (rule-based) â magkasalungat | â ï¸ Nasagot na sa arkitektura; **kailangan pang isulat sa paper** |
+| **C-2** | Hindi nabanggit ang **Packet Tracer Activity Wizard / Activity Grader** â libre, Cisco-native, nasa loob mismo ng ginagamit na tool | â Bukas. Ito ang *"why does this need to exist?"* sa pinaka-mapanganib na anyo |
+| **C-3** | Ang buong problem statement ay nakasandal sa isang pangungusap: *"According to local observations..."* â walang time data, walang grade variance, walang survey | â Bukas. Sabi ng audit, ito ang **highest-value work available** â puwedeng simulan ngayon |
+| â | Framework naming: **"IDE"** (line 23) vs **"DIE"** (line 71) vs **"D.I.E."** (criteria.md) | â Madaling ayusin. Piliin ang **D.I.E. â Development, Implementation, Evaluation** |
+| â | Scope: sinasabing qualitative pero apat na quantitative ang tanong | â Bukas |
+| â | Significance section: mukhang ibang project ang inilalarawan | â Bukas |
 
 **Sagot sa C-2** (may sagot ka, kailangan lang isulat): ang Activity Wizard ay
-**exact-match grading** — bumabagsak ito sa mga configuration na *functionally correct
+**exact-match grading** â bumabagsak ito sa mga configuration na *functionally correct
 pero magkaibang syntax*. Iyon mismo ang gap na tinutukoy ng Chapter I mo:
 *"student configuration outputs that, while functionally correct, may vary in syntax."*
 Ang normalisation engine (F-2) ang tugon doon. Wala ring cross-device topology-aware

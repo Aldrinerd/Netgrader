@@ -113,3 +113,21 @@ def test_parsed_device_coordinates_and_cable_type():
     assert link.cable_type == "eCrossOver"
     assert link.confidence == 1.0
 
+
+def test_evaluation_policies_defaults():
+    from src.models import EvaluationPolicies, EvaluationCriteria
+    policies = EvaluationPolicies()
+    assert policies.allow_dynamic_subnetting is False
+    assert policies.enforce_prefix_length is True
+    assert policies.verify_default_gateways is True
+    assert policies.allow_custom_hostnames is False
+    assert policies.strict_port_matching is True
+    assert policies.strict_cable_type is True
+    assert policies.allow_flexible_process_ids is True
+    assert policies.grade_security_baseline is False
+    assert policies.grade_interface_descriptions is False
+
+    crit = EvaluationCriteria(lab_title="Test Lab", lab_description="Desc", policies=policies)
+    assert crit.policies.allow_dynamic_subnetting is False
+    assert crit.policies.enforce_prefix_length is True
+

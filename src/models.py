@@ -94,3 +94,76 @@ class TopologyResult(BaseModel):
     devices: dict[str, ParsedDevice] = Field(default_factory=dict)
     links: list[DiscoveredLink] = Field(default_factory=list)
     conflicts: list[ConflictIssue] = Field(default_factory=list)
+
+
+# --- Evaluation & Grading Models ---
+class EvaluationPolicies(BaseModel):
+    # IP & Subnetting Policies
+    allow_dynamic_subnetting: bool = False      # If True: verifies mutual subnet matching, CIDR & uniqueness rather than exact IP
+    enforce_prefix_length: bool = True          # If True: requires student's custom subnet to match required CIDR (e.g. /30 for P2P, /24 for LAN)
+    verify_default_gateways: bool = True        # If True: verifies PCs/Switches have default gateway matching connected router subnet
+
+    # Topology & Hardware Policies
+    allow_custom_hostnames: bool = False        # If True: matches devices by type, topological role, and neighbor links
+    strict_port_matching: bool = True           # If False: allows equivalent interfaces of same speed class
+    strict_cable_type: bool = True              # If False: allows Auto-MDIX copper equivalence (Straight-Through vs Cross-Over)
+
+    # Routing, Security & Documentation Policies
+    allow_flexible_process_ids: bool = True     # If True: ignores locally-significant OSPF/EIGRP process IDs; checks Area & networks
+    grade_security_baseline: bool = False       # If True: checks 'enable secret', 'service password-encryption', 'line vty'
+    grade_interface_descriptions: bool = False  # If True: checks descriptive interface labels matching peer
+
+
+class EvaluationRule(BaseModel):
+    rule_id: str
+    category: Literal[
+        "device",
+        "interface_ip",
+        "relational_subnet",
+        "interface_status",
+        "cabling",
+        "vlan_trunk",
+        "routing",
+        "security_baseline",
+        "interface_description"
+    ]
+    description: str
+    points: float = 10.0
+    target_device: str
+    target_interface: str | None = None
+    expected_value: dict | str | int | float | None = None
+
+
+class EvaluationCriteria(BaseModel):
+    lab_title: str = "Packet Tracer Lab Assignment"
+    lab_description: str = ""
+    total_points: float = 100.0
+    policies: EvaluationPolicies = Field(default_factory=EvaluationPolicies)
+    rules: list[EvaluationRule] = Field(default_factory=list)
+    reference_summary: dict = Field(default_factory=dict)
+
+
+class RuleResult(BaseModel):
+    rule_id: str
+    category: str
+    description: str
+    points_possible: float
+    points_earned: float
+    passed: bool
+    actual_value: str | None = None
+    feedback: str
+    target_device: str
+    target_interface: str | None = None
+
+
+class EvaluationReport(BaseModel):
+    lab_title: str
+    total_score: float
+    max_score: float
+    percentage: float
+    passed_count: int
+    failed_count: int
+    grade_letter: str
+    results: list[RuleResult] = Field(default_factory=list)
+    topology: TopologyResult
+

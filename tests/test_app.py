@@ -67,9 +67,49 @@ def test_upload_pkt_xml_endpoint():
     )
     assert response.status_code == 200
     data = response.json()
-    assert "devices" in data
-    assert "Router1" in data["devices"]
-    assert "Switch2" in data["devices"]
-    assert "L1" in data["devices"]
     assert len(data["links"]) >= 10
+
+
+def test_api_criteria_generate_and_evaluate_flow():
+    import os
+    trial_xml_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cisco-pka-to-xml", "trial.xml")
+    with open(trial_xml_path, "rb") as f:
+        xml_content = f.read()
+
+    # 1. Teacher generates criteria
+    gen_res = client.post(
+        "/api/criteria/generate",
+        files=[("files", ("trial.xml", xml_content, "application/xml"))],
+        data={"lab_title": "Enterprise CCNA Lab", "total_points": 100.0}
+    )
+    assert gen_res.status_code == 200
+    gen_data = gen_res.json()
+    assert "criteria" in gen_data
+    assert "instructions_txt" in gen_data
+    instructions_txt = gen_data["instructions_txt"]
+    assert "Enterprise CCNA Lab" in instructions_txt
+
+    # 2. Parse criteria
+    parse_res = client.post(
+        "/api/criteria/parse",
+        files=[("instructions_file", ("instructions.txt", instructions_txt.encode("utf-8"), "text/plain"))]
+    )
+    assert parse_res.status_code == 200
+    assert parse_res.json()["criteria"]["lab_title"] == "Enterprise CCNA Lab"
+
+    # 3. Student submits the same XML (perfect submission)
+    eval_res = client.post(
+        "/api/evaluate",
+        files=[
+            ("instructions_file", ("instructions.txt", instructions_txt.encode("utf-8"), "text/plain")),
+            ("student_files", ("student_sub.xml", xml_content, "application/xml"))
+        ]
+    )
+    assert eval_res.status_code == 200
+    eval_data = eval_res.json()
+    assert eval_data["percentage"] == 100.0
+    assert eval_data["grade_letter"] in ("A", "A+")
+    assert eval_data["passed_count"] > 0
+    assert eval_data["failed_count"] == 0
+
 

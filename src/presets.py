@@ -31,8 +31,18 @@ PRESETS_CATALOG = [
         "description": "SW1 and SW2 connected via 802.1Q trunk, but Native VLANs are mismatched (VLAN 1 vs VLAN 99) causing VLAN hopping and loop risk.",
         "device_count": 2,
         "highlight": "Demonstrates Layer 2 topology inference (CDP + Trunk + MAC tables) and cross-switch native VLAN disparity auditing."
+    },
+    {
+        "id": "pkt_trial",
+        "name": "Scenario 4: Packet Tracer Multi-Tier Network (.xml)",
+        "badge": "PT Ground Truth",
+        "badge_color": "green",
+        "description": "7 Routers, 2 Switches, and 2 Laptops directly extracted from Packet Tracer XML with authoritative cabling, models, and exact canvas coordinates.",
+        "device_count": 11,
+        "highlight": "Demonstrates direct Packet Tracer XML ingestion, exact canvas layout, and end-device host IP extraction."
     }
 ]
+
 
 PRESET_FILES = {
     "ospf_clean": {

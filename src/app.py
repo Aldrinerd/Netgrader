@@ -3,22 +3,34 @@ import io
 import os
 import zipfile
 from typing import Annotated
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from src.conflict_detector import detect_conflicts
+from src.criteria_generator import (
+    format_criteria_to_instructions_txt,
+    generate_criteria_from_topology,
+    parse_instructions_txt,
+)
+from src.evaluator import evaluate_student_submission
 from src.fusion_engine import infer_topology_links
-from src.models import DiscoveredLink, ParsedDevice, TopologyResult
+from src.models import (
+    DiscoveredLink,
+    EvaluationCriteria,
+    EvaluationReport,
+    ParsedDevice,
+    TopologyResult,
+)
 from src.parsers import parse_device_bundle
 from src.pkt_parser import parse_pkt_file
 from src.presets import get_available_presets, load_preset
 
 app = FastAPI(
     title="Network Configuration Evaluation & Topology Discovery Tool",
-    description="Multi-signal network topology discovery and relational configuration validator",
-    version="1.0.0"
+    description="Multi-signal network topology discovery, criteria generation, and automated student lab evaluation engine",
+    version="2.0.0"
 )
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -32,6 +44,7 @@ os.makedirs(TEMPLATES_DIR, exist_ok=True)
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
+
 
 def process_bundle_dict(files_dict: dict[str, str]) -> TopologyResult:
     """Parses a dictionary of {filename: text_content} into a TopologyResult."""
@@ -53,30 +66,9 @@ def process_bundle_dict(files_dict: dict[str, str]) -> TopologyResult:
         conflicts=detected_conflicts
     )
 
-@app.get("/", response_class=HTMLResponse)
-async def index_page(request: Request):
-    presets = get_available_presets()
-    return templates.TemplateResponse(
-        request=request,
-        name="index.html",
-        context={"presets": presets}
-    )
 
-@app.get("/api/presets")
-async def api_get_presets():
-    return get_available_presets()
-
-@app.get("/api/presets/{preset_id}", response_model=TopologyResult)
-async def api_load_preset(preset_id: str):
-    try:
-        files_dict = load_preset(preset_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    
-    return process_bundle_dict(files_dict)
-
-@app.post("/api/analyze", response_model=TopologyResult)
-async def api_analyze_upload(files: list[UploadFile] = File(...)):
+async def parse_uploaded_files_to_topology(files: list[UploadFile]) -> TopologyResult:
+    """Helper that parses a list of UploadFile objects (.pkt, .xml, .zip, .txt) into a TopologyResult."""
     files_dict: dict[str, str] = {}
     pkt_files: list[tuple[str, bytes]] = []
 
@@ -85,7 +77,7 @@ async def api_analyze_upload(files: list[UploadFile] = File(...)):
         contents = await upload.read()
         lower_name = filename.lower()
 
-        # Check for Packet Tracer file formats (.pkt, .pka, .xml or XML content)
+        # Check for Packet Tracer file formats (.pkt, .pka, .xml)
         if lower_name.endswith((".pkt", ".pka", ".xml")):
             pkt_files.append((filename, contents))
             continue
@@ -140,3 +132,117 @@ async def api_analyze_upload(files: list[UploadFile] = File(...)):
     # Otherwise fallback to standard text bundle processor
     return process_bundle_dict(files_dict)
 
+
+@app.get("/", response_class=HTMLResponse)
+async def index_page(request: Request):
+    presets = get_available_presets()
+    return templates.TemplateResponse(
+        request=request,
+        name="index.html",
+        context={"presets": presets}
+    )
+
+
+@app.get("/api/presets")
+async def api_get_presets():
+    return get_available_presets()
+
+
+@app.get("/api/presets/{preset_id}", response_model=TopologyResult)
+async def api_load_preset(preset_id: str):
+    if preset_id == "pkt_trial":
+        trial_xml_path = os.path.join(BASE_DIR, "cisco-pka-to-xml", "trial.xml")
+        if os.path.exists(trial_xml_path):
+            with open(trial_xml_path, "rb") as f:
+                devs, lnks = parse_pkt_file(f.read(), filename="trial.xml")
+            conflicts = detect_conflicts(devs, lnks)
+            return TopologyResult(devices=devs, links=lnks, conflicts=conflicts)
+    try:
+        files_dict = load_preset(preset_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    
+    return process_bundle_dict(files_dict)
+
+
+@app.post("/api/analyze", response_model=TopologyResult)
+async def api_analyze_upload(files: list[UploadFile] = File(...)):
+    return await parse_uploaded_files_to_topology(files)
+
+
+# --- Teacher Mode: Criteria & Instructions Generator Endpoints ---
+
+@app.post("/api/criteria/generate")
+async def api_generate_criteria(
+    files: list[UploadFile] = File(...),
+    lab_title: str = Form("Packet Tracer Lab Assignment"),
+    lab_description: str = Form(""),
+    total_points: float = Form(100.0)
+):
+    """
+    Teacher Studio: Ingests an instructor's reference Packet Tracer file (.pkt/.xml)
+    or gold-standard configuration bundle, extracts grading rules, and generates instructions.txt.
+    """
+    topology = await parse_uploaded_files_to_topology(files)
+    if not topology.devices:
+        raise HTTPException(status_code=400, detail="No valid device configurations or topology discovered from reference file.")
+
+    criteria = generate_criteria_from_topology(
+        topology=topology,
+        lab_title=lab_title,
+        lab_description=lab_description,
+        target_total_points=total_points
+    )
+    instructions_txt = format_criteria_to_instructions_txt(criteria)
+
+    return {
+        "criteria": criteria,
+        "instructions_txt": instructions_txt,
+        "topology": topology
+    }
+
+
+@app.post("/api/criteria/parse")
+async def api_parse_criteria(instructions_file: UploadFile = File(...)):
+    """
+    Parses a student-provided instructions.txt or criteria file to extract rubric specification.
+    """
+    content_bytes = await instructions_file.read()
+    content = content_bytes.decode("utf-8", errors="replace")
+    try:
+        criteria = parse_instructions_txt(content)
+        return {
+            "criteria": criteria,
+            "raw_text": content
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# --- Student Mode: Automated Evaluation Endpoint ---
+
+@app.post("/api/evaluate", response_model=EvaluationReport)
+async def api_evaluate_student_submission(
+    instructions_file: UploadFile = File(...),
+    student_files: list[UploadFile] = File(...)
+):
+    """
+    Student Portal: Evaluates student's Packet Tracer file or configuration files against
+    the instructor's instructions.txt / criteria rubric.
+    """
+    # 1. Parse instructions.txt
+    inst_bytes = await instructions_file.read()
+    inst_content = inst_bytes.decode("utf-8", errors="replace")
+    try:
+        criteria = parse_instructions_txt(inst_content)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid Instructions File: {str(e)}")
+
+    # 2. Parse student submission
+    student_topology = await parse_uploaded_files_to_topology(student_files)
+    if not student_topology.devices:
+        raise HTTPException(status_code=400, detail="No device configurations or topology found in student submission files.")
+
+    # 3. Run automated grading
+    report = evaluate_student_submission(criteria, student_topology)
+    return report

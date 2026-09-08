@@ -87,20 +87,35 @@ def parse_pkt_xml(xml_content: str | bytes, filename: str = "topology.xml") -> T
             type_str = type_elem.text.strip() if (type_elem is not None and type_elem.text) else ""
             model_attr = type_elem.attrib.get("model", "") if type_elem is not None else ""
 
-            # Coordinates
+            # Coordinates from <WORKSPACE><LOGICAL><X> and <Y>
             x_coord = None
             y_coord = None
-            coord_elem = dev_elem.find(".//COORD_SETTINGS")
-            if coord_elem is not None:
+            log_elem = dev_elem.find(".//LOGICAL")
+            if log_elem is not None:
                 try:
-                    x_txt = coord_elem.find("X_COORD")
-                    y_txt = coord_elem.find("Y_COORD")
+                    x_txt = log_elem.find("X")
+                    y_txt = log_elem.find("Y")
                     if x_txt is not None and x_txt.text:
                         x_coord = float(x_txt.text)
                     if y_txt is not None and y_txt.text:
                         y_coord = float(y_txt.text)
                 except Exception:
                     pass
+
+            # Fallback to COORD_SETTINGS if LOGICAL was not found
+            if x_coord is None or y_coord is None:
+                coord_elem = dev_elem.find(".//COORD_SETTINGS")
+                if coord_elem is not None:
+                    try:
+                        x_txt = coord_elem.find("X_COORD")
+                        y_txt = coord_elem.find("Y_COORD")
+                        if x_txt is not None and x_txt.text:
+                            x_coord = float(x_txt.text)
+                        if y_txt is not None and y_txt.text:
+                            y_coord = float(y_txt.text)
+                    except Exception:
+                        pass
+
 
             # Reference ID for links
             ref_elem = dev_elem.find(".//SAVE_REF_ID")
