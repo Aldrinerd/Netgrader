@@ -243,6 +243,176 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // --- Resizable Sidebar Splitter Logic ---
+    const sidebarResizer = document.getElementById('sidebar-resizer');
+    const controlPanel = document.getElementById('control-panel');
+    const workspaceGrid = document.getElementById('workspace-grid');
+
+    if (sidebarResizer && controlPanel && workspaceGrid) {
+        // Restore saved width from localStorage
+        const savedWidth = localStorage.getItem('network_eval_sidebar_width');
+        if (savedWidth) {
+            const widthVal = parseInt(savedWidth, 10);
+            if (!isNaN(widthVal) && widthVal >= 320 && widthVal <= 800) {
+                document.documentElement.style.setProperty('--sidebar-width', `${widthVal}px`);
+            }
+        }
+
+        let isResizingSidebar = false;
+
+        const onResizeStart = (e) => {
+            isResizingSidebar = true;
+            sidebarResizer.classList.add('is-dragging');
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+        };
+
+        const onResizeMove = (e) => {
+            if (!isResizingSidebar) return;
+            const clientX = e.type.startsWith('touch') ? e.touches[0].clientX : e.clientX;
+            const gridRect = workspaceGrid.getBoundingClientRect();
+            let newWidth = clientX - gridRect.left;
+
+            // Constrain width bounds (min 320px, max 800px / window max)
+            const maxWidth = Math.min(800, window.innerWidth - 300);
+            newWidth = Math.max(320, Math.min(newWidth, maxWidth));
+
+            document.documentElement.style.setProperty('--sidebar-width', `${newWidth}px`);
+            localStorage.setItem('network_eval_sidebar_width', `${newWidth}`);
+
+            if (currentTopology && typeof fitGraphToViewport === 'function') {
+                clearTimeout(window._resizerTimer);
+                window._resizerTimer = setTimeout(() => fitGraphToViewport(), 50);
+            }
+        };
+
+        const onResizeEnd = () => {
+            if (isResizingSidebar) {
+                isResizingSidebar = false;
+                sidebarResizer.classList.remove('is-dragging');
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                if (currentTopology && typeof fitGraphToViewport === 'function') {
+                    fitGraphToViewport();
+                }
+            }
+        };
+
+        sidebarResizer.addEventListener('mousedown', onResizeStart);
+        window.addEventListener('mousemove', onResizeMove);
+        window.addEventListener('mouseup', onResizeEnd);
+
+        sidebarResizer.addEventListener('touchstart', onResizeStart, { passive: false });
+        window.addEventListener('touchmove', onResizeMove, { passive: false });
+        window.addEventListener('touchend', onResizeEnd);
+
+        // Double click to reset to default 440px
+        sidebarResizer.addEventListener('dblclick', () => {
+            document.documentElement.style.setProperty('--sidebar-width', '440px');
+            localStorage.setItem('network_eval_sidebar_width', '440px');
+            if (currentTopology && typeof fitGraphToViewport === 'function') {
+                fitGraphToViewport();
+            }
+            showToast("Sidebar width reset to default.");
+        });
+    }
+
+    // --- Policy Quick Preset Profiles ---
+    const policyElements = {
+        dynamicSubnetting: document.getElementById('policy-allow-dynamic-subnetting'),
+        enforcePrefix: document.getElementById('policy-enforce-prefix-length'),
+        verifyGateways: document.getElementById('policy-verify-default-gateways'),
+        customHostnames: document.getElementById('policy-allow-custom-hostnames'),
+        strictPorts: document.getElementById('policy-strict-port-matching'),
+        strictCable: document.getElementById('policy-strict-cable-type'),
+        flexibleOspf: document.getElementById('policy-allow-flexible-process-ids'),
+        gradeSecurity: document.getElementById('policy-grade-security-baseline'),
+        gradeDescriptions: document.getElementById('policy-grade-interface-descriptions')
+    };
+
+    const btnProfileDefault = document.getElementById('btn-profile-default');
+    const btnProfileDynamic = document.getElementById('btn-profile-dynamic');
+    const btnProfileStrict = document.getElementById('btn-profile-strict');
+    const profileBtns = [btnProfileDefault, btnProfileDynamic, btnProfileStrict].filter(Boolean);
+
+    function setProfileActive(activeBtn) {
+        profileBtns.forEach(btn => btn.classList.toggle('active', btn === activeBtn));
+    }
+
+    function applyPolicyValues(values, activeBtn) {
+        if (policyElements.dynamicSubnetting) policyElements.dynamicSubnetting.checked = !!values.dynamicSubnetting;
+        if (policyElements.enforcePrefix) policyElements.enforcePrefix.checked = !!values.enforcePrefix;
+        if (policyElements.verifyGateways) policyElements.verifyGateways.checked = !!values.verifyGateways;
+        if (policyElements.customHostnames) policyElements.customHostnames.checked = !!values.customHostnames;
+        if (policyElements.strictPorts) policyElements.strictPorts.checked = !!values.strictPorts;
+        if (policyElements.strictCable) policyElements.strictCable.checked = !!values.strictCable;
+        if (policyElements.flexibleOspf) policyElements.flexibleOspf.checked = !!values.flexibleOspf;
+        if (policyElements.gradeSecurity) policyElements.gradeSecurity.checked = !!values.gradeSecurity;
+        if (policyElements.gradeDescriptions) policyElements.gradeDescriptions.checked = !!values.gradeDescriptions;
+        if (activeBtn) setProfileActive(activeBtn);
+    }
+
+    if (btnProfileDefault) {
+        btnProfileDefault.addEventListener('click', () => {
+            applyPolicyValues({
+                dynamicSubnetting: false,
+                enforcePrefix: true,
+                verifyGateways: true,
+                customHostnames: false,
+                strictPorts: true,
+                strictCable: true,
+                flexibleOspf: true,
+                gradeSecurity: false,
+                gradeDescriptions: false
+            }, btnProfileDefault);
+            showToast("Loaded Standard CCNA Policy Profile");
+        });
+    }
+
+    if (btnProfileDynamic) {
+        btnProfileDynamic.addEventListener('click', () => {
+            applyPolicyValues({
+                dynamicSubnetting: true,
+                enforcePrefix: true,
+                verifyGateways: true,
+                customHostnames: true,
+                strictPorts: true,
+                strictCable: true,
+                flexibleOspf: true,
+                gradeSecurity: false,
+                gradeDescriptions: false
+            }, btnProfileDynamic);
+            showToast("Loaded Dynamic Subnetting Policy Profile");
+        });
+    }
+
+    if (btnProfileStrict) {
+        btnProfileStrict.addEventListener('click', () => {
+            applyPolicyValues({
+                dynamicSubnetting: false,
+                enforcePrefix: true,
+                verifyGateways: true,
+                customHostnames: false,
+                strictPorts: true,
+                strictCable: true,
+                flexibleOspf: false,
+                gradeSecurity: true,
+                gradeDescriptions: true
+            }, btnProfileStrict);
+            showToast("Loaded Full Security & Strict Policy Profile");
+        });
+    }
+
+    // Uncheck profile highlight on manual toggle
+    Object.values(policyElements).forEach(el => {
+        if (el) {
+            el.addEventListener('change', () => {
+                profileBtns.forEach(btn => btn.classList.remove('active'));
+            });
+        }
+    });
+
     // Window Resize Handling
     window.addEventListener('resize', () => {
         if (currentTopology && !isDraggingNode && !isPanning) {
