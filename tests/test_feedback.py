@@ -19,7 +19,8 @@ from tests.fixtures import network_bundle
 # Every category the rule generator can emit.
 ALL_CATEGORIES = [
     "device", "interface_ip", "interface_status", "cabling", "vlan_trunk",
-    "routing", "relational_subnet", "gateway", "security", "documentation",
+    "routing", "relational_subnet", "link_agreement", "gateway", "security",
+    "documentation",
 ]
 
 

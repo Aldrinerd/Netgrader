@@ -7,6 +7,7 @@ formats student lab assignment instructions (.txt), and parses them back for aut
 
 import json
 import re
+from src.link_attributes import LINK_ATTRIBUTES, applicable_attributes, compare as compare_link_attribute
 from src.models import EvaluationCriteria, EvaluationPolicies, EvaluationRule, TopologyResult
 
 # Rule points are stored to one decimal place, so all apportionment is done in
@@ -284,6 +285,47 @@ def generate_criteria_from_topology(
             }
         ))
 
+        # Link Agreement Rules: what the two ends of this link must agree on.
+        # Generated only for attributes actually present in the reference, so a
+        # lab that never uses trunks never emits trunk rules.
+        la_dev_a = topology.devices.get(src)
+        la_dev_b = topology.devices.get(tgt)
+        if la_dev_a and la_dev_b and not la_dev_a.is_placeholder and not la_dev_b.is_placeholder:
+            la_intf_a = la_dev_a.interfaces.get(link.source_interface)
+            la_intf_b = la_dev_b.interfaces.get(link.target_interface)
+            if la_intf_a and la_intf_b:
+                for attr in applicable_attributes(la_dev_a, la_intf_a, la_dev_b, la_intf_b):
+                    # Never ask a student for agreement the reference itself
+                    # does not have. A rule the instructor's own file fails is
+                    # unachievable by definition: it would put 100% out of
+                    # reach for the whole class, and the reference is supposed
+                    # to be the worked answer. A real example is a trunk whose
+                    # two ends carry different allowed-VLAN lists -- worth
+                    # reporting to the instructor, never worth grading.
+                    if not compare_link_attribute(
+                        attr, la_dev_a, la_intf_a, la_dev_b, la_intf_b
+                    ).passed:
+                        continue
+
+                    add_rule(EvaluationRule(
+                        rule_id=f"linkagree_{attr.key}_{src.lower()}_{safe_src_intf.lower()}__{tgt.lower()}_{safe_tgt_intf.lower()}",
+                        category="link_agreement",
+                        description=(
+                            f"{attr.label} must match on "
+                            f"{src} {link.source_interface} and {tgt} {link.target_interface}"
+                        ),
+                        points=attr.points,
+                        target_device=src,
+                        target_interface=link.source_interface,
+                        expected_value={
+                            "peer_device": tgt,
+                            "peer_interface": link.target_interface,
+                            "attribute": attr.key,
+                            "predicate": attr.predicate,
+                            "reference_value": attr.serialize(attr.extract(la_dev_a, la_intf_a)),
+                        }
+                    ))
+
         # Dynamic Relational Subnet Rule generation for L3 connected pairs or host connections
         if policies.allow_dynamic_subnetting:
             src_dev_obj = topology.devices.get(src)
@@ -422,6 +464,7 @@ def format_criteria_to_instructions_txt(criteria: EvaluationCriteria) -> str:
     lines.append(f"• Routing Process IDs    : {'FLEXIBLE (Locally significant IDs ignored; Area/adjacencies checked)' if p.allow_flexible_process_ids else 'STRICT'}")
     lines.append(f"• Security Baseline      : {'GRADED (enable secret, service pw-enc, vty required)' if p.grade_security_baseline else 'NOT GRADED'}")
     lines.append(f"• Interface Descriptions : {'GRADED (Descriptive interface labels required)' if p.grade_interface_descriptions else 'NOT GRADED'}")
+    lines.append(f"• Link Agreement Values  : {'STRICT (Agreed value must also match the reference)' if p.enforce_reference_link_values else 'FLEXIBLE (Both ends need only agree with each other)'}")
     lines.append("")
 
     # Addressing Section
@@ -485,8 +528,34 @@ def format_criteria_to_instructions_txt(criteria: EvaluationCriteria) -> str:
                 lines.append(f"• {r.target_device} on {r.target_interface}: Access Port in VLAN {exp.get('access_vlan', 1)}")
         lines.append("")
 
+    # Link Agreement Requirements
+    link_rules = [r for r in criteria.rules if r.category == "link_agreement"]
+    if link_rules:
+        lines.append("6. LINK AGREEMENT REQUIREMENTS")
+        lines.append("-" * 80)
+        lines.append("Both ends of each link below must agree on the listed setting. Where the value")
+        if p.enforce_reference_link_values:
+            lines.append("is given, both ends must use exactly that value.")
+        else:
+            lines.append("reads 'your choice', any value is accepted provided BOTH ends match.")
+        lines.append("")
+        lines.append(f"{'Endpoint A':<24} | {'Endpoint B':<24} | {'Must agree on':<24} | {'Value':<12}")
+        lines.append("-" * 80)
+        for r in link_rules:
+            exp = r.expected_value or {}
+            attr = LINK_ATTRIBUTES.get(exp.get("attribute", ""))
+            ep_a = f"{r.target_device}:{r.target_interface}"
+            ep_b = f"{exp.get('peer_device')}:{exp.get('peer_interface')}"
+            label = attr.label if attr else exp.get("attribute", "")
+            if p.enforce_reference_link_values and attr:
+                value = attr.render(exp.get("reference_value"))
+            else:
+                value = "your choice"
+            lines.append(f"{ep_a:<24} | {ep_b:<24} | {label:<24} | {value:<12}")
+        lines.append("")
+
     # Evaluation Checklist
-    lines.append("6. RUBRIC & POINT BREAKDOWN")
+    lines.append("7. RUBRIC & POINT BREAKDOWN")
     lines.append("-" * 80)
     for i, r in enumerate(criteria.rules, 1):
         lines.append(f"[{r.points:4.1f} pts] #{i:02d}: {r.description}")

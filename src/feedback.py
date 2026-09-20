@@ -18,6 +18,7 @@ do not hand over a paste-ready answer line. Students are told what to check and
 why, not given the fix to copy.
 """
 
+from src.link_attributes import LINK_ATTRIBUTES
 from src.models import EvaluationReport, RuleResult, StudyTopic
 
 # Concept label and why it matters, per rule category. Used for study topics.
@@ -49,6 +50,10 @@ _TOPICS: dict[str, tuple[str, str]] = {
     "routing": (
         "Dynamic routing and OSPF areas",
         "Without the correct networks advertised into the right area, remote subnets never become reachable.",
+    ),
+    "link_agreement": (
+        "Agreement between the two ends of a link",
+        "A link only works when both ends agree; several mismatches produce no error message at all.",
     ),
     "gateway": (
         "Default gateways",
@@ -276,6 +281,31 @@ def _explain_security(result: RuleResult) -> str:
     )
 
 
+def _explain_link_agreement(result: RuleResult) -> str:
+    """
+    The engine's feedback already states which setting disagreed and what the
+    two ends held, so guidance adds the part a student cannot infer: why a
+    link that looks correct on each device separately still does not work.
+    """
+    attribute = None
+    for attr in LINK_ATTRIBUTES.values():
+        if attr.label.lower() in _lower(result.description):
+            attribute = attr
+            break
+
+    where = f"{result.target_device} {result.target_interface}".strip()
+    opening = (
+        f"Each end of this link was configured on its own, but they do not agree "
+        f"({result.actual_value}). "
+    )
+    if attribute is None:
+        return (
+            opening
+            + f"Compare the running-config of {where} against its neighbour line by line."
+        )
+    return opening + attribute.why_it_matters
+
+
 def _explain_documentation(result: RuleResult) -> str:
     return (
         f"The interface {_where(result)} has no description. Descriptions name what is on the other "
@@ -288,6 +318,7 @@ _HANDLERS = {
     "device": _explain_device,
     "interface_ip": _explain_interface_ip,
     "relational_subnet": _explain_relational_subnet,
+    "link_agreement": _explain_link_agreement,
     "interface_status": _explain_interface_status,
     "cabling": _explain_cabling,
     "vlan_trunk": _explain_vlan_trunk,

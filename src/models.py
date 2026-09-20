@@ -120,6 +120,13 @@ class EvaluationPolicies(BaseModel):
     grade_security_baseline: bool = False       # If True: checks 'enable secret', 'service password-encryption', 'line vty'
     grade_interface_descriptions: bool = False  # If True: checks descriptive interface labels matching peer
 
+    # Link Agreement Policies
+    # If False (default): both ends of a link need only agree with EACH OTHER.
+    # A trunk whose two ends both use native VLAN 999 works, whatever the
+    # instructor's own file used. If True: the agreed value must also equal the
+    # reference, for labs where the instructor dictated exact values.
+    enforce_reference_link_values: bool = False
+
 
 class EvaluationRule(BaseModel):
     rule_id: str
@@ -131,6 +138,7 @@ class EvaluationRule(BaseModel):
         "vlan_trunk",
         "routing",
         "relational_subnet",
+        "link_agreement",
         "gateway",
         "security",
         "documentation"

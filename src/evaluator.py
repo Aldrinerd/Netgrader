@@ -15,6 +15,7 @@ from src.models import (
     TopologyResult,
 )
 from src.feedback import attach_guidance
+from src.link_attributes import LINK_ATTRIBUTES, compare as compare_link_attribute
 from src.parsers import canonical_device_name, normalize_interface_name
 
 
@@ -530,6 +531,66 @@ def evaluate_student_submission(
                 actual = "Disconnected / Uncabled"
                 feedback = f"No physical connection found between {src_dev_orig} ({src_intf}) and {tgt_dev_orig} ({tgt_intf}). Verify physical cabling in Packet Tracer."
 
+        # 5b. Link Agreement Rule
+        #
+        # The only rule whose subject is a LINK rather than a device. Both
+        # endpoints are resolved through the same mapping and port-matching
+        # helpers as every other rule, so allow_custom_hostnames and
+        # strict_port_matching keep working here.
+        elif rule.category == "link_agreement":
+            attribute = LINK_ATTRIBUTES.get(exp.get("attribute", ""))
+            dev_a = _find_student_device(devices, rule.target_device, device_mapping)
+            dev_b = _find_student_device(devices, exp.get("peer_device", ""), device_mapping)
+            intf_a = _find_student_interface(
+                dev_a.interfaces, rule.target_interface or "", policies.strict_port_matching
+            ) if dev_a else None
+            intf_b = _find_student_interface(
+                dev_b.interfaces, exp.get("peer_interface", "") or "", policies.strict_port_matching
+            ) if dev_b else None
+
+            if attribute is None:
+                # A rubric naming an attribute this build does not know about.
+                # Award the points rather than penalising a student for an
+                # instructions.txt written by a newer version of the tool.
+                pts_earned = pts_possible
+                passed = True
+                actual = "Not evaluated"
+                feedback = f"Checkpoint '{exp.get('attribute', '')}' is not supported by this version and was not graded."
+            elif not dev_a or not dev_b:
+                missing = rule.target_device if not dev_a else exp.get("peer_device", "")
+                pts_earned = 0.0
+                passed = False
+                actual = f"Device '{missing}' missing"
+                feedback = f"Cannot compare the two ends of this link: device '{missing}' is missing."
+            elif not intf_a or not intf_b:
+                missing = (
+                    f"{rule.target_device} {rule.target_interface}" if not intf_a
+                    else f"{exp.get('peer_device')} {exp.get('peer_interface')}"
+                )
+                pts_earned = 0.0
+                passed = False
+                actual = f"Interface '{missing}' missing"
+                feedback = f"Cannot compare the two ends of this link: interface '{missing}' is missing."
+            else:
+                verdict = compare_link_attribute(
+                    attribute, dev_a, intf_a, dev_b, intf_b,
+                    reference_value=exp.get("reference_value"),
+                    enforce_reference=policies.enforce_reference_link_values,
+                )
+                actual = verdict.actual
+                if verdict.passed:
+                    pts_earned = pts_possible
+                    passed = True
+                    feedback = (
+                        f"{attribute.label} agrees across "
+                        f"{rule.target_device} {rule.target_interface} and "
+                        f"{exp.get('peer_device')} {exp.get('peer_interface')}."
+                    )
+                else:
+                    pts_earned = 0.0
+                    passed = False
+                    feedback = verdict.reason
+
         # 6. VLAN & Switchport Rule
         elif rule.category == "vlan_trunk":
             dev = _find_student_device(devices, rule.target_device, device_mapping)
@@ -549,7 +610,19 @@ def evaluate_student_submission(
                     exp_mode = exp.get("switchport_mode", "access")
                     if exp_mode == "trunk":
                         exp_native = exp.get("trunk_native_vlan", 1)
-                        if intf.switchport_mode == "trunk" and intf.trunk_native_vlan == exp_native:
+                        # Native VLAN is judged by the link_agreement rule for
+                        # this link, which asks whether the two ENDS agree --
+                        # the question that decides whether the trunk works.
+                        # Penalising it here as well would charge a student
+                        # twice for one mistake, and would charge them at all
+                        # for a consistent choice that merely differs from the
+                        # instructor's file. Only an instructor who dictated
+                        # exact values gets the reference comparison back.
+                        native_matches = (
+                            intf.trunk_native_vlan == exp_native
+                            or not policies.enforce_reference_link_values
+                        )
+                        if intf.switchport_mode == "trunk" and native_matches:
                             pts_earned = pts_possible
                             passed = True
                             actual = f"Trunk (Native VLAN {intf.trunk_native_vlan})"
