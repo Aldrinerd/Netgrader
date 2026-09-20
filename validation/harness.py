@@ -25,8 +25,10 @@ from dataclasses import dataclass, field
 from src.criteria_generator import generate_criteria_from_topology
 from src.evaluator import evaluate_student_submission
 from src.models import EvaluationPolicies, EvaluationReport, TopologyResult
+from src.parsers import parse_device_bundle
 from validation.mutations import CATALOGUE, Mutation
 from validation.reference import build_reference
+from validation.reference_text import CLI_DEVICES, CONFIG_BUNDLES
 
 REPEATS = 3  # how many times each submission is graded to test determinism
 
@@ -52,9 +54,29 @@ class MutationOutcome:
 
 
 @dataclass
+class FidelityReport:
+    """
+    Whether the parser preserves everything the rubric depends on.
+
+    Every other figure in this suite is taken from constructed ParsedDevice
+    objects, so the parser sits entirely outside the measurement. That blind
+    spot hid a bug where the first sub-command of a `router ospf` block closed
+    the block and discarded every network statement: OSPF went ungraded on any
+    realistically written config while this suite reported 100%.
+    """
+    matched: bool
+    findings: list = field(default_factory=list)
+    built_score: float = 0.0
+    parsed_score: float = 0.0
+
+
+@dataclass
 class ValidationReport:
     reference_clean: bool
     reference_score: float
+    fidelity: FidelityReport = field(
+        default_factory=lambda: FidelityReport(matched=True)
+    )
     outcomes: list = field(default_factory=list)
 
     # --- SOP #3 metrics -----------------------------------------------------
@@ -95,7 +117,9 @@ class ValidationReport:
 
     @property
     def all_correct(self) -> bool:
-        return self.reference_clean and all(o.passed for o in self.outcomes)
+        return (self.reference_clean
+                and self.fidelity.matched
+                and all(o.passed for o in self.outcomes))
 
 
 def _ratio(flags: list) -> float:
@@ -119,6 +143,92 @@ def _check_reference(policies: EvaluationPolicies) -> tuple:
     reference = build_reference()
     report = _grade(reference, build_reference(), policies)
     return report.percentage == 100.0, report.percentage
+
+
+def build_parsed_reference() -> TopologyResult:
+    """
+    The reference network as the parser sees it.
+
+    Devices with a CLI come from their config text. Hosts and cabling come
+    from the constructed reference, because a PC has no CLI and link discovery
+    is a separate concern with its own (much worse) error rate -- mixing it in
+    here would drown the signal this check exists to produce.
+    """
+    built = build_reference()
+    devices = {}
+    for filename, text in CONFIG_BUNDLES.items():
+        device = parse_device_bundle(text, filename)
+        devices[device.hostname] = device
+    for hostname, device in built.devices.items():
+        if hostname not in CLI_DEVICES:
+            devices[hostname] = device
+    return TopologyResult(devices=devices, links=built.links)
+
+
+def check_fidelity(policies: EvaluationPolicies | None = None) -> FidelityReport:
+    """
+    Grade the constructed reference and the parsed one side by side.
+
+    They describe the same network, so they must produce the same rubric and
+    the same score. A rule present in one and missing from the other is a fact
+    the parser dropped, named by its rule id.
+    """
+    # Every policy on, so no attribute escapes the comparison by being
+    # switched off: a parser gap in a feature this suite does not otherwise
+    # exercise still has to surface here.
+    policies = policies or EvaluationPolicies(
+        grade_security_baseline=True,
+        grade_interface_descriptions=True,
+    )
+
+    built = build_reference()
+    parsed = build_parsed_reference()
+
+    built_criteria = generate_criteria_from_topology(built, policies=policies)
+    parsed_criteria = generate_criteria_from_topology(parsed, policies=policies)
+
+    findings = []
+
+    missing_devices = set(built.devices) - set(parsed.devices)
+    if missing_devices:
+        findings.append(
+            f"parser produced no device for {sorted(missing_devices)}"
+        )
+
+    built_ids = {r.rule_id for r in built_criteria.rules}
+    parsed_ids = {r.rule_id for r in parsed_criteria.rules}
+
+    for rule_id in sorted(built_ids - parsed_ids):
+        rule = next(r for r in built_criteria.rules if r.rule_id == rule_id)
+        findings.append(
+            f"parser lost '{rule_id}' ({rule.category}) -- {rule.description}"
+        )
+    for rule_id in sorted(parsed_ids - built_ids):
+        rule = next(r for r in parsed_criteria.rules if r.rule_id == rule_id)
+        findings.append(
+            f"parser invented '{rule_id}' ({rule.category}) -- {rule.description}"
+        )
+
+    # Cross-grade: the parsed network must satisfy the constructed rubric.
+    built_score = evaluate_student_submission(built_criteria, built).percentage
+    parsed_score = evaluate_student_submission(built_criteria, parsed).percentage
+    if parsed_score != built_score:
+        failed = [
+            r.rule_id for r in
+            evaluate_student_submission(built_criteria, parsed).results
+            if not r.passed
+        ]
+        findings.append(
+            f"parsed network scores {parsed_score:.1f}% against the constructed "
+            f"rubric, not {built_score:.1f}% -- failing {sorted(failed)}"
+        )
+
+    return FidelityReport(
+        matched=not findings,
+        findings=findings,
+        built_score=built_score,
+        parsed_score=parsed_score,
+    )
 
 
 def run_mutation(mutation: Mutation) -> MutationOutcome:
@@ -173,6 +283,7 @@ def run(policies: EvaluationPolicies | None = None) -> ValidationReport:
     return ValidationReport(
         reference_clean=clean,
         reference_score=score,
+        fidelity=check_fidelity(),
         outcomes=[run_mutation(m) for m in CATALOGUE],
     )
 
@@ -190,6 +301,14 @@ def format_report(report: ValidationReport) -> str:
     if not report.reference_clean:
         lines.append("  ! Every figure below is meaningless until this passes: the rubric")
         lines.append("  ! is demanding something the worked answer does not do.")
+    fidelity = "PASS" if report.fidelity.matched else "FAIL"
+    lines.append(f"Precondition -- parsed config yields the same rubric as the model : "
+                 f"[{fidelity}]")
+    if not report.fidelity.matched:
+        for finding in report.fidelity.findings:
+            lines.append(f"  ! {finding}")
+        lines.append("  ! Everything below is measured on constructed objects, so a gap")
+        lines.append("  ! here is invisible to every figure in this report.")
     lines.append("")
 
     lines.append("-" * 78)

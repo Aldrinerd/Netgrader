@@ -15,6 +15,7 @@ from src.models import EvaluationPolicies
 from validation import harness
 from validation.mutations import CATALOGUE, by_id
 from validation.reference import build_reference
+from validation.reference_text import CLI_DEVICES
 
 
 def test_the_reference_is_a_correct_network():
@@ -148,3 +149,86 @@ def test_report_renders_without_raising():
     assert "SOP #3" in text
     assert "Accuracy" in text
     assert "Consistency" in text
+
+
+# --- Parse fidelity ---------------------------------------------------------
+#
+# Every metric above is taken from constructed ParsedDevice objects, so the
+# parser sits outside the measurement. These close that gap.
+
+def test_parsed_config_yields_the_same_rubric_as_the_model():
+    report = harness.check_fidelity()
+    assert report.matched, report.findings
+
+
+def test_the_text_reference_describes_the_same_devices():
+    built = build_reference()
+    parsed = harness.build_parsed_reference()
+    assert set(parsed.devices) == set(built.devices)
+    for hostname in CLI_DEVICES:
+        a, b = built.devices[hostname], parsed.devices[hostname]
+        assert a.device_type == b.device_type, hostname
+        assert set(a.interfaces) == set(b.interfaces), hostname
+        assert a.default_gateway == b.default_gateway, hostname
+
+
+def test_fidelity_catches_the_ospf_block_bug(monkeypatch):
+    """
+    The negative control that justifies this whole check. The real bug let the
+    first sub-command of a `router ospf` block close it, discarding every
+    network statement; OSPF went ungraded and the suite still reported 100%.
+    """
+    real = harness.parse_device_bundle
+
+    def drops_ospf_networks(text, filename):
+        device = real(text, filename)
+        for process in device.ospf_processes:
+            process["networks"] = []
+        return device
+
+    monkeypatch.setattr(harness, "parse_device_bundle", drops_ospf_networks)
+    report = harness.check_fidelity()
+    assert not report.matched
+    assert any("ospf" in f and "lost" in f for f in report.findings), report.findings
+
+
+def test_fidelity_catches_a_dropped_interface_attribute(monkeypatch):
+    """A parser that silently loses descriptions must be reported."""
+    real = harness.parse_device_bundle
+
+    def drops_descriptions(text, filename):
+        device = real(text, filename)
+        for interface in device.interfaces.values():
+            interface.description = None
+        return device
+
+    monkeypatch.setattr(harness, "parse_device_bundle", drops_descriptions)
+    report = harness.check_fidelity()
+    assert not report.matched
+    # Documentation rules are generated from the reference either way, so this
+    # surfaces as the parsed network failing the constructed rubric rather than
+    # as a lost rule. Both routes have to work.
+    assert any("scores" in f and "desc_" in f for f in report.findings), report.findings
+
+
+def test_fidelity_catches_a_dropped_device(monkeypatch):
+    real = harness.build_parsed_reference
+
+    def loses_a_switch():
+        topology = real()
+        topology.devices.pop("SW2", None)
+        return topology
+
+    monkeypatch.setattr(harness, "build_parsed_reference", loses_a_switch)
+    report = harness.check_fidelity()
+    assert not report.matched
+    assert any("SW2" in f for f in report.findings), report.findings
+
+
+def test_a_fidelity_failure_fails_the_whole_suite(monkeypatch):
+    """A parser gap must not be reportable as a 100% run."""
+    monkeypatch.setattr(
+        harness, "check_fidelity",
+        lambda *a, **k: harness.FidelityReport(matched=False, findings=["x"]),
+    )
+    assert not harness.run().all_correct

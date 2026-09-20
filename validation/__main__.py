@@ -26,6 +26,10 @@ def main() -> int:
         print(json.dumps({
             "reference_clean": report.reference_clean,
             "reference_score": report.reference_score,
+            "parse_fidelity": {
+                "matched": report.fidelity.matched,
+                "findings": report.fidelity.findings,
+            },
             "metrics": {
                 "recall": report.recall,
                 "specificity": report.specificity,
