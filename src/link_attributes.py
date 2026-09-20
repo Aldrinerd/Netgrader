@@ -20,6 +20,7 @@ Nothing here reaches a score. These functions return a verdict and wording;
 src/evaluator.py decides what a verdict is worth.
 """
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -38,7 +39,7 @@ class AgreementVerdict:
 class LinkAttribute:
     key: str
     label: str
-    predicate: str                  # "equal" | "compatible"
+    predicate: str                  # "equal" | "compatible" | "covers"
     points: float
     why_it_matters: str             # feeds the guidance layer
     extract: Callable[[ParsedDevice, InterfaceData], Any]
@@ -47,6 +48,10 @@ class LinkAttribute:
     # so a value has to survive the round trip.
     render: Callable[[Any], str] = field(default=lambda v: str(v))
     serialize: Callable[[Any], Any] = field(default=lambda v: v)
+    description_template: str = "{label} must match on {a} and {b}"
+    # Whether "must also equal the instructor's value" is a coherent demand.
+    # It is not for a coverage check: there is no single value to match.
+    reference_enforceable: bool = True
 
 
 # --- Predicates -------------------------------------------------------------
@@ -57,6 +62,33 @@ def _is_trunk(intf: InterfaceData) -> bool:
 
 def _both_trunk(dev_a, intf_a, dev_b, intf_b) -> bool:
     return _is_trunk(intf_a) and _is_trunk(intf_b)
+
+
+def _vlans_in_use(dev: ParsedDevice) -> frozenset:
+    """
+    The VLANs a device actually carries: an access port assigned to one, or an
+    addressed SVI acting as its gateway.
+
+    Deliberately NOT the VLAN database. A switch can have a VLAN defined with
+    no members, and demanding that a trunk carry it would fail a correctly
+    pruned network. PASIC_CORE_SW holds an SVI for VLAN 20 (SALES) while
+    IT_DEPARTMENT_SW has no SALES port at all -- pruning 20 on that uplink
+    costs nothing, and the link pings end to end exactly as it should.
+    """
+    vlans = set()
+    for name, intf in dev.interfaces.items():
+        if intf.access_vlan:
+            vlans.add(intf.access_vlan)
+        svi = re.match(r"^vlan(\d+)$", name, re.IGNORECASE)
+        if svi and intf.ip_address:
+            vlans.add(int(svi.group(1)))
+    return frozenset(vlans)
+
+
+def _trunk_carrying_shared_vlans(dev_a, intf_a, dev_b, intf_b) -> bool:
+    if not _both_trunk(dev_a, intf_a, dev_b, intf_b):
+        return False
+    return bool(_vlans_in_use(dev_a) & _vlans_in_use(dev_b))
 
 
 def _both_switchports(dev_a, intf_a, dev_b, intf_b) -> bool:
@@ -81,7 +113,8 @@ _SWITCHPORT_COMPATIBLE: set[frozenset] = {
 }
 
 
-def _compare_equal(attr: LinkAttribute, value_a: Any, value_b: Any) -> AgreementVerdict:
+def _compare_equal(attr: LinkAttribute, value_a: Any, value_b: Any,
+                   name_a: str = "one end", name_b: str = "the other end") -> AgreementVerdict:
     rendered_a = attr.render(value_a) if value_a is not None else "not set"
     rendered_b = attr.render(value_b) if value_b is not None else "not set"
     observed = f"{rendered_a} vs {rendered_b}"
@@ -101,7 +134,8 @@ def _compare_equal(attr: LinkAttribute, value_a: Any, value_b: Any) -> Agreement
     )
 
 
-def _compare_compatible(attr: LinkAttribute, value_a: Any, value_b: Any) -> AgreementVerdict:
+def _compare_compatible(attr: LinkAttribute, value_a: Any, value_b: Any,
+                        name_a: str = "one end", name_b: str = "the other end") -> AgreementVerdict:
     mode_a = value_a or "unset"
     mode_b = value_b or "unset"
     observed = f"{mode_a} vs {mode_b}"
@@ -122,9 +156,57 @@ def _compare_compatible(attr: LinkAttribute, value_a: Any, value_b: Any) -> Agre
     return AgreementVerdict(passed=False, actual=observed, reason=reason)
 
 
+def _compare_covers(attr: LinkAttribute, value_a: Any, value_b: Any,
+                    name_a: str = "one end", name_b: str = "the other end") -> AgreementVerdict:
+    """
+    Every VLAN in use on BOTH sides must be permitted on BOTH ends.
+
+    Not an equality check. Two ends of a trunk have no reason to carry
+    identical allowed lists: a core pruned to the VLANs it serves and an
+    access switch left near-default is a working, well-configured link.
+    Requiring the lists to match fails correct networks. What actually breaks
+    connectivity is a VLAN that has members on both sides being pruned on one
+    of them.
+    """
+    allowed_a, allowed_b = value_a["allowed"], value_b["allowed"]
+    required = value_a["in_use"] & value_b["in_use"]
+
+    if not required:
+        return AgreementVerdict(passed=True, actual="no VLANs in common")
+
+    # An unset allowed list means every VLAN is permitted, which is the Cisco
+    # default and cannot strand anything.
+    missing_a = (required - allowed_a) if allowed_a is not None else frozenset()
+    missing_b = (required - allowed_b) if allowed_b is not None else frozenset()
+
+    if not missing_a and not missing_b:
+        return AgreementVerdict(
+            passed=True,
+            actual=f"VLAN {_render_vlan_list(sorted(required))} permitted on both ends",
+        )
+
+    stranded = sorted(missing_a | missing_b)
+    ends = []
+    if missing_a:
+        ends.append(f"{name_a} ({_render_vlan_list(sorted(missing_a))})")
+    if missing_b:
+        ends.append(f"{name_b} ({_render_vlan_list(sorted(missing_b))})")
+
+    return AgreementVerdict(
+        passed=False,
+        actual=f"VLAN {_render_vlan_list(stranded)} pruned on {' and '.join(ends)}",
+        reason=(
+            f"VLAN {_render_vlan_list(stranded)} has members on both sides of this "
+            f"trunk but is not permitted on {' and '.join(ends)}, so that VLAN's "
+            "traffic is dropped at the trunk while the link itself stays up."
+        ),
+    )
+
+
 _PREDICATES = {
     "equal": _compare_equal,
     "compatible": _compare_compatible,
+    "covers": _compare_covers,
 }
 
 
@@ -154,18 +236,28 @@ LINK_ATTRIBUTES: dict[str, LinkAttribute] = {
     ),
     "trunk_allowed_vlans": LinkAttribute(
         key="trunk_allowed_vlans",
-        label="trunk allowed VLAN list",
-        predicate="equal",
+        label="VLANs in use",
+        predicate="covers",
         points=5.0,
         why_it_matters=(
-            "A VLAN permitted on one end of a trunk and pruned on the other is a "
-            "black hole: the switches stay up, the trunk stays up, and that one "
-            "VLAN's traffic disappears."
+            "A VLAN with members on both sides of a trunk, pruned on one end, is a "
+            "black hole: both switches stay up, the trunk stays up, and that one "
+            "VLAN's traffic disappears. Note that the two allowed lists do not have "
+            "to be identical -- pruning a VLAN that has no members on either side "
+            "is good practice, not a fault."
         ),
-        extract=lambda dev, intf: tuple(sorted(intf.trunk_allowed_vlans)) or None,
-        applies=_both_trunk,
+        extract=lambda dev, intf: {
+            "allowed": frozenset(intf.trunk_allowed_vlans) if intf.trunk_allowed_vlans else None,
+            "in_use": _vlans_in_use(dev),
+        },
+        applies=_trunk_carrying_shared_vlans,
         render=_render_vlan_list,
-        serialize=lambda v: list(v) if v else None,
+        serialize=lambda v: sorted(v["in_use"]),
+        description_template=(
+            "Every VLAN in use must be permitted on both ends of the trunk "
+            "between {a} and {b}"
+        ),
+        reference_enforceable=False,
     ),
     "switchport_mode": LinkAttribute(
         key="switchport_mode",
@@ -227,9 +319,14 @@ def compare(
     value_b = attr.extract(dev_b, intf_b)
 
     predicate = _PREDICATES.get(attr.predicate, _compare_equal)
-    verdict = predicate(attr, value_a, value_b)
+    verdict = predicate(attr, value_a, value_b, dev_a.hostname, dev_b.hostname)
 
-    if not verdict.passed or not enforce_reference or reference_value is None:
+    if (
+        not verdict.passed
+        or not enforce_reference
+        or not attr.reference_enforceable
+        or reference_value is None
+    ):
         return verdict
 
     # The ends agree. Under this policy they must also match the reference.

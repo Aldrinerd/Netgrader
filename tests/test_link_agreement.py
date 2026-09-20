@@ -93,10 +93,8 @@ def test_equal_fails_and_explains_when_ends_differ():
 
 
 def test_equal_fails_when_one_end_has_no_value():
-    a = trunk("Gi0/1", allowed=(10, 20))
-    b = trunk("Gi0/1", allowed=())
-    dev = switch("X", {})
-    verdict = compare(ALLOWED_VLANS, dev, a, dev, b)
+    from src.link_attributes import _compare_equal
+    verdict = _compare_equal(NATIVE_VLAN, 99, None, "SW1", "SW2")
     assert not verdict.passed
     assert "not configured on both ends" in verdict.reason
 
@@ -279,27 +277,124 @@ def test_failed_link_rule_gets_guidance():
     assert "untagged" in failed[0].guidance
 
 
+# --- VLAN coverage across a trunk -------------------------------------------
+#
+# The two allowed lists do NOT have to be identical. What breaks connectivity
+# is a VLAN with members on both sides being pruned on one of them.
+
+def access(name, vlan):
+    return InterfaceData(name=name, is_switchport=True, switchport_mode="access", access_vlan=vlan)
+
+
+def svi(name, ip):
+    return InterfaceData(name=name, ip_address=ip)
+
+
+def campus(allowed_access=(10, 80), allowed_core=(10, 20, 80)):
+    """An access switch with VLAN 10 and 80 users, uplinked to a core with a
+    gateway for 10, 20 and 80. VLAN 20 has no members on the access switch."""
+    acc = switch("ACCESS", {
+        "GigabitEthernet0/1": trunk("GigabitEthernet0/1", allowed=allowed_access),
+        "FastEthernet0/1": access("FastEthernet0/1", 10),
+        "FastEthernet0/2": access("FastEthernet0/2", 80),
+    })
+    core = switch("CORE", {
+        "GigabitEthernet0/1": trunk("GigabitEthernet0/1", allowed=allowed_core),
+        "Vlan10": svi("Vlan10", "10.0.10.1"),
+        "Vlan20": svi("Vlan20", "10.0.20.1"),
+        "Vlan80": svi("Vlan80", "10.0.80.1"),
+    })
+    return TopologyResult(
+        devices={"ACCESS": acc, "CORE": core},
+        links=[DiscoveredLink(
+            source_device="ACCESS", source_interface="GigabitEthernet0/1",
+            target_device="CORE", target_interface="GigabitEthernet0/1",
+            confidence=0.99, classification="verified", cable_type="eCrossOver",
+        )],
+    )
+
+
+def coverage_verdict(topo):
+    return compare(
+        ALLOWED_VLANS,
+        topo.devices["ACCESS"], topo.devices["ACCESS"].interfaces["GigabitEthernet0/1"],
+        topo.devices["CORE"], topo.devices["CORE"].interfaces["GigabitEthernet0/1"],
+    )
+
+
+def test_different_allowed_lists_pass_when_every_shared_vlan_is_permitted():
+    """
+    The real-world case from captures/: a core pruned to the VLANs it serves
+    and an access switch left near-default. Different lists, working link.
+    """
+    assert coverage_verdict(campus()).passed
+
+
+def test_a_vlan_with_no_local_members_need_not_be_carried():
+    """
+    VLAN 20 has a gateway on the core and no port on the access switch, so
+    pruning it costs nothing. This is exactly PASIC_CORE_SW's VLAN 20 (SALES)
+    against IT_DEPARTMENT_SW, which pings end to end perfectly.
+    """
+    topo = campus(allowed_access=(10, 80), allowed_core=(10, 20, 80))
+    verdict = coverage_verdict(topo)
+    assert verdict.passed
+    assert "20" not in verdict.actual
+
+
+def test_a_shared_vlan_pruned_on_one_end_fails_and_names_it():
+    topo = campus(allowed_access=(10,), allowed_core=(10, 20, 80))
+    verdict = coverage_verdict(topo)
+    assert not verdict.passed
+    assert "80" in verdict.actual
+    assert "ACCESS" in verdict.actual
+    assert "dropped at the trunk" in verdict.reason
+
+
+def test_an_unset_allowed_list_permits_everything():
+    topo = campus(allowed_access=(), allowed_core=(10, 20, 80))
+    assert coverage_verdict(topo).passed
+
+
+def test_coverage_does_not_apply_when_the_ends_share_no_vlans():
+    dev_a = switch("A", {"Gi0/1": trunk("Gi0/1"), "Fa0/1": access("Fa0/1", 10)})
+    dev_b = switch("B", {"Gi0/1": trunk("Gi0/1"), "Fa0/1": access("Fa0/1", 50)})
+    keys = {a.key for a in applicable_attributes(
+        dev_a, dev_a.interfaces["Gi0/1"], dev_b, dev_b.interfaces["Gi0/1"])}
+    assert "trunk_allowed_vlans" not in keys
+
+
+# --- Reference achievability ------------------------------------------------
+
 def test_no_rule_is_generated_that_the_reference_itself_fails():
     """
     A rule the instructor's own file cannot satisfy is unachievable by
-    definition and would put 100% out of reach for the whole class. Found on
-    the real captures, where a trunk's two ends carry different allowed-VLAN
-    lists.
+    definition and would put 100% out of reach for the whole class.
     """
-    reference = two_switch_topology(allowed_a=(10, 20), allowed_b=(10, 20, 30))
+    reference = campus(allowed_access=(10,), allowed_core=(10, 20, 80))
     criteria = generate_criteria_from_topology(reference)
     keys = {(r.expected_value or {}).get("attribute") for r in criteria.rules
             if r.category == "link_agreement"}
     assert "trunk_allowed_vlans" not in keys
-    # The attributes the reference does satisfy are still generated.
+    # Attributes the reference does satisfy are still generated.
     assert "trunk_native_vlan" in keys
 
 
 def test_the_reference_always_scores_full_marks():
     """The load-bearing invariant: the worked answer must be achievable."""
-    reference = two_switch_topology(allowed_a=(10, 20), allowed_b=(10, 20, 30))
-    criteria = generate_criteria_from_topology(reference)
-    report = evaluate_student_submission(criteria, reference)
-    assert report.percentage == 100.0, [
-        (r.rule_id, r.actual_value) for r in report.results if not r.passed
-    ]
+    for reference in (campus(), campus(allowed_access=(10,))):
+        criteria = generate_criteria_from_topology(reference)
+        report = evaluate_student_submission(criteria, reference)
+        assert report.percentage == 100.0, [
+            (r.rule_id, r.actual_value) for r in report.results if not r.passed
+        ]
+
+
+def test_a_student_who_prunes_a_populated_vlan_loses_the_points():
+    reference = campus()
+    student = campus(allowed_access=(10,))
+    _, report = grade(reference, student)
+    coverage = [r for r in link_results(report)
+                if r.rule_id.startswith("linkagree_trunk_allowed_vlans_")]
+    assert coverage and not coverage[0].passed
+    assert "80" in coverage[0].actual_value

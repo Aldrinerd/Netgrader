@@ -287,9 +287,11 @@ def _explain_link_agreement(result: RuleResult) -> str:
     two ends held, so guidance adds the part a student cannot infer: why a
     link that looks correct on each device separately still does not work.
     """
+    # Matched on the rule id rather than the description, because an
+    # attribute's description template need not contain its label.
     attribute = None
-    for attr in LINK_ATTRIBUTES.values():
-        if attr.label.lower() in _lower(result.description):
+    for key, attr in LINK_ATTRIBUTES.items():
+        if result.rule_id.startswith(f"linkagree_{key}_"):
             attribute = attr
             break
 

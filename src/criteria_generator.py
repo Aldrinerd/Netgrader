@@ -310,9 +310,10 @@ def generate_criteria_from_topology(
                     add_rule(EvaluationRule(
                         rule_id=f"linkagree_{attr.key}_{src.lower()}_{safe_src_intf.lower()}__{tgt.lower()}_{safe_tgt_intf.lower()}",
                         category="link_agreement",
-                        description=(
-                            f"{attr.label} must match on "
-                            f"{src} {link.source_interface} and {tgt} {link.target_interface}"
+                        description=attr.description_template.format(
+                            label=attr.label,
+                            a=f"{src} {link.source_interface}",
+                            b=f"{tgt} {link.target_interface}",
                         ),
                         points=attr.points,
                         target_device=src,
@@ -547,7 +548,9 @@ def format_criteria_to_instructions_txt(criteria: EvaluationCriteria) -> str:
             ep_a = f"{r.target_device}:{r.target_interface}"
             ep_b = f"{exp.get('peer_device')}:{exp.get('peer_interface')}"
             label = attr.label if attr else exp.get("attribute", "")
-            if p.enforce_reference_link_values and attr:
+            if attr and not attr.reference_enforceable:
+                value = "in use"
+            elif p.enforce_reference_link_values and attr:
                 value = attr.render(exp.get("reference_value"))
             else:
                 value = "your choice"

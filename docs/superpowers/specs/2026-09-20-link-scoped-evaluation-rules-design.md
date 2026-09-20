@@ -97,6 +97,7 @@ the survey:
 | Predicate | Meaning | Covers |
 |---|---|---|
 | `equal` | both endpoints hold the same value | native VLAN, OSPF/EIGRP timers and AS, MTU, speed, duplex, encapsulation |
+| `covers` | every VLAN in use on both sides is permitted on both ends | trunk allowed-VLAN lists |
 | `compatible` | values are compatible per a named matrix | LACP/PAgP modes, DTP modes, switchport mode pairing |
 | `exactly_one` | the attribute is set on precisely one endpoint | serial DCE clock rate |
 | `reciprocal` | A's value names B's identity **and** B's names A's | BGP `neighbor`/`remote-as`, PPP CHAP username/password |
@@ -205,8 +206,19 @@ the shape end-to-end at near-zero parsing risk.
 | Attribute | Predicate | Parser work |
 |---|---|---|
 | `trunk_native_vlan` | `equal` | none — already parsed |
-| `trunk_allowed_vlans` | `equal` | none — already parsed |
+| `trunk_allowed_vlans` | `covers` | none — already parsed |
 | `switchport_mode` | `compatible` | none — already parsed |
+
+A fourth predicate, `covers`, was added during implementation. `equal` was the
+wrong check for allowed-VLAN lists: two ends of a trunk have no reason to
+carry identical lists, and requiring it fails a correctly pruned network. It
+did exactly that on the captures in `captures/`, where the core is pruned to
+the VLANs it serves and the access switch is left near-default. What actually
+strands traffic is a VLAN with members on **both** sides being pruned on one
+of them, so `covers` tests the intersection of VLANs in use rather than the
+lists themselves. VLANs in use are derived from access-port assignments and
+addressed SVIs, never from the VLAN database — a VLAN can be defined with no
+members, and demanding a trunk carry it reintroduces the same false positive.
 
 Deliverable: native VLAN mismatch becomes a graded checkpoint. The stranded
 conflict-detector finding starts counting.
@@ -229,6 +241,10 @@ Requires new parsing inside `interface` blocks in
 | `clock_rate` | `clock rate <n>` — predicate `exactly_one` |
 
 ### Phase 3 — device-level protocol attributes
+
+> **On hold.** The paper's delimitation explicitly excludes BGP and complex
+> multi-area OSPF. Building this would put the tool outside the scope the
+> study defends. Revisit only if the delimitation changes.
 
 Needs new `ParsedDevice` fields alongside `ospf_processes`:
 
