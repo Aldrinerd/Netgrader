@@ -14,6 +14,7 @@ from src.models import (
     RuleResult,
     TopologyResult,
 )
+from src.feedback import attach_guidance
 from src.parsers import canonical_device_name, normalize_interface_name
 
 
@@ -769,7 +770,7 @@ def evaluate_student_submission(
     else:
         grade_letter = "F"
 
-    return EvaluationReport(
+    report = EvaluationReport(
         lab_title=criteria.lab_title,
         total_score=total_score,
         max_score=max_score,
@@ -780,3 +781,8 @@ def evaluate_student_submission(
         results=rule_results,
         topology=student_topology
     )
+
+    # Every score above is now final. The guidance layer only reads the report
+    # and adds explanation to it; it cannot reach any score field. Keeping this
+    # call last is what makes that boundary structural rather than a promise.
+    return attach_guidance(report)

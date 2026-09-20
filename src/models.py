@@ -160,6 +160,17 @@ class RuleResult(BaseModel):
     feedback: str
     target_device: str
     target_interface: str | None = None
+    # Why the requirement exists and how to satisfy it. Populated for failed
+    # checkpoints only. Deterministic: see src/feedback.py.
+    guidance: str | None = None
+
+
+class StudyTopic(BaseModel):
+    """A concept to revisit, ranked by how many points it cost."""
+    topic: str
+    why_it_matters: str
+    points_lost: float
+    checkpoints_failed: int
 
 
 class EvaluationReport(BaseModel):
@@ -171,5 +182,6 @@ class EvaluationReport(BaseModel):
     failed_count: int
     grade_letter: str
     results: list[RuleResult] = Field(default_factory=list)
+    study_topics: list[StudyTopic] = Field(default_factory=list)
     topology: TopologyResult
 

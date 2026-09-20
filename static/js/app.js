@@ -759,6 +759,29 @@ document.addEventListener('DOMContentLoaded', () => {
         if (report.topology) {
             renderTopology(report.topology);
         }
+        renderStudyTopics(report);
+    }
+
+    function renderStudyTopics(report) {
+        const host = document.getElementById('report-study-topics');
+        if (!host) return;
+        const topics = report.study_topics || [];
+        if (topics.length === 0) {
+            host.style.display = 'none';
+            host.innerHTML = '';
+            return;
+        }
+        host.style.display = 'block';
+        host.innerHTML = '<div class="study-header">What to study next</div>'
+            + topics.map(t => `
+                <div class="study-topic">
+                    <div class="study-topic-top">
+                        <span class="study-topic-name">${escapeHtml(t.topic)}</span>
+                        <span class="study-topic-cost">-${t.points_lost} pts</span>
+                    </div>
+                    <div class="study-topic-why">${escapeHtml(t.why_it_matters)}</div>
+                    <div class="study-topic-count">${t.checkpoints_failed} checkpoint${t.checkpoints_failed === 1 ? '' : 's'} affected</div>
+                </div>`).join('');
     }
 
     function renderFilteredResults(filter = 'all') {
@@ -786,6 +809,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
                 <div class="rule-res-feedback">${res.feedback}</div>
                 ${res.actual_value ? `<div class="rule-res-actual">Found: ${res.actual_value}</div>` : ''}
+                ${res.guidance ? `<div class="rule-res-guidance"><span class="guidance-label">How to fix this</span>${escapeHtml(res.guidance)}</div>` : ''}
             `;
             reportResultsList.appendChild(card);
         });
@@ -818,8 +842,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 reportTxt += `[${r.passed ? 'PASSED' : 'FAILED'}] #${num} (${r.points_earned}/${r.points_possible} pts): ${r.description}\n`;
                 reportTxt += `   Feedback: ${r.feedback}\n`;
                 if (r.actual_value) reportTxt += `   Actual  : ${r.actual_value}\n`;
+                if (r.guidance) reportTxt += `   Guidance: ${r.guidance}\n`;
                 reportTxt += `\n`;
             });
+
+            if (rep.study_topics && rep.study_topics.length) {
+                reportTxt += `WHAT TO STUDY NEXT:\n\n`;
+                rep.study_topics.forEach((t, i) => {
+                    reportTxt += `${i + 1}. ${t.topic}  (-${t.points_lost} pts, ${t.checkpoints_failed} checkpoints)\n`;
+                    reportTxt += `   ${t.why_it_matters}\n\n`;
+                });
+            }
 
             const blob = new Blob([reportTxt], { type: 'text/plain;charset=utf-8' });
             const url = URL.createObjectURL(blob);

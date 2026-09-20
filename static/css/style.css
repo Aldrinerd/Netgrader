@@ -1592,3 +1592,85 @@ html, body {
     border-radius: 4px;
     font-size: 0.92em;
 }
+
+/* ============================================================
+   Pedagogical Guidance & Study Topics
+   ============================================================ */
+.rule-res-guidance {
+    margin-top: 8px;
+    padding: 9px 11px;
+    border-left: 3px solid var(--accent-primary, #4da3ff);
+    border-radius: 0 6px 6px 0;
+    background: rgba(77, 163, 255, 0.07);
+    font-size: 0.78rem;
+    line-height: 1.55;
+    color: var(--text-secondary, #b9c4d2);
+}
+
+.rule-res-guidance .guidance-label {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 0.66rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--accent-primary, #4da3ff);
+}
+
+.report-study-topics {
+    margin: 12px 0 14px;
+    padding: 12px;
+    border: 1px solid var(--border-color, #2a3441);
+    border-radius: 10px;
+    background: var(--bg-elevated, #1a2130);
+}
+
+.study-header {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted, #8b98a9);
+    margin-bottom: 10px;
+}
+
+.study-topic {
+    padding: 9px 0;
+    border-bottom: 1px solid var(--border-subtle, #222b38);
+}
+
+.study-topic:last-child { border-bottom: none; padding-bottom: 0; }
+
+.study-topic-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+}
+
+.study-topic-name {
+    font-weight: 600;
+    font-size: 0.83rem;
+    color: var(--text-primary, #e6edf5);
+}
+
+.study-topic-cost {
+    flex-shrink: 0;
+    font-size: 0.74rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: #ff9d9d;
+}
+
+.study-topic-why {
+    margin-top: 3px;
+    font-size: 0.76rem;
+    line-height: 1.5;
+    color: var(--text-secondary, #b9c4d2);
+}
+
+.study-topic-count {
+    margin-top: 3px;
+    font-size: 0.7rem;
+    color: var(--text-muted, #8b98a9);
+}
