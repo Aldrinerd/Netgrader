@@ -2,9 +2,18 @@
 
 **Date:** 2026-09-08  
 **Topic:** Dynamic Rubric Configuration & Instructor Evaluation Policies  
-**Status:** Ready for Plan & Implementation  
+**Status:** Implemented & verified (see note below)  
 
 ---
+
+> [!IMPORTANT]
+> **Implementation status (verified 2026-09-20).** All nine policies described
+> below are now fully implemented and covered by `tests/test_policy_toggles.py`.
+> Until 2026-09-20 two of them were inert: `verify_default_gateways` and
+> `allow_flexible_process_ids` were handled in the evaluator, but no rule of the
+> matching category was ever generated, so gateways went unchecked under strict
+> addressing and OSPF was never graded at all. Both rule types are now emitted.
+
 
 ## 1. Overview & Research Background
 

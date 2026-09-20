@@ -2,6 +2,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from src.app import app
+from tests.fixtures import network_bundle
 
 client = TestClient(app)
 
@@ -11,15 +12,11 @@ def test_index_page():
     assert "Network Configuration Evaluation" in response.text
     assert "Topology Discovery" in response.text
 
-def test_api_get_presets():
-    response = client.get("/api/presets")
-    assert response.status_code == 200
-    presets = response.json()
-    assert isinstance(presets, list)
-    assert len(presets) >= 3
-
-def test_api_load_preset():
-    response = client.get("/api/presets/ospf_clean")
+def test_api_analyze_reference_bundle():
+    """The OSPF ring bundle must yield three verified links through the upload path."""
+    bundle = network_bundle("ospf_clean")
+    files = [("files", (name, text.encode("utf-8"), "text/plain")) for name, text in bundle.items()]
+    response = client.post("/api/analyze", files=files)
     assert response.status_code == 200
     data = response.json()
     assert "devices" in data
@@ -27,6 +24,13 @@ def test_api_load_preset():
     assert "conflicts" in data
     verified_links = [l for l in data["links"] if l["classification"] == "verified"]
     assert len(verified_links) == 3
+
+
+def test_removed_preset_endpoints_are_gone():
+    """The demo scenario feature was removed; its endpoints must not return data."""
+    assert client.get("/api/presets").status_code == 404
+    assert client.get("/api/presets/ospf_clean").status_code == 404
+
 
 def test_api_analyze_upload():
     r1_content = """hostname R1

@@ -1442,3 +1442,124 @@ html, body {
 .toggle-control:focus-within .toggle-slider {
     box-shadow: 0 0 0 2px var(--accent-blue);
 }
+
+/* ============================================================
+   Batch Grading & Gradebook Export
+   ============================================================ */
+.batch-card .form-hint {
+    display: block;
+    margin-top: 6px;
+    font-size: 0.78rem;
+    color: var(--text-muted, #8b98a9);
+}
+
+.batch-results {
+    margin-top: 16px;
+    border-top: 1px solid var(--border-color, #2a3441);
+    padding-top: 14px;
+}
+
+.batch-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+    gap: 8px;
+    margin-bottom: 14px;
+}
+
+.batch-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px 4px;
+    background: var(--bg-elevated, #1a2130);
+    border: 1px solid var(--border-color, #2a3441);
+    border-radius: 8px;
+}
+
+.batch-stat-value {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--accent-primary, #4da3ff);
+    line-height: 1.2;
+}
+
+.batch-stat-label {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted, #8b98a9);
+    margin-top: 2px;
+    text-align: center;
+}
+
+.batch-stat-error .batch-stat-value { color: var(--danger, #ff6b6b); }
+
+.batch-table-wrap {
+    max-height: 320px;
+    overflow: auto;
+    border: 1px solid var(--border-color, #2a3441);
+    border-radius: 8px;
+}
+
+.batch-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+}
+
+.batch-table thead th {
+    position: sticky;
+    top: 0;
+    background: var(--bg-elevated, #1a2130);
+    text-align: left;
+    padding: 8px 10px;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted, #8b98a9);
+    border-bottom: 1px solid var(--border-color, #2a3441);
+}
+
+.batch-table tbody td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border-subtle, #222b38);
+    vertical-align: middle;
+}
+
+.batch-table tbody tr:last-child td { border-bottom: none; }
+.batch-student { font-weight: 600; }
+.batch-pct { font-variant-numeric: tabular-nums; }
+
+.batch-status {
+    font-size: 0.72rem;
+    color: var(--text-muted, #8b98a9);
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.batch-row-error { background: rgba(255, 107, 107, 0.07); }
+.batch-row-error .batch-status { color: var(--danger, #ff6b6b); }
+
+.grade-chip {
+    display: inline-block;
+    min-width: 26px;
+    text-align: center;
+    padding: 2px 7px;
+    border-radius: 5px;
+    font-weight: 700;
+    font-size: 0.72rem;
+    background: var(--bg-base, #131922);
+    border: 1px solid var(--border-color, #2a3441);
+}
+
+.grade-Aplus, .grade-A { color: #3ddc97; border-color: rgba(61, 220, 151, 0.4); }
+.grade-B          { color: #4da3ff; border-color: rgba(77, 163, 255, 0.4); }
+.grade-C          { color: #ffc861; border-color: rgba(255, 200, 97, 0.4); }
+.grade-D, .grade-F { color: #ff6b6b; border-color: rgba(255, 107, 107, 0.4); }
+
+@media (max-width: 520px) {
+    .batch-status { display: none; }
+    .batch-table thead th:nth-child(5) { display: none; }
+}

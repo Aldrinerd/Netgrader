@@ -1,5 +1,18 @@
 # Network Configuration Evaluation & Topology Discovery Tool Implementation Plan
 
+> [!NOTE]
+> **Historical record — partially superseded (as of 2026-09-20).**
+> This plan is kept as written for the project record. Two items no longer
+> describe the shipped system:
+> - **Task 6 (Built-in Demo Scenarios)** was removed. `src/presets.py`, the
+>   `/api/presets` endpoints and the Showcase Demo Scenarios panel no longer
+>   exist. The three configuration bundles live on as `tests/fixtures.py`.
+> - The `.txt` / `.zip` bundle is no longer the only input. Packet Tracer
+>   `.pkt` / `.pka` / `.xml` files can be uploaded directly
+>   (see the 2026-09-08 design spec).
+>
+> See `docs/DEVELOPMENT_LOG.md` for the current state.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a standalone, test-driven Python 3 + FastAPI web application that ingests Cisco command output bundles (`.txt`/`.zip`), performs multi-signal probabilistic topology discovery (Noisy-OR), detects cross-device relational conflicts with evidence line citations, and renders an interactive visual topology map with 1-click demo presets.

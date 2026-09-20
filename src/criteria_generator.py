@@ -9,6 +9,70 @@ import json
 import re
 from src.models import EvaluationCriteria, EvaluationPolicies, EvaluationRule, TopologyResult
 
+# Rule points are stored to one decimal place, so all apportionment is done in
+# tenths of a point using integers. This avoids float drift entirely.
+_TENTHS = 10
+
+
+def _normalize_rule_points(rules: list[EvaluationRule], target_total: float) -> None:
+    """
+    Rescale rule weights in place so they sum to exactly `target_total`.
+
+    Uses largest-remainder (Hamilton) apportionment in tenths of a point.
+    Every rule is guaranteed a strictly positive score whenever the target
+    allows it, because a rule worth zero or fewer points corrupts grading:
+    a negative weight means PASSING a checkpoint would lower a student's
+    percentage.
+    """
+    if not rules or target_total <= 0:
+        return
+
+    total_tenths = int(round(target_total * _TENTHS))
+    count = len(rules)
+
+    # Degenerate case: fewer tenths than rules, so not every rule can be worth
+    # something. Spread what exists as evenly as possible rather than going
+    # negative, and let the caller's total stand.
+    if total_tenths < count:
+        base, remainder = divmod(total_tenths, count)
+        for i, rule in enumerate(rules):
+            rule.points = round((base + (1 if i < remainder else 0)) / _TENTHS, 1)
+        return
+
+    weights = [max(float(r.points), 0.0) for r in rules]
+    weight_sum = sum(weights)
+    if weight_sum <= 0:
+        weights = [1.0] * count
+        weight_sum = float(count)
+
+    # Ideal share for each rule, floored, with a guaranteed minimum of one tenth.
+    exact = [total_tenths * w / weight_sum for w in weights]
+    allocation = [max(1, int(share)) for share in exact]
+
+    # Hand out or claw back tenths until the allocation sums exactly to target.
+    drift = total_tenths - sum(allocation)
+    if drift > 0:
+        # Largest fractional remainder gets the surplus tenths first.
+        order = sorted(range(count), key=lambda i: exact[i] - int(exact[i]), reverse=True)
+        for step in range(drift):
+            allocation[order[step % count]] += 1
+    elif drift < 0:
+        # Over-allocated by the minimum floor: reclaim from the largest rules,
+        # never dropping any rule below one tenth of a point.
+        order = sorted(range(count), key=lambda i: allocation[i], reverse=True)
+        step = 0
+        while drift < 0:
+            index = order[step % count]
+            if allocation[index] > 1:
+                allocation[index] -= 1
+                drift += 1
+            step += 1
+            if step > count * total_tenths + count:  # safety valve
+                break
+
+    for rule, tenths in zip(rules, allocation):
+        rule.points = round(tenths / _TENTHS, 1)
+
 
 def generate_criteria_from_topology(
     topology: TopologyResult,
@@ -72,6 +136,42 @@ def generate_criteria_from_topology(
                 target_device=dev.hostname,
                 expected_value={"check_type": "vty_login"}
             ))
+
+        # Default Gateway Rule (if enabled). Generated independently of the
+        # addressing mode so the policy is meaningful under strict addressing too.
+        if policies.verify_default_gateways and dev.default_gateway and dev.device_type in ("host", "switch", "l3_switch"):
+            add_rule(EvaluationRule(
+                rule_id=f"gw_{dev.hostname.lower()}",
+                category="gateway",
+                description=f"Configure a working default gateway on {dev_name}",
+                points=5.0,
+                target_device=dev.hostname,
+                expected_value={
+                    "default_gateway": dev.default_gateway,
+                    "device_type": dev.device_type,
+                }
+            ))
+
+        # Routing Rules: one per OSPF area advertised by the reference device.
+        # The process ID itself is only enforced when allow_flexible_process_ids is off.
+        for proc in dev.ospf_processes:
+            areas = {
+                n.get("area") for n in proc.get("networks", [])
+                if isinstance(n, dict) and n.get("area") is not None
+            }
+            for area in sorted(areas):
+                add_rule(EvaluationRule(
+                    rule_id=f"ospf_{dev.hostname.lower()}_area{area}",
+                    category="routing",
+                    description=f"Advertise networks into OSPF Area {area} on {dev_name}",
+                    points=8.0,
+                    target_device=dev.hostname,
+                    expected_value={
+                        "protocol": "ospf",
+                        "area": area,
+                        "process_id": proc.get("process_id", 1),
+                    }
+                ))
 
         # Interface Operational Status & IP / Relational Subnet Rules
         for intf_name, intf in dev.interfaces.items():
@@ -268,18 +368,7 @@ def generate_criteria_from_topology(
 
     # Point Normalization so total equals target_total_points (e.g. 100.0 pts)
     if raw_rules:
-        raw_total = sum(r.points for r in raw_rules)
-        scale = target_total_points / raw_total if raw_total > 0 else 1.0
-        allocated = 0.0
-        for i, r in enumerate(raw_rules):
-            if i == len(raw_rules) - 1:
-                r.points = round(target_total_points - allocated, 1)
-            else:
-                pts = round(r.points * scale, 1)
-                if pts <= 0:
-                    pts = 1.0
-                r.points = pts
-                allocated += pts
+        _normalize_rule_points(raw_rules, target_total_points)
 
     ref_summary = {
         "device_count": len([d for d in topology.devices.values() if not d.is_placeholder]),

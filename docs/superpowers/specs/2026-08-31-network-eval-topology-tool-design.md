@@ -1,5 +1,10 @@
 # Design Specification: Network Configuration Evaluation and Topology Discovery Tool (Standalone Phase 1)
 
+> [!NOTE]
+> **Historical record — partially superseded (as of 2026-09-20).**
+> Built-in demo presets described here were removed, and direct Packet Tracer
+> file upload was added afterwards. See `docs/DEVELOPMENT_LOG.md`.
+
 **Date:** 2026-08-31  
 **Project:** Network Configuration Evaluation and Topology Discovery Tool  
 **Institution:** First City Providential College — Capstone Group 1  

@@ -1,10 +1,10 @@
 # src/app.py
+import csv
 import io
 import os
 import zipfile
-from typing import Annotated
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -18,14 +18,12 @@ from src.evaluator import evaluate_student_submission
 from src.fusion_engine import infer_topology_links
 from src.models import (
     DiscoveredLink,
-    EvaluationCriteria,
     EvaluationReport,
     ParsedDevice,
     TopologyResult,
 )
 from src.parsers import parse_device_bundle
 from src.pkt_parser import parse_pkt_file
-from src.presets import get_available_presets, load_preset
 
 app = FastAPI(
     title="Network Configuration Evaluation & Topology Discovery Tool",
@@ -133,36 +131,36 @@ async def parse_uploaded_files_to_topology(files: list[UploadFile]) -> TopologyR
     return process_bundle_dict(files_dict)
 
 
+def _asset_version() -> str:
+    """
+    Cache-busting token derived from the static assets themselves.
+
+    The template used to hard-code "?v=3.2", so browsers kept serving a stale
+    app.js after the tool was updated -- meaning an instructor could deploy a
+    fix and students would never receive it. Deriving the token from file
+    modification times makes every edit reach the browser automatically.
+    """
+    newest = 0.0
+    for folder in (os.path.join(STATIC_DIR, "css"), os.path.join(STATIC_DIR, "js")):
+        if not os.path.isdir(folder):
+            continue
+        for name in os.listdir(folder):
+            try:
+                newest = max(newest, os.path.getmtime(os.path.join(folder, name)))
+            except OSError:
+                continue
+    return str(int(newest))
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index_page(request: Request):
-    presets = get_available_presets()
     return templates.TemplateResponse(
         request=request,
         name="index.html",
-        context={"presets": presets}
+        context={"asset_version": _asset_version()},
     )
 
 
-@app.get("/api/presets")
-async def api_get_presets():
-    return get_available_presets()
-
-
-@app.get("/api/presets/{preset_id}", response_model=TopologyResult)
-async def api_load_preset(preset_id: str):
-    if preset_id == "pkt_trial":
-        trial_xml_path = os.path.join(BASE_DIR, "cisco-pka-to-xml", "trial.xml")
-        if os.path.exists(trial_xml_path):
-            with open(trial_xml_path, "rb") as f:
-                devs, lnks = parse_pkt_file(f.read(), filename="trial.xml")
-            conflicts = detect_conflicts(devs, lnks)
-            return TopologyResult(devices=devs, links=lnks, conflicts=conflicts)
-    try:
-        files_dict = load_preset(preset_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    
-    return process_bundle_dict(files_dict)
 
 
 @app.post("/api/analyze", response_model=TopologyResult)
@@ -269,3 +267,122 @@ async def api_evaluate_student_submission(
     # 3. Run automated grading
     report = evaluate_student_submission(criteria, student_topology)
     return report
+
+
+# --- Instructor Mode: Batch Grading & Gradebook Export ---
+
+def _student_name_from_filename(filename: str) -> str:
+    """
+    Derive a student identifier from an uploaded filename.
+
+    'Dela Cruz, Juan.pkt'      -> 'Dela Cruz, Juan'
+    'lab3_2021-00123.zip'      -> 'lab3_2021-00123'
+    """
+    base = os.path.basename(filename or "submission")
+    stem, _, _ = base.rpartition(".")
+    return (stem or base).strip() or base
+
+
+def _build_gradebook_csv(lab_title: str, rows: list[dict]) -> str:
+    """
+    Render batch results as CSV for direct import into a gradebook spreadsheet.
+
+    Chapter I frames the problem as manual checking of large batches, so results
+    have to leave the screen in a form Excel opens without any conversion step.
+    """
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, lineterminator="\n")
+    writer.writerow([
+        "Student", "Lab", "Score", "Max Score", "Percentage", "Grade",
+        "Checkpoints Passed", "Checkpoints Failed", "Missed Checkpoints", "Status",
+    ])
+    for row in rows:
+        writer.writerow([
+            row["student"],
+            lab_title,
+            row.get("total_score", ""),
+            row.get("max_score", ""),
+            row.get("percentage", ""),
+            row.get("grade_letter", ""),
+            row.get("passed_count", ""),
+            row.get("failed_count", ""),
+            "; ".join(row.get("missed", [])),
+            row.get("status", "graded"),
+        ])
+    return buffer.getvalue()
+
+
+@app.post("/api/evaluate/batch")
+async def api_evaluate_batch(
+    instructions_file: UploadFile = File(...),
+    student_files: list[UploadFile] = File(...)
+):
+    """
+    Instructor batch grading: grade a whole class against one rubric in a single
+    pass and return both a per-student summary and a gradebook-ready CSV.
+
+    Each uploaded file is treated as ONE student's submission. A submission that
+    fails to parse is recorded as an error row rather than aborting the batch,
+    so one corrupt file cannot cost an instructor the entire run.
+    """
+    inst_bytes = await instructions_file.read()
+    inst_content = inst_bytes.decode("utf-8", errors="replace")
+    try:
+        criteria = parse_instructions_txt(inst_content)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid Instructions File: {str(e)}")
+
+    if not student_files:
+        raise HTTPException(status_code=400, detail="No student submissions were uploaded.")
+
+    rows: list[dict] = []
+    for upload in student_files:
+        student = _student_name_from_filename(upload.filename or "")
+        try:
+            topology = await parse_uploaded_files_to_topology([upload])
+            if not topology.devices:
+                raise ValueError("No device configurations or topology found in this submission.")
+            report = evaluate_student_submission(criteria, topology)
+            rows.append({
+                "student": student,
+                "filename": upload.filename,
+                "total_score": round(report.total_score, 1),
+                "max_score": round(report.max_score, 1),
+                "percentage": report.percentage,
+                "grade_letter": report.grade_letter,
+                "passed_count": report.passed_count,
+                "failed_count": report.failed_count,
+                "missed": [r.description for r in report.results if not r.passed],
+                "status": "graded",
+            })
+        except Exception as e:
+            rows.append({
+                "student": student,
+                "filename": upload.filename,
+                "total_score": 0.0,
+                "max_score": round(sum(r.points for r in criteria.rules), 1),
+                "percentage": 0.0,
+                "grade_letter": "-",
+                "passed_count": 0,
+                "failed_count": len(criteria.rules),
+                "missed": [],
+                "status": f"ERROR: {e}",
+            })
+
+    graded = [r for r in rows if r["status"] == "graded"]
+    percentages = [r["percentage"] for r in graded]
+    summary = {
+        "submissions": len(rows),
+        "graded": len(graded),
+        "errors": len(rows) - len(graded),
+        "average_percentage": round(sum(percentages) / len(percentages), 1) if percentages else 0.0,
+        "highest_percentage": max(percentages) if percentages else 0.0,
+        "lowest_percentage": min(percentages) if percentages else 0.0,
+    }
+
+    return {
+        "lab_title": criteria.lab_title,
+        "summary": summary,
+        "results": rows,
+        "csv": _build_gradebook_csv(criteria.lab_title, rows),
+    }

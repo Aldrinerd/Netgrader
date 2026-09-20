@@ -40,7 +40,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const conflictCard = document.getElementById('conflict-summary-card');
     const conflictBadgeCount = document.getElementById('conflict-badge-count');
     const conflictItemsList = document.getElementById('conflict-items-list');
-    const presetItems = document.querySelectorAll('.preset-item');
 
     // --- Mode 2: Teacher Studio Elements ---
     const teacherDropZone = document.getElementById('teacher-drop-zone');
@@ -157,7 +156,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (canvasMainTitle) canvasMainTitle.textContent = 'Topology Discovery';
             if (engineStatusLabel) engineStatusLabel.textContent = 'Inference Engine: Active';
             if (emptyStateTitle) emptyStateTitle.textContent = 'No Network Loaded';
-            if (emptyStateDesc) emptyStateDesc.textContent = 'Select a 1-Click Demo Scenario on the left or upload student Cisco .txt files to run multi-signal topology discovery.';
+            if (emptyStateDesc) emptyStateDesc.textContent = 'Upload a Packet Tracer file or Cisco .txt configuration bundle to run multi-signal topology discovery.';
         } else if (mode === 'teacher') {
             if (canvasMainTitle) canvasMainTitle.textContent = 'Reference Topology Studio';
             if (engineStatusLabel) engineStatusLabel.textContent = 'Teacher Studio: Ready';
@@ -227,7 +226,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 studentInstStatus.className = 'badge badge-amber';
             }
 
-            presetItems.forEach(p => p.classList.remove('active'));
             svg.innerHTML = '';
             if (emptyState) emptyState.style.display = 'block';
             if (diagnosticDrawer) diagnosticDrawer.style.display = 'none';
@@ -424,26 +422,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- MODE 1: VISUALIZER LOGIC ---
-    presetItems.forEach(item => {
-        item.addEventListener('click', async () => {
-            const presetId = item.getAttribute('data-preset-id');
-            presetItems.forEach(p => p.classList.remove('active'));
-            item.classList.add('active');
-            await loadPresetTopology(presetId);
-        });
-    });
 
-    async function loadPresetTopology(presetId) {
-        try {
-            showLoading("Running multi-signal inference on preset...");
-            const response = await fetch(`/api/presets/${presetId}`);
-            if (!response.ok) throw new Error(`HTTP error ${response.status}`);
-            const data = await response.json();
-            renderTopology(data);
-        } catch (err) {
-            alert(`Failed to load preset: ${err.message}`);
-        }
-    }
 
     if (browseBtn && fileInput) browseBtn.addEventListener('click', () => fileInput.click());
     if (dropZone && fileInput) {
@@ -1440,4 +1419,122 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
     }
+
+    // ---------------------------------------------------------------
+    // Batch Grading: grade a whole class, export a gradebook CSV
+    // ---------------------------------------------------------------
+    const batchInstInput = document.getElementById('batch-inst-input');
+    const batchSubInput = document.getElementById('batch-sub-input');
+    const batchGradeBtn = document.getElementById('batch-grade-btn');
+    const batchFileCount = document.getElementById('batch-file-count');
+    const batchResults = document.getElementById('batch-results');
+    const batchSummary = document.getElementById('batch-summary');
+    const batchTableBody = document.getElementById('batch-table-body');
+    const batchCsvBtn = document.getElementById('batch-csv-btn');
+    let batchCsvText = '';
+    let batchLabTitle = 'lab';
+
+    if (batchSubInput) {
+        batchSubInput.addEventListener('change', () => {
+            const n = batchSubInput.files.length;
+            batchFileCount.textContent = n === 0
+                ? 'No submissions selected'
+                : `${n} submission${n === 1 ? '' : 's'} selected`;
+        });
+    }
+
+    if (batchGradeBtn) {
+        batchGradeBtn.addEventListener('click', async () => {
+            if (!batchInstInput.files.length) {
+                alert('Please choose the instructions.txt file first.');
+                return;
+            }
+            if (!batchSubInput.files.length) {
+                alert('Please choose at least one student submission.');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('instructions_file', batchInstInput.files[0]);
+            for (const file of batchSubInput.files) {
+                formData.append('student_files', file);
+            }
+
+            // Batch grading belongs to the left panel, so show progress on the
+            // button itself rather than taking over the topology map.
+            const originalLabel = batchGradeBtn.innerHTML;
+            const count = batchSubInput.files.length;
+            batchGradeBtn.disabled = true;
+            batchGradeBtn.innerHTML = `<span>Grading ${count} submission${count === 1 ? '' : 's'}...</span>`;
+
+            try {
+                const response = await fetch('/api/evaluate/batch', { method: 'POST', body: formData });
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({ detail: response.statusText }));
+                    throw new Error(err.detail || 'Batch grading failed');
+                }
+                const data = await response.json();
+                batchCsvText = data.csv;
+                batchLabTitle = data.lab_title || 'lab';
+                renderBatchResults(data);
+            } catch (err) {
+                alert(`Batch grading failed: ${err.message}`);
+            } finally {
+                batchGradeBtn.disabled = false;
+                batchGradeBtn.innerHTML = originalLabel;
+            }
+        });
+    }
+
+    function renderBatchResults(data) {
+        const s = data.summary;
+        batchSummary.innerHTML = `
+            <div class="batch-stat"><span class="batch-stat-value">${s.graded}</span><span class="batch-stat-label">Graded</span></div>
+            <div class="batch-stat"><span class="batch-stat-value">${s.average_percentage}%</span><span class="batch-stat-label">Class Average</span></div>
+            <div class="batch-stat"><span class="batch-stat-value">${s.highest_percentage}%</span><span class="batch-stat-label">Highest</span></div>
+            <div class="batch-stat"><span class="batch-stat-value">${s.lowest_percentage}%</span><span class="batch-stat-label">Lowest</span></div>
+            <div class="batch-stat ${s.errors > 0 ? 'batch-stat-error' : ''}"><span class="batch-stat-value">${s.errors}</span><span class="batch-stat-label">Errors</span></div>
+        `;
+
+        batchTableBody.innerHTML = '';
+        data.results.forEach(row => {
+            const tr = document.createElement('tr');
+            const failed = row.status !== 'graded';
+            tr.className = failed ? 'batch-row-error' : '';
+            const statusText = failed ? row.status : `${row.passed_count} passed / ${row.failed_count} failed`;
+            tr.innerHTML = `
+                <td class="batch-student">${escapeHtml(row.student)}</td>
+                <td>${row.total_score} / ${row.max_score}</td>
+                <td class="batch-pct">${row.percentage}%</td>
+                <td><span class="grade-chip grade-${row.grade_letter.replace('+','plus').replace('-','none')}">${row.grade_letter}</span></td>
+                <td class="batch-status">${escapeHtml(statusText)}</td>
+            `;
+            batchTableBody.appendChild(tr);
+        });
+
+        batchResults.style.display = 'block';
+    }
+
+    if (batchCsvBtn) {
+        batchCsvBtn.addEventListener('click', () => {
+            if (!batchCsvText) return;
+            // A BOM keeps Excel from mangling non-ASCII student names.
+            const blob = new Blob(['﻿' + batchCsvText], { type: 'text/csv;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `grades_${batchLabTitle.replace(/[^a-z0-9]+/gi, '_').toLowerCase()}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text == null ? '' : String(text);
+        return div.innerHTML;
+    }
+
 });

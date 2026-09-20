@@ -61,3 +61,58 @@
 - Executed full test suite: 25/25 tests passing (100%).
 - Verified live FastAPI server execution at http://127.0.0.1:8000/ with automated HTTP client checks.
 - Completed Phase 1 standalone topology discovery and diagnostic tool!
+
+---
+
+## Session: 2026-09-08 — Packet Tracer Ingest & Instructor Policies
+
+### Direct `.pkt` / `.pka` / `.xml` Upload
+- Vendored the `cisco-pka-to-xml` decoder (`pka2xml`, MIT) to decrypt Packet Tracer files in memory.
+- Added `src/pkt_parser.py`: extracts ground-truth cabling, cable types, canvas coordinates, and PC/laptop profiles.
+- Extended topology models with `x_coord`, `y_coord`, and `cable_type`; added physical cabling error detection.
+- This largely supersedes `scripts/pt_collector.py`, the keystroke-scraping CLI collector.
+
+### Instructor Policy Toggles & Dynamic Relational Grading
+- Added the `EvaluationPolicies` model with nine grading policies.
+- Taught the parsers to read the security baseline (`enable secret`, `service password-encryption`, `line vty`), OSPF router processes, and default gateways.
+- Added policy-aware rule generation and the dual-format `instructions.txt` writer.
+- Implemented deterministic relational subnet evaluation using Python `ipaddress` arithmetic.
+- Built the Instructor Policy Control Center UI.
+
+---
+
+## Session: 2026-09-20 — Lab Deployment Hardening, Scoring Audit & Batch Grading
+
+### Deployment on School Computers
+- Added `start_server.py`, a double-clickable launcher. It is deliberately **not** a `.bat` file: Group Policy that restricts `cmd.exe` commonly blocks batch scripts too, and the launcher runs through `python.exe` instead.
+- The launcher checks the Python version, installs missing packages with `pip --user` (no administrator rights), verifies the Packet Tracer decoder loads, selects a free port, prints the local and LAN URLs, and opens a browser. `--check` runs diagnostics only.
+- **Fixed a Windows port-detection bug:** the first implementation set `SO_REUSEADDR` while probing, which on Windows permits binding a port another process is actively serving on. The probe reported occupied ports as free. It now connects first and binds without that option.
+- **Removed the Google Fonts CDN dependency.** All fonts are served from `static/fonts/`, so the offline claim in the technical defence documents is now true rather than aspirational.
+- **Replaced hard-coded asset versions with automatic cache-busting** derived from static file modification times. The template previously pinned `?v=3.2`, so any update to the CSS or JavaScript would never reach a browser that had already cached it.
+- Split `requirements.txt` into core runtime, `requirements-dev.txt`, and `requirements-collector.txt` so lab computers no longer install the GUI-automation stack used only by the CLI collector.
+- Added `.gitignore` and stopped tracking compiled `.pyc` files.
+
+### Scoring Algorithm Audit
+Three defects were found and fixed:
+
+1. **Negative rule weights.** Point normalisation gave all rounding error to the last rule, which could make its weight negative on a large topology with a low point total — so *passing* that checkpoint lowered a student's percentage. Replaced with largest-remainder apportionment in tenths of a point. Invariants now hold across every tested configuration: weights are never negative, they sum exactly to the target, and all are strictly positive whenever the target can afford it.
+
+2. **Correct work penalised as a duplicate subnet.** Subnet-uniqueness was keyed per interface, so a PC and its own default gateway — which are required to share a subnet — were reported as a collision. Uniqueness is now keyed by broadcast domain, computed from the cabling graph with layer 2 devices bridging their own ports. A genuine subnet reused across two separate domains is still caught.
+
+3. **Two policies had no effect at all.** `verify_default_gateways` and `allow_flexible_process_ids` were implemented in the evaluator but no rule of the matching category was ever generated, so the OSPF branch was dead code and gateways were never checked under strict addressing. Both rule types are now generated, and OSPF is graded for the first time.
+
+- Added `tests/test_policy_toggles.py`, which grades one mutated submission under the lenient and strict setting of each policy and asserts the lenient run scores higher. All nine policies now demonstrably change grading; previously seven did.
+
+### Batch Grading & Gradebook Export
+- Added `POST /api/evaluate/batch`: grades a whole class against one rubric in a single pass and returns per-student results plus a gradebook-ready CSV.
+- A submission that fails to parse is recorded as an error row rather than aborting the run, so one corrupt upload cannot cost an instructor the entire batch.
+- Added the Batch Grading panel to the Instructor Studio, with class summary statistics and a CSV download.
+- This closes the loop on the Chapter I problem statement — *"manual checking for large batches"* — which until now had no corresponding feature, since results were one student at a time and on screen only.
+
+### Demo Scenarios Removed
+- Deleted `src/presets.py`, the `/api/presets` endpoints, and the Showcase Demo Scenarios panel.
+- The three configuration bundles were preserved as `tests/fixtures.py`, where they remain realistic multi-device grading fixtures for the test suite.
+
+### Verification
+- Full suite: **86 tests passing**.
+- Batch grading and the launcher were verified in a real browser against a live server.

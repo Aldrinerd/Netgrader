@@ -4,10 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Network Topology Discovery & Automated Evaluation Engine</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css?v=3.2">
+    <!-- Fonts are served locally so the tool works with no internet access. -->
+    <link rel="stylesheet" href="/static/css/fonts.css?v={{ asset_version }}">
+    <link rel="stylesheet" href="/static/css/style.css?v={{ asset_version }}">
 </head>
 <body class="dark-theme">
     <div class="app-layout">
@@ -48,32 +47,8 @@
             <!-- Left Side: Dynamic Control Panels according to Mode -->
             <section class="control-panel" id="control-panel">
                 
-                <!-- MODE 1: LIVE TOPOLOGY DISCOVERY & SHOWCASE SCENARIOS -->
+                <!-- MODE 1: LIVE TOPOLOGY DISCOVERY -->
                 <div id="panel-mode-visualizer" class="mode-panel active">
-                    <!-- 1-Click Presentation Presets -->
-                    <div class="panel-card presets-card">
-                        <div class="card-header">
-                            <span class="card-icon">⚡</span>
-                            <h3>Showcase Demo Scenarios</h3>
-                        </div>
-                        <p class="card-desc">Load preconfigured lab bundles to demonstrate multi-signal inference and error detection during defense:</p>
-                        <div class="presets-list">
-                            {% for preset in presets %}
-                            <div class="preset-item" data-preset-id="{{ preset.id }}">
-                                <div class="preset-top">
-                                    <span class="preset-name">{{ preset.name }}</span>
-                                    <span class="badge badge-{{ preset.badge_color }}">{{ preset.badge }}</span>
-                                </div>
-                                <p class="preset-description">{{ preset.description }}</p>
-                                <div class="preset-meta">
-                                    <span class="device-tag">💻 {{ preset.device_count }} Devices</span>
-                                    <span class="load-btn-text">Click to Run Analysis →</span>
-                                </div>
-                            </div>
-                            {% endfor %}
-                        </div>
-                    </div>
-
                     <!-- Custom Upload Area -->
                     <div class="panel-card upload-card">
                         <div class="card-header">
@@ -325,6 +300,46 @@
                             </button>
                         </div>
                     </div>
+
+                    <!-- Batch Grading: grade a whole class in one pass -->
+                    <div class="panel-card batch-card">
+                        <div class="card-header">
+                            <span class="card-icon">📊</span>
+                            <h3>Batch Grading &amp; Gradebook Export</h3>
+                            <span class="badge badge-blue">Whole Class</span>
+                        </div>
+                        <p class="card-desc">Grade an entire class against one rubric, then export the scores as a CSV your gradebook can open directly. <strong>One file per student</strong> &mdash; the filename becomes the student's name.</p>
+
+                        <div class="form-group">
+                            <label for="batch-inst-input">1. Instructions file (<code>instructions.txt</code>):</label>
+                            <input type="file" id="batch-inst-input" class="form-input" accept=".txt,.json">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="batch-sub-input">2. Student submissions (select many):</label>
+                            <input type="file" id="batch-sub-input" class="form-input" multiple accept=".pkt,.pka,.xml,.zip,.txt">
+                            <span class="form-hint" id="batch-file-count">No submissions selected</span>
+                        </div>
+
+                        <button id="batch-grade-btn" class="btn btn-primary btn-block">
+                            <span>⚡ Grade All Submissions</span>
+                        </button>
+
+                        <div id="batch-results" class="batch-results" style="display:none;">
+                            <div class="batch-summary" id="batch-summary"></div>
+                            <div class="batch-table-wrap">
+                                <table class="batch-table">
+                                    <thead>
+                                        <tr><th>Student</th><th>Score</th><th>%</th><th>Grade</th><th>Status</th></tr>
+                                    </thead>
+                                    <tbody id="batch-table-body"></tbody>
+                                </table>
+                            </div>
+                            <button id="batch-csv-btn" class="btn btn-primary btn-block" style="margin-top:12px;">
+                                <span>📥 Download Gradebook CSV</span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- MODE 3: STUDENT SUBMISSION & AUTOMATED GRADING -->
@@ -465,7 +480,7 @@
                     <div id="empty-state" class="empty-state">
                         <div class="empty-icon">🌐</div>
                         <h3 id="empty-state-title">No Network Loaded</h3>
-                        <p id="empty-state-desc">Select a 1-Click Demo Scenario on the left, upload student Cisco files, or switch to Instructor Studio to author a new lab assignment.</p>
+                        <p id="empty-state-desc">Upload a Packet Tracer file or Cisco configuration bundle on the left, or switch to Instructor Studio to author a new lab assignment.</p>
                     </div>
                     <svg id="topology-svg" class="topology-svg" width="100%" height="100%"></svg>
                 </div>
@@ -490,6 +505,6 @@
     <!-- Toast Notification Overlay -->
     <div id="toast-container" class="toast-container"></div>
 
-    <script src="/static/js/app.js?v=3.2"></script>
+    <script src="/static/js/app.js?v={{ asset_version }}"></script>
 </body>
 </html>

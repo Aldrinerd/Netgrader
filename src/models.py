@@ -129,6 +129,7 @@ class EvaluationRule(BaseModel):
         "vlan_trunk",
         "routing",
         "relational_subnet",
+        "gateway",
         "security",
         "documentation"
     ]

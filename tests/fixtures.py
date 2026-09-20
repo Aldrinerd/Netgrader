@@ -1,48 +1,15 @@
-# src/presets.py
+# tests/fixtures.py
 """
-Built-in preset laboratory scenarios for instant live demonstration
-and presentation validation.
+Reference Cisco configuration bundles used by the test suite.
+
+These were previously shipped as in-app "demo scenarios". The demo feature was
+removed from the product, but the bundles remain valuable as realistic,
+multi-device grading fixtures, so they live here instead.
+
+  network_bundle("ospf_clean")            converged 3-router OSPF ring
+  network_bundle("subnet_cabling_error")  subnet mismatch + downed link
+  network_bundle("vlan_trunk_mismatch")   native VLAN mismatch on a trunk
 """
-
-PRESETS_CATALOG = [
-    {
-        "id": "ospf_clean",
-        "name": "Scenario 1: Converged 3-Router OSPF Ring",
-        "badge": "100% Clean",
-        "badge_color": "green",
-        "description": "A fully converged 3-Router OSPF triangle mesh with matching /30 point-to-point subnets, mutual CDP discovery, and active routes.",
-        "device_count": 3,
-        "highlight": "Demonstrates multi-signal fusion verifying 100% confidence edges and dynamic routing convergence."
-    },
-    {
-        "id": "subnet_cabling_error",
-        "name": "Scenario 2: Subnet Mismatch & Cabling Down Error",
-        "badge": "2 Critical Errors",
-        "badge_color": "red",
-        "description": "R1 and R2 are physically cabled together via CDP, but R1 is configured with 192.168.1.1/24 while R2 is 192.168.2.2/24, plus R1's interface is missing 'no shutdown'.",
-        "device_count": 2,
-        "highlight": "Demonstrates relational cross-device conflict detection flagging subnet mismatch and cabling/admin down states with line numbers."
-    },
-    {
-        "id": "vlan_trunk_mismatch",
-        "name": "Scenario 3: Multi-Switch VLAN & Trunk Mismatch",
-        "badge": "Trunk Inconsistency",
-        "badge_color": "amber",
-        "description": "SW1 and SW2 connected via 802.1Q trunk, but Native VLANs are mismatched (VLAN 1 vs VLAN 99) causing VLAN hopping and loop risk.",
-        "device_count": 2,
-        "highlight": "Demonstrates Layer 2 topology inference (CDP + Trunk + MAC tables) and cross-switch native VLAN disparity auditing."
-    },
-    {
-        "id": "pkt_trial",
-        "name": "Scenario 4: Packet Tracer Multi-Tier Network (.xml)",
-        "badge": "PT Ground Truth",
-        "badge_color": "green",
-        "description": "7 Routers, 2 Switches, and 2 Laptops directly extracted from Packet Tracer XML with authoritative cabling, models, and exact canvas coordinates.",
-        "device_count": 11,
-        "highlight": "Demonstrates direct Packet Tracer XML ingestion, exact canvas layout, and end-device host IP extraction."
-    }
-]
-
 
 PRESET_FILES = {
     "ospf_clean": {
@@ -335,12 +302,9 @@ Vlan    Mac Address       Type        Ports
     }
 }
 
-def get_available_presets() -> list[dict]:
-    """Returns metadata for all available showcase demo presets."""
-    return PRESETS_CATALOG
-
-def load_preset(preset_id: str) -> dict[str, str]:
-    """Returns filename -> content dictionary for a given preset ID."""
-    if preset_id not in PRESET_FILES:
-        raise ValueError(f"Unknown preset ID '{preset_id}'. Available: {list(PRESET_FILES.keys())}")
-    return PRESET_FILES[preset_id]
+def network_bundle(name: str) -> dict[str, str]:
+    """Return a {filename: config_text} bundle by name."""
+    if name not in PRESET_FILES:
+        raise ValueError(f"Unknown fixture '{name}'. Available: {list(PRESET_FILES)}")
+    # Copy so a test mutating a bundle cannot affect another test.
+    return dict(PRESET_FILES[name])
