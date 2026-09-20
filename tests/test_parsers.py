@@ -1,6 +1,12 @@
 # tests/test_parsers.py
 import pytest
-from src.parsers import parse_device_bundle, normalize_interface_name, canonical_device_name
+from src.models import InterfaceData, ParsedDevice
+from src.parsers import (
+    canonical_device_name,
+    classify_device_role,
+    normalize_interface_name,
+    parse_device_bundle,
+)
 
 SAMPLE_ROUTER = """
 R1# show running-config
@@ -234,3 +240,116 @@ def test_parse_switch_default_gateway():
     assert dev.default_gateway == "192.168.1.1"
 
 
+
+
+# --- Layer 2 vs Layer 3 switch classification -------------------------------
+#
+# device_type is assigned as a side effect of any `switchport` line while the
+# config is being scanned, so before classify_device_role() existed every
+# multilayer switch came out as a plain "switch". These lock the distinction.
+
+L2_ACCESS_SWITCH = """
+hostname ACCESS_SW
+!
+interface GigabitEthernet0/1
+ switchport mode trunk
+!
+interface FastEthernet0/1
+ switchport mode access
+ switchport access vlan 10
+!
+interface Vlan1
+ no ip address
+!
+interface Vlan99
+ ip address 172.16.0.227 255.255.255.240
+!
+ip default-gateway 172.16.0.225
+"""
+
+MULTILAYER_SWITCH = """
+hostname CORE_SW
+!
+ip routing
+!
+interface GigabitEthernet1/0/1
+ switchport mode trunk
+!
+interface GigabitEthernet1/0/23
+ no switchport
+ ip address 172.16.254.6 255.255.255.252
+!
+interface Vlan10
+ ip address 172.16.0.129 255.255.255.224
+!
+interface Vlan20
+ ip address 172.16.0.161 255.255.255.240
+"""
+
+
+def test_l2_switch_stays_a_switch():
+    """A management SVI is not routing. One addressed SVI must not promote."""
+    dev = parse_device_bundle(L2_ACCESS_SWITCH, "ACCESS_SW.txt")
+    assert dev.device_type == "switch"
+    assert dev.has_ip_routing is False
+
+
+def test_multilayer_switch_is_classified_l3():
+    dev = parse_device_bundle(MULTILAYER_SWITCH, "CORE_SW.txt")
+    assert dev.device_type == "l3_switch"
+    assert dev.has_ip_routing is True
+
+
+def test_ip_route_does_not_count_as_ip_routing():
+    """`ip route` is a static route on a plain router, not L3 switching."""
+    raw = """
+    hostname R9
+    interface GigabitEthernet0/0
+     ip address 10.0.0.1 255.255.255.252
+    ip route 0.0.0.0 0.0.0.0 10.0.0.2
+    """
+    dev = parse_device_bundle(raw, "R9.txt")
+    assert dev.has_ip_routing is False
+    assert dev.device_type == "router"
+
+
+def test_routed_port_promotes_without_ip_routing_line():
+    """`no switchport` + an address is a routed port: only an L3 switch has one."""
+    raw = """
+    hostname CORE2
+    interface GigabitEthernet1/0/1
+     switchport mode trunk
+    interface GigabitEthernet1/0/24
+     no switchport
+     ip address 172.16.254.14 255.255.255.252
+    """
+    dev = parse_device_bundle(raw, "CORE2.txt")
+    assert dev.device_type == "l3_switch"
+
+
+def test_hardware_model_overrides_configuration():
+    """A 3560 is multilayer hardware even before routing is switched on, and a
+    2960 cannot route however its config reads."""
+    l3 = ParsedDevice(hostname="S1", canonical_name="s1", device_type="switch",
+                      hardware_model="3560-24PS")
+    classify_device_role(l3)
+    assert l3.device_type == "l3_switch"
+
+    l2 = ParsedDevice(hostname="S2", canonical_name="s2", device_type="switch",
+                      hardware_model="2960-24TT", has_ip_routing=True)
+    classify_device_role(l2)
+    assert l2.device_type == "switch"
+
+
+def test_classification_never_demotes_a_router_or_host():
+    """No switching evidence means the caller's answer stands."""
+    router = ParsedDevice(hostname="R1", canonical_name="r1", device_type="router")
+    router.interfaces["GigabitEthernet0/0"] = InterfaceData(
+        name="GigabitEthernet0/0", ip_address="10.0.0.1"
+    )
+    classify_device_role(router)
+    assert router.device_type == "router"
+
+    host = ParsedDevice(hostname="PC0", canonical_name="pc0", device_type="host")
+    classify_device_role(host)
+    assert host.device_type == "host"

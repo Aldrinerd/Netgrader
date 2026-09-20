@@ -60,6 +60,8 @@ class ParsedDevice(BaseModel):
     has_enable_secret: bool = False
     has_password_encryption: bool = False
     has_vty_login: bool = False
+    has_ip_routing: bool = False
+    hardware_model: str = ""
     ospf_processes: list[dict] = Field(default_factory=list)
     interfaces: dict[str, InterfaceData] = Field(default_factory=dict)
     cdp_neighbors: list[CDPNeighbor] = Field(default_factory=list)

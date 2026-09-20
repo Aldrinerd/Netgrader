@@ -6,6 +6,9 @@ from src.models import (
     ParsedDevice,
 )
 
+_SWITCHING_TYPES = ("switch", "l3_switch")
+
+
 def detect_conflicts(devices: dict[str, ParsedDevice], links: list[DiscoveredLink]) -> list[ConflictIssue]:
     """
     Scans parsed devices and discovered topology links for cross-device
@@ -97,7 +100,7 @@ def detect_conflicts(devices: dict[str, ParsedDevice], links: list[DiscoveredLin
     for link in links:
         dev_a = devices.get(link.source_device)
         dev_b = devices.get(link.target_device)
-        if dev_a and dev_b and not dev_a.is_placeholder and not dev_b.is_placeholder and dev_a.device_type == "switch" and dev_b.device_type == "switch":
+        if dev_a and dev_b and not dev_a.is_placeholder and not dev_b.is_placeholder and dev_a.device_type in _SWITCHING_TYPES and dev_b.device_type in _SWITCHING_TYPES:
             intf_a = dev_a.interfaces.get(link.source_interface)
             intf_b = dev_b.interfaces.get(link.target_interface)
             if intf_a and intf_b and intf_a.switchport_mode == "trunk" and intf_b.switchport_mode == "trunk":

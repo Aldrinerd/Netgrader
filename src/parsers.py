@@ -73,6 +73,12 @@ def parse_running_config(content: str, start_line: int, device: ParsedDevice) ->
             device.has_password_encryption = True
             continue
 
+        # `ip routing` enables L3 forwarding on a switch. Anchored so that
+        # `ip route 0.0.0.0 ...` on a plain router cannot match it.
+        if re.match(r"^ip\s+routing\b", stripped, re.IGNORECASE):
+            device.has_ip_routing = True
+            continue
+
         # Default Gateway (Switches / Hosts)
         gw_match = re.match(r"^ip\s+default-gateway\s+([0-9\.]+)", stripped, re.IGNORECASE)
         if gw_match:
@@ -189,6 +195,16 @@ def parse_running_config(content: str, start_line: int, device: ParsedDevice) ->
                 continue
 
             
+            # `no switchport` converts the port to a routed interface. It has
+            # to be tested before the substring checks below, because every one
+            # of them also matches the word inside "no switchport" and would
+            # otherwise flag a routed port as a switchport -- backwards.
+            if re.match(r"^no\s+switchport\s*$", stripped, re.IGNORECASE):
+                current_intf.is_switchport = False
+                current_intf.switchport_mode = None
+                current_intf.evidence_lines["no_switchport"] = line_no
+                continue
+
             # Switchport mode
             if "switchport mode trunk" in stripped.lower():
                 current_intf.is_switchport = True
@@ -411,6 +427,68 @@ def parse_mac_table(content: str, start_line: int, device: ParsedDevice) -> None
                 evidence_line=line_no
             ))
 
+# Catalyst families that are multilayer switches in hardware. A device of one
+# of these models is an l3_switch even if the student never enabled routing on
+# it -- device_type describes the equipment, not the configuration. Whether
+# routing was actually turned on is a grading question, asked separately.
+_L3_SWITCH_MODELS = ("3560", "3650", "3750", "3850", "4500", "6500", "9300", "9500")
+
+# Access-layer models that cannot route, whatever the config appears to show.
+_L2_SWITCH_MODELS = ("2950", "2960", "2970")
+
+
+def classify_device_role(device: ParsedDevice) -> None:
+    """
+    Settle router / switch / l3_switch from all the evidence at once.
+
+    This has to run AFTER parsing rather than during it. Every `switchport`
+    line, every `show vlan brief` and every `show interfaces trunk` block
+    assigns device_type = "switch" as a side effect, and nothing ever revises
+    it. A multilayer switch has switchports AND routed interfaces, so the
+    line-by-line answer is always wrong for precisely the devices this
+    distinction exists to describe.
+
+    Only ever decides between switch and l3_switch. Hosts, unknowns and
+    devices with no switching evidence at all are left exactly as the caller
+    classified them, so a router is never demoted by a parsing accident.
+    """
+    if device.device_type in ("host", "unknown"):
+        return
+
+    model = (device.hardware_model or "").lower()
+    if any(m in model for m in _L3_SWITCH_MODELS):
+        device.device_type = "l3_switch"
+        return
+    if any(m in model for m in _L2_SWITCH_MODELS):
+        device.device_type = "switch"
+        return
+
+    has_switchports = any(i.is_switchport for i in device.interfaces.values())
+    if not has_switchports and not device.vlans:
+        # No switching evidence. Leave the caller's answer (model-derived on
+        # the .pkt path, the "router" default on the text path) alone.
+        return
+
+    # An SVI carrying an address. One of these is an L2 switch's management
+    # interface; several means the switch is the gateway for those VLANs.
+    addressed_svis = sum(
+        1 for name, intf in device.interfaces.items()
+        if re.match(r"^vlan\d+$", name, re.IGNORECASE) and intf.ip_address
+    )
+    # A physical port taken out of switching with `no switchport` and given an
+    # address -- a routed port, which only a multilayer switch has.
+    routed_ports = any(
+        intf.ip_address and not intf.is_switchport
+        and not re.match(r"^vlan\d+$", name, re.IGNORECASE)
+        for name, intf in device.interfaces.items()
+    )
+
+    if device.has_ip_routing or addressed_svis > 1 or routed_ports:
+        device.device_type = "l3_switch"
+    else:
+        device.device_type = "switch"
+
+
 def parse_device_bundle(raw_text: str, filename: str) -> ParsedDevice:
     """Ingests raw multi-command output and produces a structured ParsedDevice object."""
     base_name = os.path.basename(filename).rsplit(".", 1)[0]
@@ -456,5 +534,8 @@ def parse_device_bundle(raw_text: str, filename: str) -> ParsedDevice:
     if "show mac address-table" in sections:
         content, start_line = sections["show mac address-table"]
         parse_mac_table(content, start_line, device)
-        
+
+    # Every section has contributed now, so the role can finally be settled.
+    classify_device_role(device)
+
     return device
