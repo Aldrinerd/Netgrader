@@ -17,6 +17,24 @@ class InterfaceData(BaseModel):
     trunk_allowed_vlans: list[int] = Field(default_factory=list)
     trunk_native_vlan: int = 1
     description: str | None = None
+
+    # --- Interface-level protocol settings (link-agreement Phase 2) ---
+    # All optional: an unset value means the IOS default, which the link
+    # attribute registry supplies. None here means "not written in the
+    # config", not "no value in effect".
+    ospf_hello_interval: int | None = None
+    ospf_dead_interval: int | None = None
+    ospf_area: int | None = None
+    ospf_network_type: str | None = None      # broadcast / point-to-point / ...
+    ospf_authentication: str | None = None    # message-digest / text / null
+    mtu: int | None = None
+    speed: str | None = None                  # auto / 10 / 100 / 1000
+    duplex: str | None = None                 # auto / full / half
+    channel_group: int | None = None
+    channel_group_mode: str | None = None     # active / passive / on / desirable / auto
+    encapsulation: str | None = None          # ppp / hdlc / frame-relay
+    clock_rate: int | None = None
+
     evidence_lines: dict[str, int] = Field(default_factory=dict)
 
 

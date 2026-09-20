@@ -38,6 +38,8 @@ enable secret 5 $1$mERr$9cTjUIEqNGurQiFU.ZeCi1
 interface GigabitEthernet0/0
  description Link via GigabitEthernet0/0
  ip address 10.0.0.1 255.255.255.252
+ ip ospf hello-interval 10
+ ip ospf dead-interval 40
  duplex auto
  speed auto
 !
@@ -73,6 +75,8 @@ enable secret 5 $1$mERr$9cTjUIEqNGurQiFU.ZeCi1
 interface GigabitEthernet0/0
  description Link via GigabitEthernet0/0
  ip address 10.0.0.2 255.255.255.252
+ ip ospf hello-interval 10
+ ip ospf dead-interval 40
  duplex auto
  speed auto
 !

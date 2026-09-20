@@ -223,7 +223,22 @@ members, and demanding a trunk carry it reintroduces the same false positive.
 Deliverable: native VLAN mismatch becomes a graded checkpoint. The stranded
 conflict-detector finding starts counting.
 
-### Phase 2 — interface-level protocol attributes
+### Phase 2 — interface-level protocol attributes  *(shipped)*
+
+Two design points settled during implementation:
+
+- **Implicit defaults.** An absent line still has an effective value, so
+  each attribute carries the IOS default and comparison is effective-value
+  against effective-value. Without this, one end writing `duplex auto` and
+  the other writing nothing would be reported as a mismatch that does not
+  exist. `exactly_one` is exempt: there, absence is the fact being measured.
+- **Gated on the reference.** Attributes only generate a rule when the
+  instructor's file writes them. Real router configs always emit `speed`
+  and `duplex`, so those are always graded; `mtu` and OSPF timers only when
+  set deliberately. The reference is the specification, and grading what
+  the lab did not ask for would be inventing requirements — but it means
+  link agreement is only as complete as the reference.
+
 
 Requires new parsing inside `interface` blocks in
 [parsers.py](../../../src/parsers.py), extending `InterfaceData`:

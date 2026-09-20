@@ -11,6 +11,14 @@ Two kinds of entry, and the second kind matters more:
   POSITIVE  a real fault. The engine must catch it. Measures recall -- faults
             it misses are marks a student keeps without earning them.
 
+A fault this suite cannot measure: an attribute the reference never
+configures generates no rule, so a student's change to it is not graded. The
+reference is the specification, and grading what the lab did not ask for
+would be inventing requirements. MTU is the case that bites -- a real config
+only writes it deliberately, so an MTU mismatch breaking OSPF goes unseen
+unless the instructor set MTU themselves. See
+tests/test_link_agreement.py::test_an_attribute_the_reference_never_sets_is_not_graded.
+
   NEGATIVE  correct work that merely differs from the reference: a renamed
             device, a different but self-consistent addressing plan, a trunk
             pruned of a VLAN nobody uses. The engine must NOT flag it.
@@ -120,6 +128,14 @@ def _subnet_mismatch_across_link(topo):
     intf.network_address = "10.9.9.0"
 
 
+def _ospf_hello_changed_on_one_end(topo):
+    topo.devices["R2"].interfaces["GigabitEthernet0/0"].ospf_hello_interval = 5
+
+
+def _duplex_hardcoded_on_one_end(topo):
+    topo.devices["R2"].interfaces["GigabitEthernet0/0"].duplex = "full"
+
+
 # --- Negative cases: correct work that differs from the reference ------------
 
 def _devices_renamed(topo):
@@ -154,6 +170,14 @@ def _unused_vlan_pruned(topo):
     """VLAN 20 (SALES) has no members on either switch. Pruning it is good practice."""
     for host in ("SW1", "SW2"):
         topo.devices[host].interfaces["GigabitEthernet0/2"].trunk_allowed_vlans = [10, 99]
+
+
+def _ospf_timers_changed_on_both_ends(topo):
+    """Faster timers on both ends form a perfectly good adjacency."""
+    for host in ("R1", "R2"):
+        intf = topo.devices[host].interfaces["GigabitEthernet0/0"]
+        intf.ospf_hello_interval = 5
+        intf.ospf_dead_interval = 20
 
 
 def _extra_unrelated_interface(topo):
@@ -273,6 +297,22 @@ CATALOGUE: list = [
         expect_categories=frozenset({"security"}),
         policies=SECURE,
     ),
+    Mutation(
+        id="ospf_hello_mismatch",
+        label="OSPF hello interval changed on one end",
+        fault="R2 Gi0/0 uses hello 5 while R1 stays at the default 10",
+        apply=_ospf_hello_changed_on_one_end,
+        expect_categories=frozenset({"link_agreement"}),
+        expect_mentions=("adjacency",),
+    ),
+    Mutation(
+        id="duplex_hardcoded_one_end",
+        label="Duplex hard-set on one end against auto on the other",
+        fault="R2 Gi0/0 forced to full duplex while R1 auto-negotiates",
+        apply=_duplex_hardcoded_on_one_end,
+        expect_categories=frozenset({"link_agreement"}),
+        expect_mentions=("collision",),
+    ),
 
     # --- negative -----------------------------------------------------------
     Mutation(
@@ -300,6 +340,12 @@ CATALOGUE: list = [
         label="Correct work, an unused VLAN pruned from the trunk",
         fault="VLAN 20 removed from both ends; nobody is in VLAN 20",
         apply=_unused_vlan_pruned,
+    ),
+    Mutation(
+        id="ospf_timers_agreed",
+        label="Correct work, non-default OSPF timers agreed by both ends",
+        fault="Both ends of the R1-R2 link use hello 5 / dead 20",
+        apply=_ospf_timers_changed_on_both_ends,
     ),
     Mutation(
         id="extra_loopback",

@@ -193,6 +193,100 @@ def parse_running_config(content: str, start_line: int, device: ParsedDevice) ->
                 current_intf.evidence_lines["ipv6"] = line_no
                 continue
             
+            # --- Interface-level protocol settings ---
+            # Each is optional in the config and defaults in IOS, so an absent
+            # line is recorded as None rather than guessed at here; the link
+            # attribute registry knows the default that applies.
+
+            ospf_timer = re.match(
+                r"^ip\s+ospf\s+(hello|dead)-interval\s+(\d+)", stripped, re.IGNORECASE)
+            if ospf_timer:
+                value = int(ospf_timer.group(2))
+                if ospf_timer.group(1).lower() == "hello":
+                    current_intf.ospf_hello_interval = value
+                    current_intf.evidence_lines["ospf_hello_interval"] = line_no
+                else:
+                    current_intf.ospf_dead_interval = value
+                    current_intf.evidence_lines["ospf_dead_interval"] = line_no
+                continue
+
+            # `ip ospf <process-id> area <area-id>` -- interface-level OSPF,
+            # an alternative to `network ... area ...` under `router ospf`.
+            ospf_area = re.match(
+                r"^ip\s+ospf\s+\d+\s+area\s+(\d+)", stripped, re.IGNORECASE)
+            if ospf_area:
+                current_intf.ospf_area = int(ospf_area.group(1))
+                current_intf.evidence_lines["ospf_area"] = line_no
+                continue
+
+            ospf_network = re.match(
+                r"^ip\s+ospf\s+network\s+([a-zA-Z\-]+)", stripped, re.IGNORECASE)
+            if ospf_network:
+                current_intf.ospf_network_type = ospf_network.group(1).strip().lower()
+                current_intf.evidence_lines["ospf_network_type"] = line_no
+                continue
+
+            # Both ends must use the same scheme AND the same key, but the key
+            # itself is a credential and is never stored -- only whether one is
+            # configured, which is all the agreement check needs.
+            if re.match(r"^ip\s+ospf\s+message-digest-key\b", stripped, re.IGNORECASE):
+                current_intf.ospf_authentication = "message-digest"
+                current_intf.evidence_lines["ospf_authentication"] = line_no
+                continue
+            ospf_auth = re.match(
+                r"^ip\s+ospf\s+authentication(?:\s+(message-digest|null))?\s*$",
+                stripped, re.IGNORECASE)
+            if ospf_auth:
+                current_intf.ospf_authentication = (ospf_auth.group(1) or "text").lower()
+                current_intf.evidence_lines["ospf_authentication"] = line_no
+                continue
+            if re.match(r"^ip\s+ospf\s+authentication-key\b", stripped, re.IGNORECASE):
+                if not current_intf.ospf_authentication:
+                    current_intf.ospf_authentication = "text"
+                current_intf.evidence_lines["ospf_authentication"] = line_no
+                continue
+
+            mtu_match = re.match(r"^(?:ip\s+)?mtu\s+(\d+)", stripped, re.IGNORECASE)
+            if mtu_match:
+                current_intf.mtu = int(mtu_match.group(1))
+                current_intf.evidence_lines["mtu"] = line_no
+                continue
+
+            speed_match = re.match(r"^speed\s+(auto|\d+)", stripped, re.IGNORECASE)
+            if speed_match:
+                current_intf.speed = speed_match.group(1).strip().lower()
+                current_intf.evidence_lines["speed"] = line_no
+                continue
+
+            duplex_match = re.match(r"^duplex\s+(auto|full|half)", stripped, re.IGNORECASE)
+            if duplex_match:
+                current_intf.duplex = duplex_match.group(1).strip().lower()
+                current_intf.evidence_lines["duplex"] = line_no
+                continue
+
+            channel_match = re.match(
+                r"^channel-group\s+(\d+)(?:\s+mode\s+([a-zA-Z\s]+?))?\s*$",
+                stripped, re.IGNORECASE)
+            if channel_match:
+                current_intf.channel_group = int(channel_match.group(1))
+                mode = (channel_match.group(2) or "on").strip().lower()
+                current_intf.channel_group_mode = re.sub(r"\s+", " ", mode)
+                current_intf.evidence_lines["channel_group"] = line_no
+                continue
+
+            encap_match = re.match(
+                r"^encapsulation\s+(ppp|hdlc|frame-relay)\b", stripped, re.IGNORECASE)
+            if encap_match:
+                current_intf.encapsulation = encap_match.group(1).strip().lower()
+                current_intf.evidence_lines["encapsulation"] = line_no
+                continue
+
+            clock_match = re.match(r"^clock\s+rate\s+(\d+)", stripped, re.IGNORECASE)
+            if clock_match:
+                current_intf.clock_rate = int(clock_match.group(1))
+                current_intf.evidence_lines["clock_rate"] = line_no
+                continue
+
             # Description
             desc_match = re.match(r"^description\s+(.+)$", stripped, re.IGNORECASE)
             if desc_match:

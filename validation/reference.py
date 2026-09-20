@@ -30,12 +30,24 @@ from src.models import (
 )
 
 
-def _routed(name: str, ip: str, cidr: int, network: str) -> InterfaceData:
+def _routed(name: str, ip: str, cidr: int, network: str, media: bool = False,
+            ospf_timers: bool = False) -> InterfaceData:
+    """
+    A routed interface. `media` mirrors the `speed auto` / `duplex auto` lines
+    a router writes into its own running-config; `ospf_timers` mirrors explicit
+    hello and dead intervals. Both exist so the Phase 2 link attributes are
+    actually exercised, and so this stays identical to reference_text.py --
+    the fidelity check compares the two and a divergence here is a finding.
+    """
     mask = {30: "255.255.255.252", 24: "255.255.255.0"}[cidr]
     return InterfaceData(
         name=name, ip_address=ip, cidr=cidr, subnet_mask=mask,
         network_address=network, admin_status="up", line_status="up",
         description=f"Link via {name}",
+        speed="auto" if media else None,
+        duplex="auto" if media else None,
+        ospf_hello_interval=10 if ospf_timers else None,
+        ospf_dead_interval=40 if ospf_timers else None,
     )
 
 
@@ -76,8 +88,10 @@ def build_reference() -> TopologyResult:
         hostname="R1", canonical_name="r1", display_name="R1", device_type="router",
         raw_filename="R1.txt",
         interfaces={
-            "GigabitEthernet0/0": _routed("GigabitEthernet0/0", "10.0.0.1", 30, "10.0.0.0"),
-            "GigabitEthernet0/1": _routed("GigabitEthernet0/1", "192.168.10.1", 24, "192.168.10.0"),
+            "GigabitEthernet0/0": _routed("GigabitEthernet0/0", "10.0.0.1", 30, "10.0.0.0",
+                                          media=True, ospf_timers=True),
+            "GigabitEthernet0/1": _routed("GigabitEthernet0/1", "192.168.10.1", 24, "192.168.10.0",
+                                          media=True),
         },
         ospf_processes=[{
             "process_id": 1,
@@ -92,7 +106,8 @@ def build_reference() -> TopologyResult:
         hostname="R2", canonical_name="r2", display_name="R2", device_type="router",
         raw_filename="R2.txt",
         interfaces={
-            "GigabitEthernet0/0": _routed("GigabitEthernet0/0", "10.0.0.2", 30, "10.0.0.0"),
+            "GigabitEthernet0/0": _routed("GigabitEthernet0/0", "10.0.0.2", 30, "10.0.0.0",
+                                          media=True, ospf_timers=True),
         },
         ospf_processes=[{
             "process_id": 1,

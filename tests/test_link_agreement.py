@@ -398,3 +398,175 @@ def test_a_student_who_prunes_a_populated_vlan_loses_the_points():
                 if r.rule_id.startswith("linkagree_trunk_allowed_vlans_")]
     assert coverage and not coverage[0].passed
     assert "80" in coverage[0].actual_value
+
+
+# --- Phase 2: interface-level protocol attributes ---------------------------
+
+HELLO = LINK_ATTRIBUTES["ospf_hello_interval"]
+MTU = LINK_ATTRIBUTES["mtu"]
+DUPLEX = LINK_ATTRIBUTES["duplex"]
+CHANNEL = LINK_ATTRIBUTES["channel_group_mode"]
+ENCAP = LINK_ATTRIBUTES["encapsulation"]
+CLOCK = LINK_ATTRIBUTES["clock_rate"]
+
+
+def routed(name="GigabitEthernet0/0", ip="10.0.0.1", **kwargs):
+    return InterfaceData(name=name, ip_address=ip, cidr=30, **kwargs)
+
+
+def router(hostname="R1"):
+    return ParsedDevice(hostname=hostname, canonical_name=hostname.lower(),
+                        display_name=hostname, device_type="router")
+
+
+def check(attr, intf_a, intf_b):
+    return compare(attr, router("R1"), intf_a, router("R2"), intf_b)
+
+
+# --- implicit defaults: the thing that stops false positives ---------------
+
+def test_an_unwritten_setting_is_compared_at_its_ios_default():
+    """
+    One end writing `ip ospf hello-interval 10` and the other writing nothing
+    is agreement: 10 is the default. Treating the silent end as "unset" would
+    fail a correct link.
+    """
+    assert check(HELLO, routed(ospf_hello_interval=10), routed(ip="10.0.0.2")).passed
+
+
+def test_changing_one_end_off_the_default_is_caught():
+    verdict = check(HELLO, routed(ospf_hello_interval=5), routed(ip="10.0.0.2"))
+    assert not verdict.passed
+    assert "5" in verdict.actual and "10" in verdict.actual
+
+
+def test_both_ends_silent_generates_no_rule():
+    """Two defaults already agree, so a checkpoint would be noise."""
+    keys = {a.key for a in applicable_attributes(
+        router("R1"), routed(), router("R2"), routed(ip="10.0.0.2"))}
+    assert "ospf_hello_interval" not in keys
+    assert "mtu" not in keys
+    assert "duplex" not in keys
+
+
+def test_hardcoded_speed_against_autonegotiation_is_caught():
+    """The classic duplex-mismatch setup: one end fixed, one end auto."""
+    verdict = check(DUPLEX, routed(duplex="full"), routed(ip="10.0.0.2"))
+    assert not verdict.passed
+    assert "full" in verdict.actual and "auto" in verdict.actual
+
+
+def test_mtu_mismatch_is_caught_and_explained():
+    verdict = check(MTU, routed(mtu=1400), routed(ip="10.0.0.2"))
+    assert not verdict.passed
+    assert "1400" in verdict.actual and "1500" in verdict.actual
+
+
+def test_ospf_attributes_do_not_apply_to_unaddressed_interfaces():
+    """A switchport has no OSPF settings to disagree about."""
+    sw_port = InterfaceData(name="Fa0/1", is_switchport=True, switchport_mode="access",
+                            access_vlan=10, ospf_hello_interval=5)
+    keys = {a.key for a in applicable_attributes(
+        router("R1"), sw_port, router("R2"), sw_port)}
+    assert "ospf_hello_interval" not in keys
+
+
+# --- EtherChannel matrix ----------------------------------------------------
+
+@pytest.mark.parametrize("mode_a,mode_b,expected", [
+    ("active", "active", True),
+    ("active", "passive", True),
+    ("on", "on", True),
+    ("desirable", "desirable", True),
+    ("desirable", "auto", True),
+    ("passive", "passive", False),
+    ("auto", "auto", False),
+    ("active", "on", False),
+    ("active", "desirable", False),
+    ("on", "passive", False),
+])
+def test_etherchannel_matrix(mode_a, mode_b, expected):
+    a = routed(name="Gi0/1", channel_group=1, channel_group_mode=mode_a)
+    b = routed(name="Gi0/1", ip="10.0.0.2", channel_group=1, channel_group_mode=mode_b)
+    assert check(CHANNEL, a, b).passed is expected
+
+
+def test_lacp_passive_on_both_ends_explains_the_silence():
+    a = routed(name="Gi0/1", channel_group=1, channel_group_mode="passive")
+    b = routed(name="Gi0/1", ip="10.0.0.2", channel_group=1, channel_group_mode="passive")
+    verdict = check(CHANNEL, a, b)
+    assert not verdict.passed
+    assert "neither end ever asks to bundle" in verdict.reason
+    assert "No error is logged" in verdict.reason
+
+
+# --- exactly_one: serial clock rate -----------------------------------------
+
+def serial(ip, clock=None):
+    return InterfaceData(name="Serial0/0/0", ip_address=ip, cidr=30, clock_rate=clock)
+
+
+def test_clock_rate_on_exactly_one_end_passes():
+    assert check(CLOCK, serial("10.0.0.1", 64000), serial("10.0.0.2")).passed
+    assert check(CLOCK, serial("10.0.0.1"), serial("10.0.0.2", 64000)).passed
+
+
+def test_clock_rate_on_neither_end_fails():
+    verdict = check(CLOCK, serial("10.0.0.1"), serial("10.0.0.2"))
+    assert not verdict.passed
+    assert "neither end" in verdict.actual
+    assert "line protocol stays down" in verdict.reason
+
+
+def test_clock_rate_on_both_ends_fails_and_names_them():
+    verdict = check(CLOCK, serial("10.0.0.1", 64000), serial("10.0.0.2", 64000))
+    assert not verdict.passed
+    assert "both ends" in verdict.actual
+    assert "R1" in verdict.reason and "R2" in verdict.reason
+
+
+def test_serial_attributes_do_not_apply_to_ethernet():
+    keys = {a.key for a in applicable_attributes(
+        router("R1"), routed(), router("R2"), routed(ip="10.0.0.2"))}
+    assert "clock_rate" not in keys
+    assert "encapsulation" not in keys
+
+
+def test_encapsulation_mismatch_on_a_serial_link_is_caught():
+    a = InterfaceData(name="Serial0/0/0", ip_address="10.0.0.1", cidr=30, encapsulation="ppp")
+    b = InterfaceData(name="Serial0/0/0", ip_address="10.0.0.2", cidr=30)
+    verdict = check(ENCAP, a, b)
+    assert not verdict.passed
+    assert "ppp" in verdict.actual and "hdlc" in verdict.actual
+
+
+def test_an_attribute_the_reference_never_sets_is_not_graded():
+    """
+    Documents a real limit of reference-driven rubrics, so it is a decision on
+    the record rather than a surprise.
+
+    Attributes gated on "either end writes it" only produce a rule when the
+    INSTRUCTOR'S file writes it. A real router config always emits `speed` and
+    `duplex`, so those are always graded; it only emits `mtu` or OSPF timers
+    when someone set them deliberately. A student who breaks MTU on a lab that
+    never mentioned MTU therefore loses nothing.
+
+    That is the correct trade -- the reference is the specification, and
+    grading what the lab did not ask for would be inventing requirements --
+    but it means link agreement is only as complete as the reference.
+    """
+    reference = two_switch_topology()
+    for host in ("SW1", "SW2"):
+        reference.devices[host].interfaces["GigabitEthernet0/1"].ip_address = "10.0.0.1"
+    criteria = generate_criteria_from_topology(reference)
+    keys = {(r.expected_value or {}).get("attribute") for r in criteria.rules
+            if r.category == "link_agreement"}
+    assert "mtu" not in keys
+
+    # Set it in the reference and the checkpoint appears.
+    for host, mtu in (("SW1", 1500), ("SW2", 1500)):
+        reference.devices[host].interfaces["GigabitEthernet0/1"].mtu = mtu
+    keys = {(r.expected_value or {}).get("attribute") for r in
+            generate_criteria_from_topology(reference).rules
+            if r.category == "link_agreement"}
+    assert "mtu" in keys
