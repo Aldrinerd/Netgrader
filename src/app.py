@@ -214,6 +214,24 @@ async def api_generate_criteria(
         target_total_points=total_points,
         policies=policies
     )
+    # Guard against a reference file that parses but carries nothing gradeable.
+    # A plain text file produces one device named after the filename and a
+    # single "this device must exist" rule -- a rubric that looks valid and is
+    # worthless. Better to refuse it than to let an instructor hand it out.
+    gradeable_rules = [r for r in criteria.rules if r.category != "device"]
+    if not gradeable_rules:
+        device_names = ", ".join(sorted(topology.devices)) or "none"
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "This reference file contains nothing that can be graded. "
+                f"Devices found: {device_names}. No IP addressing, switchport, "
+                "cabling or routing configuration was detected. "
+                "Upload a saved Packet Tracer file (.pkt/.pka/.xml), or a .zip/.txt "
+                "bundle of 'show running-config' output from each device."
+            ),
+        )
+
     instructions_txt = format_criteria_to_instructions_txt(criteria)
 
     return {

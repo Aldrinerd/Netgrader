@@ -148,3 +148,32 @@ def test_api_generate_criteria_with_policy_form_data():
     assert "DYNAMIC & RELATIONAL SUBNETTING POLICY" in data["instructions_txt"]
 
 
+
+
+def test_criteria_generate_rejects_ungradeable_reference():
+    """
+    A file that parses but carries no configuration must be refused.
+
+    A plain text file yields one device named after the filename and a single
+    "this device must exist" rule -- a rubric that looks valid and is useless.
+    """
+    response = client.post(
+        "/api/criteria/generate",
+        files=[("files", ("notes.txt", b"just some random notes, not a config", "text/plain"))],
+        data={"lab_title": "Oops"},
+    )
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert "nothing that can be graded" in detail
+    # The message must tell the instructor what to upload instead.
+    assert ".pkt" in detail
+
+
+def test_criteria_generate_accepts_a_real_reference_bundle():
+    """The guard must not reject legitimate configuration bundles."""
+    bundle = network_bundle("ospf_clean")
+    files = [("files", (name, text.encode("utf-8"), "text/plain")) for name, text in bundle.items()]
+    response = client.post("/api/criteria/generate", files=files, data={"lab_title": "Real Lab"})
+    assert response.status_code == 200
+    criteria = response.json()["criteria"]
+    assert len([r for r in criteria["rules"] if r["category"] != "device"]) > 0

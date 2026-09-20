@@ -155,19 +155,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (mode === 'visualizer') {
             if (canvasMainTitle) canvasMainTitle.textContent = 'Topology Discovery';
             if (engineStatusLabel) engineStatusLabel.textContent = 'Inference Engine: Active';
-            if (emptyStateTitle) emptyStateTitle.textContent = 'No Network Loaded';
-            if (emptyStateDesc) emptyStateDesc.textContent = 'Upload a Packet Tracer file or Cisco .txt configuration bundle to run multi-signal topology discovery.';
         } else if (mode === 'teacher') {
             if (canvasMainTitle) canvasMainTitle.textContent = 'Reference Topology Studio';
             if (engineStatusLabel) engineStatusLabel.textContent = 'Teacher Studio: Ready';
-            if (emptyStateTitle) emptyStateTitle.textContent = 'No Reference Network';
-            if (emptyStateDesc) emptyStateDesc.textContent = 'Upload your Packet Tracer (.pkt/.xml) or config bundle above to inspect reference topology and generate lab instructions.';
         } else if (mode === 'student') {
             if (canvasMainTitle) canvasMainTitle.textContent = 'Student Evaluation View';
             if (engineStatusLabel) engineStatusLabel.textContent = 'Evaluation Engine: Ready';
-            if (emptyStateTitle) emptyStateTitle.textContent = 'No Evaluation Run';
-            if (emptyStateDesc) emptyStateDesc.textContent = 'Upload the instructor\'s instructions.txt and your completed lab solution to run automated grading and visual error detection.';
         }
+        if (pendingOperations === 0) applyEmptyStateText(mode);
     }
 
     modeTabs.forEach(tab => {
@@ -474,12 +469,14 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 showLoading("Parsing Cisco outputs and discovering topology...");
                 const res = await fetch('/api/analyze', { method: 'POST', body: formData });
-                if (!res.ok) throw new Error(`Upload failed with status ${res.status}`);
+                if (!res.ok) throw new Error(await describeFailure(res, `Upload failed with status ${res.status}`));
                 const data = await res.json();
                 renderTopology(data);
                 showToast("Topology discovery completed.");
             } catch (err) {
                 alert(`Analysis error: ${err.message}`);
+            } finally {
+                hideLoading();
             }
         });
     }
@@ -554,8 +551,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 showLoading("Extracting reference topology & generating rubric...");
                 const res = await fetch('/api/criteria/generate', { method: 'POST', body: formData });
                 if (!res.ok) {
-                    const errJson = await res.json();
-                    throw new Error(errJson.detail || `Server error ${res.status}`);
+                    throw new Error(await describeFailure(res, `Server error ${res.status}`));
                 }
                 const data = await res.json();
 
@@ -570,6 +566,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 showToast("Lab instructions & rubric generated!");
             } catch (err) {
                 alert(`Generation Error: ${err.message}`);
+            } finally {
+                hideLoading();
             }
         });
     }
@@ -713,8 +711,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 showLoading("Grading submission and evaluating relational topology rules...");
                 const res = await fetch('/api/evaluate', { method: 'POST', body: formData });
                 if (!res.ok) {
-                    const errJson = await res.json();
-                    throw new Error(errJson.detail || `Evaluation failed with status ${res.status}`);
+                    throw new Error(await describeFailure(res, `Evaluation failed with status ${res.status}`));
                 }
                 const report = await res.json();
                 latestEvaluationReport = report;
@@ -722,6 +719,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 showToast(`Grading Complete: Score ${report.percentage}% (${report.grade_letter})`);
             } catch (err) {
                 alert(`Evaluation Error: ${err.message}`);
+            } finally {
+                hideLoading();
             }
         });
     }
@@ -828,10 +827,62 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- SHARED TOPOLOGY GRAPH RENDERER ---
+    // The idle panel markup is captured once, because showLoading() replaces the
+    // panel's contents. Without this snapshot the #empty-state-title and
+    // #empty-state-desc elements are destroyed on the first load and can never
+    // be restored, leaving the panel stuck on a stale progress message.
+    const emptyStateDefaultHTML = emptyState ? emptyState.innerHTML : '';
+    let pendingOperations = 0;
+
     function showLoading(msg) {
         if (!emptyState) return;
+        pendingOperations++;
         emptyState.style.display = 'block';
         emptyState.innerHTML = `<div class="status-dot pulsing" style="width:24px;height:24px;margin:0 auto 12px;"></div><p>${msg}</p>`;
+    }
+
+    function hideLoading() {
+        if (!emptyState) return;
+        pendingOperations = Math.max(0, pendingOperations - 1);
+        if (pendingOperations > 0) return;   // another request is still running
+
+        // Always rebuild the idle markup first, so #empty-state-title and
+        // #empty-state-desc exist again even while the panel stays hidden.
+        // Otherwise a later Reset or mode switch would re-reveal the stale
+        // progress message.
+        emptyState.innerHTML = emptyStateDefaultHTML;
+        applyEmptyStateText(currentMode);
+
+        const hasTopology = currentTopology && Object.keys(currentTopology.devices || {}).length > 0;
+        emptyState.style.display = hasTopology ? 'none' : 'block';
+    }
+
+    // Re-queries the nodes each time, since showLoading() replaces them.
+    function applyEmptyStateText(mode) {
+        const titleEl = document.getElementById('empty-state-title');
+        const descEl = document.getElementById('empty-state-desc');
+        if (!titleEl || !descEl) return;
+        if (mode === 'teacher') {
+            titleEl.textContent = 'No Reference Network';
+            descEl.textContent = 'Upload your Packet Tracer (.pkt/.xml) or config bundle above to inspect reference topology and generate lab instructions.';
+        } else if (mode === 'student') {
+            titleEl.textContent = 'No Evaluation Run';
+            descEl.textContent = "Upload the instructor's instructions.txt and your completed lab solution to run automated grading and visual error detection.";
+        } else {
+            titleEl.textContent = 'No Network Loaded';
+            descEl.textContent = 'Upload a Packet Tracer file or Cisco .txt configuration bundle to run multi-signal topology discovery.';
+        }
+    }
+
+    // Reads an error body that may not be JSON (a proxy or crash can return HTML).
+    async function describeFailure(res, fallback) {
+        try {
+            const body = await res.json();
+            if (body && body.detail) {
+                return typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail);
+            }
+        } catch (e) { /* response was not JSON */ }
+        return fallback || `Server error ${res.status} ${res.statusText}`;
     }
 
     function renderTopology(data) {
