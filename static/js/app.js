@@ -474,6 +474,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderTopology(data);
                 showToast("Topology discovery completed.");
             } catch (err) {
+                showPanelMessage(`<div class="empty-icon">⚠️</div><h3>Analysis Failed</h3>`
+                    + `<p class="empty-error">${escapeHtml(err.message)}</p>`);
                 alert(`Analysis error: ${err.message}`);
             } finally {
                 hideLoading();
@@ -565,6 +567,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 showToast("Lab instructions & rubric generated!");
             } catch (err) {
+                showPanelMessage(`<div class="empty-icon">⚠️</div><h3>Could Not Generate Rubric</h3>`
+                    + `<p class="empty-error">${escapeHtml(err.message)}</p>`);
                 alert(`Generation Error: ${err.message}`);
             } finally {
                 hideLoading();
@@ -718,6 +722,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderEvaluationReport(report);
                 showToast(`Grading Complete: Score ${report.percentage}% (${report.grade_letter})`);
             } catch (err) {
+                showPanelMessage(`<div class="empty-icon">⚠️</div><h3>Grading Failed</h3>`
+                    + `<p class="empty-error">${escapeHtml(err.message)}</p>`);
                 alert(`Evaluation Error: ${err.message}`);
             } finally {
                 hideLoading();
@@ -834,11 +840,27 @@ document.addEventListener('DOMContentLoaded', () => {
     const emptyStateDefaultHTML = emptyState ? emptyState.innerHTML : '';
     let pendingOperations = 0;
 
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text == null ? '' : String(text);
+        return div.innerHTML;
+    }
+
     function showLoading(msg) {
         if (!emptyState) return;
         pendingOperations++;
+        emptyState.dataset.panelState = 'loading';
         emptyState.style.display = 'block';
         emptyState.innerHTML = `<div class="status-dot pulsing" style="width:24px;height:24px;margin:0 auto 12px;"></div><p>${msg}</p>`;
+    }
+
+    // Lets a handler put its own message in the panel and keep it: hideLoading()
+    // will not overwrite a panel that something else has claimed.
+    function showPanelMessage(html) {
+        if (!emptyState) return;
+        emptyState.dataset.panelState = 'message';
+        emptyState.style.display = 'block';
+        emptyState.innerHTML = html;
     }
 
     function hideLoading() {
@@ -846,11 +868,16 @@ document.addEventListener('DOMContentLoaded', () => {
         pendingOperations = Math.max(0, pendingOperations - 1);
         if (pendingOperations > 0) return;   // another request is still running
 
-        // Always rebuild the idle markup first, so #empty-state-title and
+        // If a handler already put its own result in the panel -- "No Devices
+        // Found", a parse error -- leave it alone. Overwriting it would hide the
+        // very explanation the user needs and make a failure look like nothing
+        // happened at all.
+        if (emptyState.dataset.panelState === 'message') return;
+
+        // Otherwise rebuild the idle markup, so #empty-state-title and
         // #empty-state-desc exist again even while the panel stays hidden.
-        // Otherwise a later Reset or mode switch would re-reveal the stale
-        // progress message.
         emptyState.innerHTML = emptyStateDefaultHTML;
+        delete emptyState.dataset.panelState;
         applyEmptyStateText(currentMode);
 
         const hasTopology = currentTopology && Object.keys(currentTopology.devices || {}).length > 0;
@@ -887,7 +914,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderTopology(data) {
         currentTopology = data;
-        if (emptyState) emptyState.style.display = 'none';
+        if (emptyState) {
+            delete emptyState.dataset.panelState;
+            emptyState.style.display = 'none';
+        }
         svg.innerHTML = '';
 
         const devices = Object.values(data.devices || {});
@@ -899,10 +929,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (devices.length === 0) {
-            if (emptyState) {
-                emptyState.style.display = 'block';
-                emptyState.innerHTML = `<div class="empty-icon">⚠️</div><h3>No Devices Found</h3><p>Could not extract device configurations from uploaded files.</p>`;
-            }
+            showPanelMessage(`<div class="empty-icon">⚠️</div><h3>No Devices Found</h3>`
+                + `<p>The file was read, but no device configurations could be extracted from it.</p>`
+                + `<p class="empty-hint">If this is a Packet Tracer file, it may have been saved by a newer version than this tool supports. `
+                + `Try <strong>File &gt; Save As</strong> in Packet Tracer, or upload a .zip of each device's <code>show running-config</code> output instead.</p>`);
             return;
         }
 
@@ -1580,12 +1610,6 @@ document.addEventListener('DOMContentLoaded', () => {
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
         });
-    }
-
-    function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text == null ? '' : String(text);
-        return div.innerHTML;
     }
 
 });

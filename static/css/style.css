@@ -1563,3 +1563,32 @@ html, body {
     .batch-status { display: none; }
     .batch-table thead th:nth-child(5) { display: none; }
 }
+
+/* Failure and diagnostic text inside the topology panel */
+.empty-state .empty-error {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: rgba(255, 107, 107, 0.09);
+    border: 1px solid rgba(255, 107, 107, 0.32);
+    color: #ff9d9d;
+    font-size: 0.82rem;
+    max-width: 460px;
+    text-align: left;
+    word-break: break-word;
+}
+
+.empty-state .empty-hint {
+    margin-top: 10px;
+    max-width: 460px;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    color: var(--text-muted, #8b98a9);
+}
+
+.empty-state .empty-hint code {
+    background: var(--bg-base, #131922);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 0.92em;
+}

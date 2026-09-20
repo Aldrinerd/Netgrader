@@ -52,3 +52,34 @@ def test_parse_pkt_file_wrapper_with_xml():
 def test_parse_pkt_invalid_xml():
     with pytest.raises(ValueError, match="Malformed Packet Tracer XML"):
         parse_pkt_xml(b"<PACKETTRACER5><UNCLOSED>", filename="bad.xml")
+
+
+def test_analyze_reports_a_pkt_that_yields_no_devices():
+    """
+    A Packet Tracer file that decrypts and parses but contains no devices must
+    produce an explicit explanation, not a silently empty topology. An empty
+    result reaches the UI as a blank panel, which looks like the upload did
+    nothing at all.
+    """
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cisco-pka-to-xml"))
+    from fastapi.testclient import TestClient
+    from pka2xml import encrypt_pka
+    from src.app import app
+
+    client = TestClient(app)
+    device_less_xml = (
+        b'<?xml version="1.0"?><PACKETTRACER5><NETWORK>'
+        b"<DEVICES></DEVICES><LINKS></LINKS></NETWORK></PACKETTRACER5>"
+    )
+    payload = encrypt_pka(device_less_xml)
+
+    response = client.post(
+        "/api/analyze",
+        files=[("files", ("devices_missing.pkt", payload, "application/octet-stream"))],
+    )
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert "no devices could be extracted" in detail
+    # The message must point the instructor at a workaround.
+    assert "running-config" in detail

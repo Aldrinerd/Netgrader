@@ -105,10 +105,25 @@ async def parse_uploaded_files_to_topology(files: list[UploadFile]) -> TopologyR
         for fname, fbytes in pkt_files:
             try:
                 devs, lnks = parse_pkt_file(fbytes, filename=fname)
-                all_devices.update(devs)
-                all_links.extend(lnks)
             except Exception as e:
                 raise HTTPException(status_code=400, detail=f"Error parsing Packet Tracer file '{fname}': {e}")
+
+            # A file that decrypts and parses but contains no devices is almost
+            # always a Packet Tracer version this decoder does not understand.
+            # Reporting that beats handing back a silent empty topology.
+            if not devs:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"'{fname}' was read successfully, but no devices could be extracted from it "
+                        f"({len(fbytes):,} bytes). This usually means the file was saved by a newer "
+                        "Packet Tracer version than this tool supports. Try 'File > Save As' in Packet "
+                        "Tracer, or upload a .zip of each device's 'show running-config' output instead."
+                    ),
+                )
+
+            all_devices.update(devs)
+            all_links.extend(lnks)
 
         # If supplementary text files were also included, parse and merge them
         if files_dict:
