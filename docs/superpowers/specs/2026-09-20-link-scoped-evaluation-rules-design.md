@@ -242,10 +242,6 @@ Requires new parsing inside `interface` blocks in
 
 ### Phase 3 — device-level protocol attributes
 
-> **On hold.** The paper's delimitation explicitly excludes BGP and complex
-> multi-area OSPF. Building this would put the tool outside the scope the
-> study defends. Revisit only if the delimitation changes.
-
 Needs new `ParsedDevice` fields alongside `ospf_processes`:
 
 | Attribute | Predicate | Notes |
