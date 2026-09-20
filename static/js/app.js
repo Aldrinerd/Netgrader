@@ -1106,6 +1106,89 @@ document.addEventListener('DOMContentLoaded', () => {
         return group;
     }
 
+    /**
+     * Device icons drawn as silhouettes instead of lettered circles: a short
+     * cylinder for routers, a flat box with a port row for switches, and a
+     * monitor on a stand for PCs. Everything is centred on (x, y) and stays
+     * inside the r=26 glow, so node spacing, dragging and hit areas are
+     * unchanged from the circle they replace.
+     */
+    function createDeviceIcon(x, y, color, kind) {
+        const NS = 'http://www.w3.org/2000/svg';
+        const group = document.createElementNS(NS, 'g');
+
+        const shape = (name, attrs) => {
+            const el = document.createElementNS(NS, name);
+            const merged = Object.assign({ fill: '#1F2937', stroke: color, 'stroke-width': 2 }, attrs);
+            for (const [key, value] of Object.entries(merged)) el.setAttribute(key, value);
+            // A device we only inferred is outlined, never solid.
+            if (kind.isPlaceholder) el.setAttribute('stroke-dasharray', '4,3');
+            group.appendChild(el);
+            return el;
+        };
+
+        const caption = (content, dy, size) => {
+            const el = document.createElementNS(NS, 'text');
+            el.setAttribute('x', x);
+            el.setAttribute('y', y + dy);
+            el.setAttribute('text-anchor', 'middle');
+            el.setAttribute('fill', color);
+            el.setAttribute('font-size', size + 'px');
+            el.setAttribute('font-weight', 'bold');
+            el.setAttribute('font-family', 'Outfit, sans-serif');
+            el.textContent = content;
+            group.appendChild(el);
+            return el;
+        };
+
+        if (kind.isPlaceholder) {
+            shape('circle', { cx: x, cy: y, r: 20 });
+            caption('?', 4, 10.5);
+            return group;
+        }
+
+        if (kind.isHost) {
+            shape('rect', { x: x - 17, y: y - 14, width: 34, height: 23, rx: 2.5 });
+            shape('rect', {
+                x: x - 12.5, y: y - 9.5, width: 25, height: 14, rx: 1,
+                fill: color, 'fill-opacity': 0.22, stroke: 'none', 'stroke-width': 0
+            });
+            shape('rect', { x: x - 4, y: y + 9, width: 8, height: 4, 'stroke-width': 1.5 });
+            shape('line', {
+                x1: x - 12, y1: y + 14.5, x2: x + 12, y2: y + 14.5,
+                fill: 'none', 'stroke-width': 2.5, 'stroke-linecap': 'round'
+            });
+            return group;
+        }
+
+        if (kind.isSwitch) {
+            shape('rect', { x: x - 23, y: y - 11, width: 46, height: 22, rx: 3 });
+            for (let i = 0; i < 5; i++) {
+                shape('rect', {
+                    x: x - 17 + i * 7, y: y + 3, width: 4, height: 4, rx: 0.5,
+                    fill: color, 'fill-opacity': 0.55, stroke: 'none', 'stroke-width': 0
+                });
+            }
+            if (kind.isL3Switch) caption('L3', -1.5, 8.5);
+            return group;
+        }
+
+        // Router: a short cylinder. Body silhouette first, then the top rim
+        // ellipse over it so the near edge of the lid reads correctly.
+        const rx = 20;
+        const ry = 6;
+        const half = 9;
+        shape('path', {
+            d: `M ${x - rx} ${y - half}`
+                + ` L ${x - rx} ${y + half}`
+                + ` A ${rx} ${ry} 0 0 0 ${x + rx} ${y + half}`
+                + ` L ${x + rx} ${y - half}`
+                + ` A ${rx} ${ry} 0 0 0 ${x - rx} ${y - half} Z`
+        });
+        shape('ellipse', { cx: x, cy: y - half, rx: rx, ry: ry });
+        return group;
+    }
+
     function drawSvgGraph() {
         svg.innerHTML = '';
         const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
@@ -1245,8 +1328,10 @@ document.addEventListener('DOMContentLoaded', () => {
             nodeGroup.style.cursor = 'grab';
 
             const isPlaceholder = dev.is_placeholder || dev.display_name === '???';
-            const isSwitch = dev.device_type === 'switch';
-            const isHost = dev.device_type === 'host';
+            const deviceType = dev.device_type || 'router';
+            const isL3Switch = deviceType === 'l3_switch';
+            const isSwitch = deviceType === 'switch' || isL3Switch;
+            const isHost = deviceType === 'host';
             let nodeColor = '#3B82F6';
             if (isPlaceholder) {
                 nodeColor = '#9CA3AF';
@@ -1263,33 +1348,9 @@ document.addEventListener('DOMContentLoaded', () => {
             glowCircle.setAttribute('fill', isPlaceholder ? 'rgba(156, 163, 175, 0.15)' : (isSwitch ? 'rgba(16, 185, 129, 0.15)' : (isHost ? 'rgba(139, 92, 246, 0.15)' : 'rgba(59, 130, 246, 0.15)')));
             nodeGroup.appendChild(glowCircle);
 
-            const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-            circle.setAttribute('cx', node.x);
-            circle.setAttribute('cy', node.y);
-            circle.setAttribute('r', '20');
-            circle.setAttribute('fill', '#1F2937');
-            circle.setAttribute('stroke', nodeColor);
-            circle.setAttribute('stroke-width', '2');
-            if (isPlaceholder) {
-                circle.setAttribute('stroke-dasharray', '4,3');
-            }
-            nodeGroup.appendChild(circle);
-
-            let badgeLetter = 'R';
-            if (isPlaceholder) badgeLetter = '?';
-            else if (isSwitch) badgeLetter = 'SW';
-            else if (isHost) badgeLetter = 'PC';
-
-            const iconText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            iconText.setAttribute('x', node.x);
-            iconText.setAttribute('y', node.y + 4);
-            iconText.setAttribute('text-anchor', 'middle');
-            iconText.setAttribute('fill', nodeColor);
-            iconText.setAttribute('font-size', '10.5px');
-            iconText.setAttribute('font-weight', 'bold');
-            iconText.setAttribute('font-family', 'Outfit, sans-serif');
-            iconText.textContent = badgeLetter;
-            nodeGroup.appendChild(iconText);
+            nodeGroup.appendChild(createDeviceIcon(node.x, node.y, nodeColor, {
+                isPlaceholder, isSwitch, isHost, isL3Switch
+            }));
 
             const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
             label.setAttribute('x', node.x);
