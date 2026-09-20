@@ -353,3 +353,52 @@ def test_classification_never_demotes_a_router_or_host():
     host = ParsedDevice(hostname="PC0", canonical_name="pc0", device_type="host")
     classify_device_role(host)
     assert host.device_type == "host"
+
+
+# --- OSPF block termination -------------------------------------------------
+
+def test_ospf_networks_survive_sub_commands_before_them():
+    """
+    A real `router ospf` block opens with router-id, log-adjacency-changes and
+    area range statements. Those were closing the block because the check
+    looked at the STRIPPED line, so every `network` after them was discarded
+    and OSPF went ungraded on any realistic config. Found on a 66-device
+    Packet Tracer lab where 8 routers ran OSPF and the rubric graded none of
+    it.
+    """
+    raw = """
+hostname EDGE_RTR2
+router ospf 1
+ router-id 172.16.254.10
+ log-adjacency-changes
+ passive-interface GigabitEthernet0/2
+ area 1 range 172.16.0.0 255.255.255.0
+ network 172.16.254.12 0.0.0.3 area 1
+ network 192.168.0.0 0.0.0.255 area 0
+!
+interface GigabitEthernet0/0
+ ip address 10.0.0.1 255.255.255.252
+"""
+    dev = parse_device_bundle(raw, "EDGE_RTR2.txt")
+    assert len(dev.ospf_processes) == 1
+    networks = dev.ospf_processes[0]["networks"]
+    assert len(networks) == 2
+    assert {n["area"] for n in networks} == {0, 1}
+    # The block must still close: the interface after `!` is not swallowed.
+    assert "GigabitEthernet0/0" in dev.interfaces
+
+
+def test_a_following_router_block_closes_the_previous_one():
+    """`router bgp` after `router ospf` must not inherit its networks."""
+    raw = """
+hostname R9
+router ospf 1
+ router-id 1.1.1.1
+ network 10.0.0.0 0.0.0.3 area 0
+router bgp 65120
+ bgp log-neighbor-changes
+ neighbor 203.0.113.1 remote-as 65100
+"""
+    dev = parse_device_bundle(raw, "R9.txt")
+    assert len(dev.ospf_processes) == 1
+    assert len(dev.ospf_processes[0]["networks"]) == 1

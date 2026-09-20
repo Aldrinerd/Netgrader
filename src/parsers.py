@@ -119,10 +119,16 @@ def parse_running_config(content: str, start_line: int, device: ParsedDevice) ->
                     "area": int(net_match.group(3))
                 })
                 continue
-            elif not line.startswith(" ") and not line.startswith("\t") and stripped.startswith("!"):
-                current_ospf = None
-            elif re.match(r"^[a-zA-Z]", stripped) and not stripped.startswith("network"):
-                current_ospf = None
+            # Indentation is what says whether a line still belongs to the
+            # router block. Testing the STRIPPED line meant the first
+            # sub-command -- `router-id`, `log-adjacency-changes`,
+            # `passive-interface`, `area N range ...` -- looked like a new
+            # top-level command and closed the block, silently discarding
+            # every `network` statement that came after it. Real configs
+            # put those lines first, so OSPF was almost never graded.
+            if not stripped or line[:1].isspace():
+                continue
+            current_ospf = None
 
         # Interface block start
         intf_match = re.match(r"^interface\s+([a-zA-Z0-9_\-\./]+)", stripped, re.IGNORECASE)
