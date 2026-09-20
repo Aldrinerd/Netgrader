@@ -760,6 +760,34 @@ document.addEventListener('DOMContentLoaded', () => {
             renderTopology(report.topology);
         }
         renderStudyTopics(report);
+        // Fired only after the score is rendered. If it never returns, the
+        // student still has a complete, final grade on screen.
+        requestNarrative(report);
+    }
+
+    async function requestNarrative(report) {
+        const host = document.getElementById('report-narrative');
+        if (!host) return;
+        host.style.display = 'block';
+        host.innerHTML = `<div class="narrative-loading">Preparing your summary...</div>`;
+        try {
+            const res = await fetch('/api/report/narrative', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(report)
+            });
+            if (!res.ok) throw new Error('narrative unavailable');
+            const data = await res.json();
+            const badge = data.source === 'model'
+                ? `<span class="narrative-src model">AI summary</span>`
+                : `<span class="narrative-src template">Built-in guidance</span>`;
+            host.innerHTML = `<div class="narrative-head">Your instructor's summary ${badge}</div>`
+                + `<p class="narrative-text">${escapeHtml(data.text)}</p>`;
+        } catch (err) {
+            // Purely additive: losing it costs the student nothing.
+            host.style.display = 'none';
+            host.innerHTML = '';
+        }
     }
 
     function renderStudyTopics(report) {
@@ -1627,6 +1655,42 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         batchResults.style.display = 'block';
+        requestClassBriefing(data.results);
+    }
+
+    async function requestClassBriefing(rows) {
+        const host = document.getElementById('batch-briefing');
+        if (!host) return;
+        const categories = rows
+            .filter(r => r.status === 'graded')
+            .map(r => r.failed_categories || []);
+        if (categories.length === 0) { host.style.display = 'none'; return; }
+
+        host.style.display = 'block';
+        host.innerHTML = `<div class="narrative-loading">Analysing class performance...</div>`;
+        try {
+            const res = await fetch('/api/class/briefing', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ categories_per_student: categories })
+            });
+            if (!res.ok) throw new Error('briefing unavailable');
+            const data = await res.json();
+            const badge = data.source === 'model'
+                ? `<span class="narrative-src model">AI briefing</span>`
+                : `<span class="narrative-src template">Built-in analysis</span>`;
+            const concepts = (data.analysis.concepts || []).slice(0, 5).map(c => `
+                <div class="concept-row">
+                    <span class="concept-name">${escapeHtml(c.topic)}</span>
+                    <span class="concept-count">${c.students_affected} of ${data.analysis.submissions_analysed}</span>
+                </div>`).join('');
+            host.innerHTML = `<div class="narrative-head">Instructional recommendations ${badge}</div>`
+                + `<p class="narrative-text">${escapeHtml(data.briefing)}</p>`
+                + `<div class="concept-list">${concepts}</div>`;
+        } catch (err) {
+            host.style.display = 'none';
+            host.innerHTML = '';
+        }
     }
 
     if (batchCsvBtn) {

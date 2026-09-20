@@ -1674,3 +1674,85 @@ html, body {
     font-size: 0.7rem;
     color: var(--text-muted, #8b98a9);
 }
+
+/* ============================================================
+   Narrative Layer (student summary & class briefing)
+   ============================================================ */
+.report-narrative,
+.batch-briefing {
+    margin: 12px 0 14px;
+    padding: 12px 14px;
+    border: 1px solid var(--border-color, #2a3441);
+    border-radius: 10px;
+    background: linear-gradient(180deg, rgba(77,163,255,0.06), transparent);
+}
+
+.narrative-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted, #8b98a9);
+    margin-bottom: 8px;
+}
+
+.narrative-src {
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 0.66rem;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+}
+
+/* The badge is deliberately honest about who wrote the text. */
+.narrative-src.model {
+    color: #c9a8ff;
+    background: rgba(170, 130, 255, 0.12);
+    border-color: rgba(170, 130, 255, 0.35);
+}
+
+.narrative-src.template {
+    color: var(--text-muted, #8b98a9);
+    background: rgba(139, 152, 169, 0.1);
+    border-color: rgba(139, 152, 169, 0.28);
+}
+
+.narrative-text {
+    margin: 0;
+    font-size: 0.83rem;
+    line-height: 1.6;
+    color: var(--text-secondary, #b9c4d2);
+}
+
+.narrative-loading {
+    font-size: 0.78rem;
+    color: var(--text-muted, #8b98a9);
+    font-style: italic;
+}
+
+.concept-list {
+    margin-top: 10px;
+    border-top: 1px solid var(--border-subtle, #222b38);
+    padding-top: 8px;
+}
+
+.concept-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 4px 0;
+    font-size: 0.78rem;
+}
+
+.concept-name { color: var(--text-secondary, #b9c4d2); }
+
+.concept-count {
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted, #8b98a9);
+}

@@ -386,6 +386,9 @@ async def api_evaluate_batch(
                 "passed_count": report.passed_count,
                 "failed_count": report.failed_count,
                 "missed": [r.description for r in report.results if not r.passed],
+                # Categories only -- feeds the class briefing without exposing
+                # any configuration text or identifying detail.
+                "failed_categories": sorted({r.category for r in report.results if not r.passed}),
                 "status": "graded",
             })
         except Exception as e:
@@ -399,6 +402,7 @@ async def api_evaluate_batch(
                 "passed_count": 0,
                 "failed_count": len(criteria.rules),
                 "missed": [],
+                "failed_categories": [],
                 "status": f"ERROR: {e}",
             })
 
@@ -419,3 +423,59 @@ async def api_evaluate_batch(
         "results": rows,
         "csv": _build_gradebook_csv(criteria.lab_title, rows),
     }
+
+
+# --- Narrative Layer (Phase B): the only endpoints that touch a model ---
+
+@app.get("/api/llm/status")
+async def api_llm_status():
+    """
+    Report whether the local model layer is usable.
+
+    Lets the UI say "model ready" or "using built-in guidance" honestly,
+    instead of silently implying an AI wrote text that a template produced.
+    """
+    from src import llm
+    return llm.status()
+
+
+@app.post("/api/report/narrative")
+async def api_report_narrative(report: EvaluationReport):
+    """
+    Produce one "what to study next" paragraph for a graded report.
+
+    Deliberately a SEPARATE request from /api/evaluate. The student's score is
+    computed, returned and rendered before this is ever called, which makes
+    "the model cannot affect the grade" a property of the request flow and not
+    just a claim in the architecture document.
+    """
+    from src.narrative import student_summary
+    return student_summary(report)
+
+
+@app.post("/api/class/briefing")
+async def api_class_briefing(payload: dict):
+    """
+    Instructor briefing for a whole class (Statement of the Problem #4).
+
+    Expects {"categories_per_student": [["interface_ip", "routing"], ...]} --
+    failed rule categories only. No student names, no configuration text and
+    no scores are accepted or needed, which keeps the aggregate compliant with
+    R.A. 10173.
+    """
+    from src.narrative import class_briefing
+
+    categories = payload.get("categories_per_student")
+    if not isinstance(categories, list) or not categories:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide 'categories_per_student': a list of failed rule categories per submission.",
+        )
+    cleaned = [
+        [str(c) for c in entry if isinstance(c, str)]
+        for entry in categories
+        if isinstance(entry, list)
+    ]
+    if not cleaned:
+        raise HTTPException(status_code=400, detail="No usable submission entries were provided.")
+    return class_briefing(cleaned)
