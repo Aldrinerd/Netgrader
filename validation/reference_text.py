@@ -86,8 +86,10 @@ router ospf 1
  network 10.0.0.0 0.0.0.3 area 0
 !
 line vty 0 4
+ exec-timeout 5 0
  password 7 0822455D0A16
  login
+ transport input ssh
 !
 end
 """,

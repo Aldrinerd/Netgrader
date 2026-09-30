@@ -76,6 +76,7 @@ class ParsedDevice(BaseModel):
     y_coord: float | None = None
     default_gateway: str | None = None
     has_enable_secret: bool = False
+    has_enable_password: bool = False   # the weak form; tracked so feedback can name it
     has_password_encryption: bool = False
     has_vty_login: bool = False
     has_ip_routing: bool = False

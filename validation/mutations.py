@@ -122,6 +122,10 @@ def _enable_secret_removed(topo):
     topo.devices["R2"].has_enable_secret = False
 
 
+def _enable_password_instead_of_secret(topo):
+    topo.devices["R2"].has_enable_secret = False
+    topo.devices["R2"].has_enable_password = True
+
 def _subnet_mismatch_across_link(topo):
     intf = topo.devices["R2"].interfaces["GigabitEthernet0/0"]
     intf.ip_address = "10.9.9.2"
@@ -295,6 +299,15 @@ CATALOGUE: list = [
         fault="R2 has no 'enable secret'",
         apply=_enable_secret_removed,
         expect_categories=frozenset({"security"}),
+        policies=SECURE,
+    ),
+    Mutation(
+        id="enable_password_instead_of_secret",
+        label="Privileged EXEC protected by a plaintext password",
+        fault="R2 uses 'enable password' instead of 'enable secret'",
+        apply=_enable_password_instead_of_secret,
+        expect_categories=frozenset({"security"}),
+        expect_mentions=("enable password",),
         policies=SECURE,
     ),
     Mutation(

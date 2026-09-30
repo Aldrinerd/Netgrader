@@ -745,6 +745,14 @@ def evaluate_student_submission(
                     passed = True
                     actual = "Configured (enable secret)"
                     feedback = f"Encrypted enable secret verified on {rule.target_device}."
+                elif dev.has_enable_password:
+                    pts_earned = 0.0
+                    passed = False
+                    actual = "enable password (plaintext)"
+                    feedback = (
+                        f"{rule.target_device} uses 'enable password', which is stored in plaintext "
+                        "or reversible type 7. Replace it with 'enable secret'."
+                    )
                 else:
                     pts_earned = 0.0
                     passed = False

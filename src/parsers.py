@@ -51,8 +51,10 @@ def parse_running_config(content: str, start_line: int, device: ParsedDevice) ->
     lines = content.splitlines()
     current_intf: InterfaceData | None = None
     in_vty_block = False
+    vty_indent = 0
+    vty_login_disabled = False
     current_ospf: dict | None = None
-    
+
     for idx, line in enumerate(lines):
         line_no = start_line + idx
         stripped = line.strip()
@@ -65,8 +67,14 @@ def parse_running_config(content: str, start_line: int, device: ParsedDevice) ->
             continue
         
         # Security Baseline
-        if re.match(r"^enable\s+(?:secret|password)\b", stripped, re.IGNORECASE):
+        # `enable password` is stored in plaintext (or reversible type 7), which
+        # is exactly what the enable-secret checkpoint exists to catch, so it
+        # must not satisfy it. It is still recorded so feedback can name it.
+        if re.match(r"^enable\s+secret\b", stripped, re.IGNORECASE):
             device.has_enable_secret = True
+            continue
+        if re.match(r"^enable\s+password\b", stripped, re.IGNORECASE):
+            device.has_enable_password = True
             continue
 
         if re.match(r"^service\s+password-encryption\b", stripped, re.IGNORECASE):
@@ -88,17 +96,24 @@ def parse_running_config(content: str, start_line: int, device: ParsedDevice) ->
         # Line VTY Block
         if re.match(r"^line\s+vty\b", stripped, re.IGNORECASE):
             in_vty_block = True
+            vty_indent = len(line) - len(line.lstrip())
             current_intf = None
             current_ospf = None
             continue
-        
+
+        # Same rule as the OSPF block below: indentation, relative to the
+        # `line vty` header, decides membership. Closing on the first
+        # sub-command that was not login/password meant `exec-timeout`, which
+        # show running-config prints first, hid every `login` after it.
         if in_vty_block:
-            if re.match(r"^(?:login|password)\b", stripped, re.IGNORECASE):
+            if stripped and len(line) - len(line.lstrip()) <= vty_indent:
+                in_vty_block = False
+            elif re.match(r"^no\s+login\b", stripped, re.IGNORECASE):
+                vty_login_disabled = True
+                continue
+            elif re.match(r"^(?:login|password)\b", stripped, re.IGNORECASE):
                 device.has_vty_login = True
-            elif not line.startswith(" ") and not line.startswith("\t") and stripped.startswith("!"):
-                in_vty_block = False
-            elif re.match(r"^[a-zA-Z]", stripped) and not stripped.startswith("login") and not stripped.startswith("password"):
-                in_vty_block = False
+                continue
 
         # Router OSPF Block
         ospf_match = re.match(r"^router\s+ospf\s+(\d+)", stripped, re.IGNORECASE)
@@ -360,6 +375,11 @@ def parse_running_config(content: str, start_line: int, device: ParsedDevice) ->
                 current_intf.admin_status = "administratively down"
                 current_intf.line_status = "down"
                 current_intf.evidence_lines["admin_status"] = line_no
+
+    # `no login` leaves the VTY lines open to anyone who knows the password,
+    # or to anyone at all, whatever else the block says.
+    if vty_login_disabled:
+        device.has_vty_login = False
 
 def parse_cdp_detail(content: str, start_line: int, device: ParsedDevice) -> None:
     # Split into neighbor blocks (typically separated by ------------------------- or Device ID:)

@@ -402,3 +402,55 @@ router bgp 65120
     dev = parse_device_bundle(raw, "R9.txt")
     assert len(dev.ospf_processes) == 1
     assert len(dev.ospf_processes[0]["networks"]) == 1
+
+
+# --- Issue #4 / #5: security baseline parsing ---
+
+def test_enable_password_is_not_enable_secret():
+    """`enable password` is the weak form the checkpoint exists to catch (#4)."""
+    dev = parse_device_bundle("hostname R1\nenable password cisco\n", "R1.txt")
+    assert dev.has_enable_secret is False
+    assert dev.has_enable_password is True
+
+
+def test_enable_secret_is_detected():
+    dev = parse_device_bundle("hostname R1\nenable secret 5 $1$abc$xyz\n", "R1.txt")
+    assert dev.has_enable_secret is True
+    assert dev.has_enable_password is False
+
+
+def test_vty_login_after_other_subcommands():
+    """
+    `show running-config` prints exec-timeout before login. The block must not
+    close at the first sub-command that is not login/password (#5).
+    """
+    cfg = (
+        "hostname R1\n"
+        "line vty 0 4\n"
+        " exec-timeout 5 0\n"
+        " login local\n"
+        " transport input ssh\n"
+        "!\n"
+    )
+    assert parse_device_bundle(cfg, "R1.txt").has_vty_login is True
+
+
+def test_vty_login_in_uniformly_indented_paste():
+    cfg = (
+        "    hostname R1\n"
+        "    line vty 0 4\n"
+        "     exec-timeout 5 0\n"
+        "     login\n"
+        "    !\n"
+    )
+    assert parse_device_bundle(cfg, "R1.txt").has_vty_login is True
+
+
+def test_vty_no_login_is_not_secured():
+    cfg = "hostname R1\nline vty 0 4\n password cisco\n no login\n!\n"
+    assert parse_device_bundle(cfg, "R1.txt").has_vty_login is False
+
+
+def test_login_outside_vty_block_does_not_count():
+    cfg = "hostname R1\nline vty 0 4\n exec-timeout 5 0\n!\nline con 0\n login\n!\n"
+    assert parse_device_bundle(cfg, "R1.txt").has_vty_login is False
