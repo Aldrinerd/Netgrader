@@ -1,0 +1,29 @@
+# Build artefacts
+pka2xml/libtwofish.so
+pka2xml/libtwofish.dylib
+build/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local samples — never commit user PKA files
+*.pka
+*.pkt
+!tests/fixtures/*.pka
+!tests/fixtures/*.pkt
+
+# Netgrader: a local sample, not part of the vendored copy
+trial.xml

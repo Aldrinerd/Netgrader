@@ -13,7 +13,7 @@ from src.app import process_bundle_dict
 
 
 def test_generate_criteria_from_pt_xml():
-    xml_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cisco-pka-to-xml", "trial.xml")
+    xml_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tests", "fixtures", "trial.xml")
     if not os.path.exists(xml_path):
         pytest.skip("trial.xml not available")
 

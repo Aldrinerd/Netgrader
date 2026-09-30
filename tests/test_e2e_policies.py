@@ -8,7 +8,7 @@ from src.app import app
 client = TestClient(app, client=("127.0.0.1", 50000))
 
 def test_full_policy_generation_and_grading_flow_xml():
-    trial_xml_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cisco-pka-to-xml", "trial.xml")
+    trial_xml_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tests", "fixtures", "trial.xml")
     if not os.path.exists(trial_xml_path):
         pytest.skip("trial.xml not available")
 

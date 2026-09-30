@@ -80,7 +80,7 @@ def test_fonts_are_served_locally(live_server):
 
 
 def test_teacher_generate_then_student_evaluate(live_server):
-    trial_xml_path = os.path.join(PROJECT_ROOT, "cisco-pka-to-xml", "trial.xml")
+    trial_xml_path = os.path.join(PROJECT_ROOT, "tests", "fixtures", "trial.xml")
     with open(trial_xml_path, "rb") as f:
         xml_bytes = f.read()
 

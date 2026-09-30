@@ -62,7 +62,7 @@ Interface: GigabitEthernet0/0, Port ID (outgoing port): GigabitEthernet0/0
 
 def test_upload_pkt_xml_endpoint():
     import os
-    trial_xml_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cisco-pka-to-xml", "trial.xml")
+    trial_xml_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tests", "fixtures", "trial.xml")
     with open(trial_xml_path, "rb") as f:
         xml_content = f.read()
     
@@ -77,7 +77,7 @@ def test_upload_pkt_xml_endpoint():
 
 def test_api_criteria_generate_and_evaluate_flow():
     import os
-    trial_xml_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cisco-pka-to-xml", "trial.xml")
+    trial_xml_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tests", "fixtures", "trial.xml")
     with open(trial_xml_path, "rb") as f:
         xml_content = f.read()
 
@@ -120,7 +120,7 @@ def test_api_criteria_generate_and_evaluate_flow():
 
 def test_api_generate_criteria_with_policy_form_data():
     import os
-    trial_xml_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cisco-pka-to-xml", "trial.xml")
+    trial_xml_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tests", "fixtures", "trial.xml")
     with open(trial_xml_path, "rb") as f:
         xml_content = f.read()
 

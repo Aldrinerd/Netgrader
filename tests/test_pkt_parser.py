@@ -3,7 +3,20 @@ import os
 import pytest
 from src.pkt_parser import parse_pkt_xml, parse_pkt_file
 
-TRIAL_XML_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cisco-pka-to-xml", "trial.xml")
+TRIAL_XML_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tests", "fixtures", "trial.xml")
+
+def test_pkt_decoder_is_available():
+    """
+    The vendored decoder must load from a plain checkout. If it does not,
+    every .pkt upload fails with "pka2xml is not available", so this has to
+    fail the suite rather than be skipped.
+    """
+    from src import pkt_parser
+    assert pkt_parser.decrypt_pka is not None, (
+        "pka2xml could not be imported from cisco-pka-to-xml/. "
+        "See cisco-pka-to-xml/VENDORED.md."
+    )
+
 
 def test_parse_trial_xml():
     assert os.path.exists(TRIAL_XML_PATH), "trial.xml should exist"
