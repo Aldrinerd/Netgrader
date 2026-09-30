@@ -364,6 +364,24 @@ def _student_name_from_filename(filename: str) -> str:
     return (stem or base).strip() or base
 
 
+_CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe(value):
+    """
+    Neutralise a text cell that a spreadsheet would run as a formula.
+
+    Student names come from filenames and missed checkpoints can quote device
+    names, so both are student-controlled. A leading apostrophe makes Excel
+    and Sheets show the text literally (OWASP CSV injection guidance).
+    Numbers are left alone, so a real negative value stays a number, and so
+    is a lone "-" (the grade shown on an error row), which cannot be a formula.
+    """
+    if isinstance(value, str) and len(value) > 1 and value.startswith(_CSV_FORMULA_PREFIXES):
+        return "'" + value
+    return value
+
+
 def _build_gradebook_csv(lab_title: str, rows: list[dict]) -> str:
     """
     Render batch results as CSV for direct import into a gradebook spreadsheet.
@@ -378,7 +396,7 @@ def _build_gradebook_csv(lab_title: str, rows: list[dict]) -> str:
         "Checkpoints Passed", "Checkpoints Failed", "Missed Checkpoints", "Status",
     ])
     for row in rows:
-        writer.writerow([
+        writer.writerow([_csv_safe(cell) for cell in (
             row["student"],
             lab_title,
             row.get("total_score", ""),
@@ -389,7 +407,7 @@ def _build_gradebook_csv(lab_title: str, rows: list[dict]) -> str:
             row.get("failed_count", ""),
             "; ".join(row.get("missed", [])),
             row.get("status", "graded"),
-        ])
+        )])
     return buffer.getvalue()
 
 

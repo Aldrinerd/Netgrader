@@ -142,3 +142,36 @@ def test_batch_requires_at_least_one_submission(instructions_txt):
     response = client.post("/api/evaluate/batch", files=files)
     # FastAPI rejects the missing field before the handler runs.
     assert response.status_code in (400, 422)
+
+
+@pytest.mark.parametrize("prefix", ["=", "+", "-", "@", "\t", "\r"])
+def test_csv_neutralises_formula_prefixes(prefix):
+    """
+    A filename such as '=HYPERLINK(...).pkt' must not become a live formula
+    when the instructor opens the gradebook in Excel (#32).
+    """
+    from src.app import _build_gradebook_csv
+    name = f'{prefix}HYPERLINK("http://evil","Dela Cruz")'
+    text = _build_gradebook_csv("Lab", [{
+        "student": name,
+        "missed": [f"{prefix}cmd|' /C calc'!A0"],
+    }])
+    row = next(r for r in csv.reader(io.StringIO(text)) if r and r[0] != "Student")
+    assert row[0] == "'" + name
+    assert row[8].startswith("'")
+
+
+def test_csv_leaves_ordinary_values_alone():
+    from src.app import _build_gradebook_csv
+    text = _build_gradebook_csv("Lab 3", [{
+        "student": "Dela Cruz, Juan", "total_score": -0.0, "percentage": 82.5, "missed": [],
+    }])
+    row = list(csv.reader(io.StringIO(text)))[1]
+    assert row[0] == "Dela Cruz, Juan"
+    assert row[1] == "Lab 3"
+
+
+def test_csv_error_row_grade_dash_is_not_prefixed():
+    from src.app import _build_gradebook_csv
+    text = _build_gradebook_csv("Lab", [{"student": "A", "grade_letter": "-", "missed": []}])
+    assert list(csv.reader(io.StringIO(text)))[1][5] == "-"
