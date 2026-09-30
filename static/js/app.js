@@ -120,7 +120,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!toastContainer) return;
         const toast = document.createElement('div');
         toast.className = 'toast';
-        toast.innerHTML = `<span>✨</span><span>${msg}</span>`;
+        // Text only: some messages carry a student's filename.
+        const icon = document.createElement('span');
+        icon.textContent = '✨';
+        const text = document.createElement('span');
+        text.textContent = msg;
+        toast.append(icon, text);
         toastContainer.appendChild(toast);
         setTimeout(() => {
             toast.style.opacity = '0';
@@ -1134,10 +1139,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const emptyStateDefaultHTML = emptyState ? emptyState.innerHTML : '';
     let pendingOperations = 0;
 
+    // Escapes for both element content and quoted attribute values. Anything
+    // taken from an uploaded file (device names, descriptions, config lines)
+    // or a filename must pass through this before reaching innerHTML.
     function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text == null ? '' : String(text);
-        return div.innerHTML;
+        return (text == null ? '' : String(text))
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
     }
 
     function showLoading(msg) {
@@ -1145,7 +1156,7 @@ document.addEventListener('DOMContentLoaded', () => {
         pendingOperations++;
         emptyState.dataset.panelState = 'loading';
         emptyState.style.display = 'block';
-        emptyState.innerHTML = `<div class="status-dot pulsing" style="width:24px;height:24px;margin:0 auto 12px;"></div><p>${msg}</p>`;
+        emptyState.innerHTML = `<div class="status-dot pulsing" style="width:24px;height:24px;margin:0 auto 12px;"></div><p>${escapeHtml(msg)}</p>`;
     }
 
     // Lets a handler put its own message in the panel and keep it: hideLoading()
@@ -1699,7 +1710,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         ${(link.confidence * 100).toFixed(1)}%
                     </span>
                     <span class="badge ${link.classification === 'verified' ? 'badge-green' : 'badge-amber'}">
-                        ${link.classification.toUpperCase()} LINK
+                        ${escapeHtml(String(link.classification).toUpperCase())} LINK
                     </span>
                     <span style="font-size:10.5px;color:#9CA3AF;">Fused Signal Probability</span>
                 </div>
@@ -1714,9 +1725,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 html += `
                     <div class="signal-row">
                         <div>
-                            <div class="signal-type">${sig.signal_type}</div>
-                            <div style="font-size:10.5px;color:#9CA3AF;margin-top:2px;">${sig.description}</div>
-                            ${sig.evidence ? sig.evidence.map(e => `<span class="evidence-tag">📍 ${e}</span>`).join('') : ''}
+                            <div class="signal-type">${escapeHtml(sig.signal_type)}</div>
+                            <div style="font-size:10.5px;color:#9CA3AF;margin-top:2px;">${escapeHtml(sig.description)}</div>
+                            ${sig.evidence ? sig.evidence.map(e => `<span class="evidence-tag">📍 ${escapeHtml(e)}</span>`).join('') : ''}
                         </div>
                         <div class="signal-weight">+${(sig.weight * 100).toFixed(0)}%</div>
                     </div>
@@ -1731,7 +1742,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="diag-section-title" style="color:#EF4444;">Associated Conflicts / Errors</div>
                     ${link.conflicts.map(c => `
                         <div class="conflict-item-card" style="margin-bottom:5px;">
-                            <div class="conflict-item-title">${c}</div>
+                            <div class="conflict-item-title">${escapeHtml(c)}</div>
                         </div>
                     `).join('')}
                 </div>
@@ -1765,7 +1776,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="signal-row">
                         <div>
                             <div style="font-size:9.5px;color:#9CA3AF;text-transform:uppercase;letter-spacing:0.5px;">Discovered Peer ID</div>
-                            <div style="font-size:13px;font-weight:700;color:#F59E0B;font-family:JetBrains Mono;margin-top:2px;">${dev.placeholder_for_device}</div>
+                            <div style="font-size:13px;font-weight:700;color:#F59E0B;font-family:JetBrains Mono;margin-top:2px;">${escapeHtml(dev.placeholder_for_device)}</div>
                             <div style="font-size:10.5px;color:#9CA3AF;margin-top:2px;">Identified via discovery protocols (CDP/LLDP). Configuration file was not submitted.</div>
                         </div>
                     </div>
@@ -1776,7 +1787,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="signal-row">
                         <div>
                             <div style="font-size:9.5px;color:#9CA3AF;text-transform:uppercase;letter-spacing:0.5px;">Local Connected Port</div>
-                            <div style="font-size:13px;font-weight:700;color:#60A5FA;font-family:JetBrains Mono;margin-top:2px;">${dev.placeholder_for_interface}</div>
+                            <div style="font-size:13px;font-weight:700;color:#60A5FA;font-family:JetBrains Mono;margin-top:2px;">${escapeHtml(dev.placeholder_for_interface)}</div>
                             <div style="font-size:10.5px;color:#9CA3AF;margin-top:2px;">Port has active carrier status (up/up).</div>
                         </div>
                     </div>
@@ -1804,14 +1815,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 html += `
                     <div class="signal-row" style="flex-direction:column;align-items:flex-start;">
                         <div style="display:flex;justify-content:space-between;width:100%;">
-                            <strong style="font-family:JetBrains Mono;">${intf.name}</strong>
-                            <span class="badge ${isDown ? 'badge-red' : 'badge-green'}">${intf.admin_status}/${intf.line_status}</span>
+                            <strong style="font-family:JetBrains Mono;">${escapeHtml(intf.name)}</strong>
+                            <span class="badge ${isDown ? 'badge-red' : 'badge-green'}">${escapeHtml(intf.admin_status)}/${escapeHtml(intf.line_status)}</span>
                         </div>
                         <div style="font-size:10.5px;color:#9CA3AF;margin-top:3px;">
-                            ${intf.ip_address ? `IP: <strong>${intf.ip_address}/${intf.cidr}</strong> (${intf.network_address})` : 'IP: (Unassigned)'}
-                            ${intf.switchport_mode ? ` | Switchport: <strong>${intf.switchport_mode}</strong> (VLAN ${intf.access_vlan || intf.trunk_native_vlan})` : ''}
+                            ${intf.ip_address ? `IP: <strong>${escapeHtml(intf.ip_address)}/${escapeHtml(intf.cidr)}</strong> (${escapeHtml(intf.network_address)})` : 'IP: (Unassigned)'}
+                            ${intf.switchport_mode ? ` | Switchport: <strong>${escapeHtml(intf.switchport_mode)}</strong> (VLAN ${escapeHtml(intf.access_vlan || intf.trunk_native_vlan)})` : ''}
                         </div>
-                        ${intf.description ? `<div style="font-size:10.5px;color:#60A5FA;">desc: ${intf.description}</div>` : ''}
+                        ${intf.description ? `<div style="font-size:10.5px;color:#60A5FA;">desc: ${escapeHtml(intf.description)}</div>` : ''}
                     </div>
                 `;
             });
@@ -1827,8 +1838,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 html += `
                     <div class="signal-row">
                         <div>
-                            <strong>${cdp.device_id}</strong> on <code>${cdp.local_interface}</code> ⟷ <code>${cdp.remote_interface}</code>
-                            <div style="font-size:9.5px;color:#9CA3AF;">Platform: ${cdp.platform || 'Cisco'} | Remote IP: ${cdp.remote_ip || 'N/A'}</div>
+                            <strong>${escapeHtml(cdp.device_id)}</strong> on <code>${escapeHtml(cdp.local_interface)}</code> ⟷ <code>${escapeHtml(cdp.remote_interface)}</code>
+                            <div style="font-size:9.5px;color:#9CA3AF;">Platform: ${escapeHtml(cdp.platform || 'Cisco')} | Remote IP: ${escapeHtml(cdp.remote_ip || 'N/A')}</div>
                         </div>
                     </div>
                 `;
@@ -1856,12 +1867,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 const card = document.createElement('div');
                 card.className = `conflict-item-card ${c.severity === 'warning' ? 'warning' : ''}`;
                 let html = `
-                    <div class="conflict-item-title">${c.title}</div>
-                    <div class="conflict-item-desc">${c.description}</div>
+                    <div class="conflict-item-title">${escapeHtml(c.title)}</div>
+                    <div class="conflict-item-desc">${escapeHtml(c.description)}</div>
                 `;
                 if (c.evidence_citations && c.evidence_citations.length > 0) {
                     c.evidence_citations.forEach(cit => {
-                        html += `<span class="evidence-tag">📍 ${cit}</span>`;
+                        html += `<span class="evidence-tag">📍 ${escapeHtml(cit)}</span>`;
                     });
                 }
                 card.innerHTML = html;
@@ -1963,7 +1974,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="batch-student">${escapeHtml(row.student)}</td>
                 <td>${row.total_score} / ${row.max_score}</td>
                 <td class="batch-pct">${row.percentage}%</td>
-                <td><span class="grade-chip grade-${row.grade_letter.replace('+','plus').replace('-','none')}">${row.grade_letter}</span></td>
+                <td><span class="grade-chip grade-${escapeHtml(row.grade_letter.replace('+','plus').replace('-','none'))}">${escapeHtml(row.grade_letter)}</span></td>
                 <td class="batch-status">${escapeHtml(statusText)}</td>
                 <td class="batch-review-cell"></td>
             `;
