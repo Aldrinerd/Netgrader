@@ -17,6 +17,24 @@ class InterfaceData(BaseModel):
     trunk_allowed_vlans: list[int] = Field(default_factory=list)
     trunk_native_vlan: int = 1
     description: str | None = None
+
+    # --- Interface-level protocol settings (link-agreement Phase 2) ---
+    # All optional: an unset value means the IOS default, which the link
+    # attribute registry supplies. None here means "not written in the
+    # config", not "no value in effect".
+    ospf_hello_interval: int | None = None
+    ospf_dead_interval: int | None = None
+    ospf_area: int | None = None
+    ospf_network_type: str | None = None      # broadcast / point-to-point / ...
+    ospf_authentication: str | None = None    # message-digest / text / null
+    mtu: int | None = None
+    speed: str | None = None                  # auto / 10 / 100 / 1000
+    duplex: str | None = None                 # auto / full / half
+    channel_group: int | None = None
+    channel_group_mode: str | None = None     # active / passive / on / desirable / auto
+    encapsulation: str | None = None          # ppp / hdlc / frame-relay
+    clock_rate: int | None = None
+
     evidence_lines: dict[str, int] = Field(default_factory=dict)
 
 
@@ -58,8 +76,11 @@ class ParsedDevice(BaseModel):
     y_coord: float | None = None
     default_gateway: str | None = None
     has_enable_secret: bool = False
+    has_enable_password: bool = False   # the weak form; tracked so feedback can name it
     has_password_encryption: bool = False
     has_vty_login: bool = False
+    has_ip_routing: bool = False
+    hardware_model: str = ""
     ospf_processes: list[dict] = Field(default_factory=list)
     interfaces: dict[str, InterfaceData] = Field(default_factory=dict)
     cdp_neighbors: list[CDPNeighbor] = Field(default_factory=list)
@@ -118,6 +139,13 @@ class EvaluationPolicies(BaseModel):
     grade_security_baseline: bool = False       # If True: checks 'enable secret', 'service password-encryption', 'line vty'
     grade_interface_descriptions: bool = False  # If True: checks descriptive interface labels matching peer
 
+    # Link Agreement Policies
+    # If False (default): both ends of a link need only agree with EACH OTHER.
+    # A trunk whose two ends both use native VLAN 999 works, whatever the
+    # instructor's own file used. If True: the agreed value must also equal the
+    # reference, for labs where the instructor dictated exact values.
+    enforce_reference_link_values: bool = False
+
 
 class EvaluationRule(BaseModel):
     rule_id: str
@@ -129,6 +157,8 @@ class EvaluationRule(BaseModel):
         "vlan_trunk",
         "routing",
         "relational_subnet",
+        "link_agreement",
+        "gateway",
         "security",
         "documentation"
     ]
@@ -159,6 +189,34 @@ class RuleResult(BaseModel):
     feedback: str
     target_device: str
     target_interface: str | None = None
+    # Why the requirement exists and how to satisfy it. Populated for failed
+    # checkpoints only. Deterministic: see src/feedback.py.
+    guidance: str | None = None
+
+
+class ClassChatStudent(BaseModel):
+    """
+    One row of the batch results, as sent to the instructor's class chat.
+
+    `name` is the submission's filename stem -- instructors name each file
+    after the student, so this is the student's name.
+    """
+    name: str
+    status: str = "graded"
+    percentage: float = 0.0
+    grade_letter: str = "-"
+    total_score: float = 0.0
+    max_score: float = 0.0
+    failed_count: int = 0
+    topics: list[str] = Field(default_factory=list)
+
+
+class StudyTopic(BaseModel):
+    """A concept to revisit, ranked by how many points it cost."""
+    topic: str
+    why_it_matters: str
+    points_lost: float
+    checkpoints_failed: int
 
 
 class EvaluationReport(BaseModel):
@@ -170,5 +228,6 @@ class EvaluationReport(BaseModel):
     failed_count: int
     grade_letter: str
     results: list[RuleResult] = Field(default_factory=list)
+    study_topics: list[StudyTopic] = Field(default_factory=list)
     topology: TopologyResult
 

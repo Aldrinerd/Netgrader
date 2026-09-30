@@ -24,6 +24,7 @@ from src.models import (
 )
 from src.parsers import (
     canonical_device_name,
+    classify_device_role,
     ip_and_mask_to_network,
     normalize_interface_name,
     parse_running_config,
@@ -142,6 +143,7 @@ def parse_pkt_xml(xml_content: str | bytes, filename: str = "topology.xml") -> T
                 canonical_name=canonical_device_name(raw_name),
                 display_name=raw_name,
                 device_type=device_type,
+                hardware_model=model_attr,
                 raw_filename=filename,
                 x_coord=x_coord,
                 y_coord=y_coord
@@ -195,6 +197,12 @@ def parse_pkt_xml(xml_content: str | bytes, filename: str = "topology.xml") -> T
                         intf.network_address = net_addr
                     
                     device.interfaces[port_name] = intf
+
+            # parse_running_config above rewrites device_type to "switch" on
+            # any switchport line, which would flatten a multilayer switch and
+            # an EtherSwitch-equipped router alike. Re-decide from the model
+            # and the parsed interfaces together.
+            classify_device_role(device)
 
             devices_dict[raw_name] = device
 

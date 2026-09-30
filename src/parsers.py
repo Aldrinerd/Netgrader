@@ -51,8 +51,10 @@ def parse_running_config(content: str, start_line: int, device: ParsedDevice) ->
     lines = content.splitlines()
     current_intf: InterfaceData | None = None
     in_vty_block = False
+    vty_indent = 0
+    vty_login_disabled = False
     current_ospf: dict | None = None
-    
+
     for idx, line in enumerate(lines):
         line_no = start_line + idx
         stripped = line.strip()
@@ -65,12 +67,24 @@ def parse_running_config(content: str, start_line: int, device: ParsedDevice) ->
             continue
         
         # Security Baseline
-        if re.match(r"^enable\s+(?:secret|password)\b", stripped, re.IGNORECASE):
+        # `enable password` is stored in plaintext (or reversible type 7), which
+        # is exactly what the enable-secret checkpoint exists to catch, so it
+        # must not satisfy it. It is still recorded so feedback can name it.
+        if re.match(r"^enable\s+secret\b", stripped, re.IGNORECASE):
             device.has_enable_secret = True
+            continue
+        if re.match(r"^enable\s+password\b", stripped, re.IGNORECASE):
+            device.has_enable_password = True
             continue
 
         if re.match(r"^service\s+password-encryption\b", stripped, re.IGNORECASE):
             device.has_password_encryption = True
+            continue
+
+        # `ip routing` enables L3 forwarding on a switch. Anchored so that
+        # `ip route 0.0.0.0 ...` on a plain router cannot match it.
+        if re.match(r"^ip\s+routing\b", stripped, re.IGNORECASE):
+            device.has_ip_routing = True
             continue
 
         # Default Gateway (Switches / Hosts)
@@ -82,17 +96,24 @@ def parse_running_config(content: str, start_line: int, device: ParsedDevice) ->
         # Line VTY Block
         if re.match(r"^line\s+vty\b", stripped, re.IGNORECASE):
             in_vty_block = True
+            vty_indent = len(line) - len(line.lstrip())
             current_intf = None
             current_ospf = None
             continue
-        
+
+        # Same rule as the OSPF block below: indentation, relative to the
+        # `line vty` header, decides membership. Closing on the first
+        # sub-command that was not login/password meant `exec-timeout`, which
+        # show running-config prints first, hid every `login` after it.
         if in_vty_block:
-            if re.match(r"^(?:login|password)\b", stripped, re.IGNORECASE):
+            if stripped and len(line) - len(line.lstrip()) <= vty_indent:
+                in_vty_block = False
+            elif re.match(r"^no\s+login\b", stripped, re.IGNORECASE):
+                vty_login_disabled = True
+                continue
+            elif re.match(r"^(?:login|password)\b", stripped, re.IGNORECASE):
                 device.has_vty_login = True
-            elif not line.startswith(" ") and not line.startswith("\t") and stripped.startswith("!"):
-                in_vty_block = False
-            elif re.match(r"^[a-zA-Z]", stripped) and not stripped.startswith("login") and not stripped.startswith("password"):
-                in_vty_block = False
+                continue
 
         # Router OSPF Block
         ospf_match = re.match(r"^router\s+ospf\s+(\d+)", stripped, re.IGNORECASE)
@@ -113,10 +134,16 @@ def parse_running_config(content: str, start_line: int, device: ParsedDevice) ->
                     "area": int(net_match.group(3))
                 })
                 continue
-            elif not line.startswith(" ") and not line.startswith("\t") and stripped.startswith("!"):
-                current_ospf = None
-            elif re.match(r"^[a-zA-Z]", stripped) and not stripped.startswith("network"):
-                current_ospf = None
+            # Indentation is what says whether a line still belongs to the
+            # router block. Testing the STRIPPED line meant the first
+            # sub-command -- `router-id`, `log-adjacency-changes`,
+            # `passive-interface`, `area N range ...` -- looked like a new
+            # top-level command and closed the block, silently discarding
+            # every `network` statement that came after it. Real configs
+            # put those lines first, so OSPF was almost never graded.
+            if not stripped or line[:1].isspace():
+                continue
+            current_ospf = None
 
         # Interface block start
         intf_match = re.match(r"^interface\s+([a-zA-Z0-9_\-\./]+)", stripped, re.IGNORECASE)
@@ -181,6 +208,100 @@ def parse_running_config(content: str, start_line: int, device: ParsedDevice) ->
                 current_intf.evidence_lines["ipv6"] = line_no
                 continue
             
+            # --- Interface-level protocol settings ---
+            # Each is optional in the config and defaults in IOS, so an absent
+            # line is recorded as None rather than guessed at here; the link
+            # attribute registry knows the default that applies.
+
+            ospf_timer = re.match(
+                r"^ip\s+ospf\s+(hello|dead)-interval\s+(\d+)", stripped, re.IGNORECASE)
+            if ospf_timer:
+                value = int(ospf_timer.group(2))
+                if ospf_timer.group(1).lower() == "hello":
+                    current_intf.ospf_hello_interval = value
+                    current_intf.evidence_lines["ospf_hello_interval"] = line_no
+                else:
+                    current_intf.ospf_dead_interval = value
+                    current_intf.evidence_lines["ospf_dead_interval"] = line_no
+                continue
+
+            # `ip ospf <process-id> area <area-id>` -- interface-level OSPF,
+            # an alternative to `network ... area ...` under `router ospf`.
+            ospf_area = re.match(
+                r"^ip\s+ospf\s+\d+\s+area\s+(\d+)", stripped, re.IGNORECASE)
+            if ospf_area:
+                current_intf.ospf_area = int(ospf_area.group(1))
+                current_intf.evidence_lines["ospf_area"] = line_no
+                continue
+
+            ospf_network = re.match(
+                r"^ip\s+ospf\s+network\s+([a-zA-Z\-]+)", stripped, re.IGNORECASE)
+            if ospf_network:
+                current_intf.ospf_network_type = ospf_network.group(1).strip().lower()
+                current_intf.evidence_lines["ospf_network_type"] = line_no
+                continue
+
+            # Both ends must use the same scheme AND the same key, but the key
+            # itself is a credential and is never stored -- only whether one is
+            # configured, which is all the agreement check needs.
+            if re.match(r"^ip\s+ospf\s+message-digest-key\b", stripped, re.IGNORECASE):
+                current_intf.ospf_authentication = "message-digest"
+                current_intf.evidence_lines["ospf_authentication"] = line_no
+                continue
+            ospf_auth = re.match(
+                r"^ip\s+ospf\s+authentication(?:\s+(message-digest|null))?\s*$",
+                stripped, re.IGNORECASE)
+            if ospf_auth:
+                current_intf.ospf_authentication = (ospf_auth.group(1) or "text").lower()
+                current_intf.evidence_lines["ospf_authentication"] = line_no
+                continue
+            if re.match(r"^ip\s+ospf\s+authentication-key\b", stripped, re.IGNORECASE):
+                if not current_intf.ospf_authentication:
+                    current_intf.ospf_authentication = "text"
+                current_intf.evidence_lines["ospf_authentication"] = line_no
+                continue
+
+            mtu_match = re.match(r"^(?:ip\s+)?mtu\s+(\d+)", stripped, re.IGNORECASE)
+            if mtu_match:
+                current_intf.mtu = int(mtu_match.group(1))
+                current_intf.evidence_lines["mtu"] = line_no
+                continue
+
+            speed_match = re.match(r"^speed\s+(auto|\d+)", stripped, re.IGNORECASE)
+            if speed_match:
+                current_intf.speed = speed_match.group(1).strip().lower()
+                current_intf.evidence_lines["speed"] = line_no
+                continue
+
+            duplex_match = re.match(r"^duplex\s+(auto|full|half)", stripped, re.IGNORECASE)
+            if duplex_match:
+                current_intf.duplex = duplex_match.group(1).strip().lower()
+                current_intf.evidence_lines["duplex"] = line_no
+                continue
+
+            channel_match = re.match(
+                r"^channel-group\s+(\d+)(?:\s+mode\s+([a-zA-Z\s]+?))?\s*$",
+                stripped, re.IGNORECASE)
+            if channel_match:
+                current_intf.channel_group = int(channel_match.group(1))
+                mode = (channel_match.group(2) or "on").strip().lower()
+                current_intf.channel_group_mode = re.sub(r"\s+", " ", mode)
+                current_intf.evidence_lines["channel_group"] = line_no
+                continue
+
+            encap_match = re.match(
+                r"^encapsulation\s+(ppp|hdlc|frame-relay)\b", stripped, re.IGNORECASE)
+            if encap_match:
+                current_intf.encapsulation = encap_match.group(1).strip().lower()
+                current_intf.evidence_lines["encapsulation"] = line_no
+                continue
+
+            clock_match = re.match(r"^clock\s+rate\s+(\d+)", stripped, re.IGNORECASE)
+            if clock_match:
+                current_intf.clock_rate = int(clock_match.group(1))
+                current_intf.evidence_lines["clock_rate"] = line_no
+                continue
+
             # Description
             desc_match = re.match(r"^description\s+(.+)$", stripped, re.IGNORECASE)
             if desc_match:
@@ -189,6 +310,16 @@ def parse_running_config(content: str, start_line: int, device: ParsedDevice) ->
                 continue
 
             
+            # `no switchport` converts the port to a routed interface. It has
+            # to be tested before the substring checks below, because every one
+            # of them also matches the word inside "no switchport" and would
+            # otherwise flag a routed port as a switchport -- backwards.
+            if re.match(r"^no\s+switchport\s*$", stripped, re.IGNORECASE):
+                current_intf.is_switchport = False
+                current_intf.switchport_mode = None
+                current_intf.evidence_lines["no_switchport"] = line_no
+                continue
+
             # Switchport mode
             if "switchport mode trunk" in stripped.lower():
                 current_intf.is_switchport = True
@@ -244,6 +375,11 @@ def parse_running_config(content: str, start_line: int, device: ParsedDevice) ->
                 current_intf.admin_status = "administratively down"
                 current_intf.line_status = "down"
                 current_intf.evidence_lines["admin_status"] = line_no
+
+    # `no login` leaves the VTY lines open to anyone who knows the password,
+    # or to anyone at all, whatever else the block says.
+    if vty_login_disabled:
+        device.has_vty_login = False
 
 def parse_cdp_detail(content: str, start_line: int, device: ParsedDevice) -> None:
     # Split into neighbor blocks (typically separated by ------------------------- or Device ID:)
@@ -411,9 +547,91 @@ def parse_mac_table(content: str, start_line: int, device: ParsedDevice) -> None
                 evidence_line=line_no
             ))
 
+# Catalyst families that are multilayer switches in hardware. A device of one
+# of these models is an l3_switch even if the student never enabled routing on
+# it -- device_type describes the equipment, not the configuration. Whether
+# routing was actually turned on is a grading question, asked separately.
+_L3_SWITCH_MODELS = ("3560", "3650", "3750", "3850", "4500", "6500", "9300", "9500")
+
+# Access-layer models that cannot route, whatever the config appears to show.
+_L2_SWITCH_MODELS = ("2950", "2960", "2970")
+
+
+def classify_device_role(device: ParsedDevice) -> None:
+    """
+    Settle router / switch / l3_switch from all the evidence at once.
+
+    This has to run AFTER parsing rather than during it. Every `switchport`
+    line, every `show vlan brief` and every `show interfaces trunk` block
+    assigns device_type = "switch" as a side effect, and nothing ever revises
+    it. A multilayer switch has switchports AND routed interfaces, so the
+    line-by-line answer is always wrong for precisely the devices this
+    distinction exists to describe.
+
+    Only ever decides between switch and l3_switch. Hosts, unknowns and
+    devices with no switching evidence at all are left exactly as the caller
+    classified them, so a router is never demoted by a parsing accident.
+    """
+    if device.device_type in ("host", "unknown"):
+        return
+
+    model = (device.hardware_model or "").lower()
+    if any(m in model for m in _L3_SWITCH_MODELS):
+        device.device_type = "l3_switch"
+        return
+    if any(m in model for m in _L2_SWITCH_MODELS):
+        device.device_type = "switch"
+        return
+
+    has_switchports = any(i.is_switchport for i in device.interfaces.values())
+    if not has_switchports and not device.vlans:
+        # No switching evidence. Leave the caller's answer (model-derived on
+        # the .pkt path, the "router" default on the text path) alone.
+        return
+
+    # An SVI carrying an address. One of these is an L2 switch's management
+    # interface; several means the switch is the gateway for those VLANs.
+    addressed_svis = sum(
+        1 for name, intf in device.interfaces.items()
+        if re.match(r"^vlan\d+$", name, re.IGNORECASE) and intf.ip_address
+    )
+    # A physical port taken out of switching with `no switchport` and given an
+    # address -- a routed port, which only a multilayer switch has.
+    routed_ports = any(
+        intf.ip_address and not intf.is_switchport
+        and not re.match(r"^vlan\d+$", name, re.IGNORECASE)
+        for name, intf in device.interfaces.items()
+    )
+
+    if device.has_ip_routing or addressed_svis > 1 or routed_ports:
+        device.device_type = "l3_switch"
+    else:
+        device.device_type = "switch"
+
+
+# Filenames that say what a file is, not which device it came from. A zip with
+# one folder per device (R1/running-config.txt, R2/running-config.txt) names
+# the device by its folder instead.
+_GENERIC_CONFIG_STEMS = {
+    "running-config", "running_config", "runningconfig", "run", "show-run",
+    "show_run", "showrun", "show-running-config", "show_running_config",
+    "startup-config", "startup_config", "config", "configuration", "conf",
+}
+
+
+def _fallback_device_name(filename: str) -> str:
+    """Name a device by its file when the config has no `hostname` line."""
+    path = filename.replace("\\", "/").rstrip("/")
+    folder, _, base = path.rpartition("/")
+    stem = base.rsplit(".", 1)[0]
+    if stem.lower() in _GENERIC_CONFIG_STEMS and folder:
+        return folder.rpartition("/")[2]
+    return stem
+
+
 def parse_device_bundle(raw_text: str, filename: str) -> ParsedDevice:
     """Ingests raw multi-command output and produces a structured ParsedDevice object."""
-    base_name = os.path.basename(filename).rsplit(".", 1)[0]
+    base_name = _fallback_device_name(filename)
     device = ParsedDevice(
         hostname=base_name,
         canonical_name=canonical_device_name(base_name),
@@ -456,5 +674,8 @@ def parse_device_bundle(raw_text: str, filename: str) -> ParsedDevice:
     if "show mac address-table" in sections:
         content, start_line = sections["show mac address-table"]
         parse_mac_table(content, start_line, device)
-        
+
+    # Every section has contributed now, so the role can finally be settled.
+    classify_device_role(device)
+
     return device

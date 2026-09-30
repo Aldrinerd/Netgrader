@@ -1,0 +1,687 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PACKETTRACER5>
+ <VERSION>8.2.2.0400</VERSION>
+ <NETWORK>
+  <DEVICES>
+  <DEVICE>
+   <ENGINE>
+    <TYPE customModel="" model="1841">Router</TYPE>
+    <NAME>Router1</NAME>
+    <RUNNINGCONFIG>
+     <LINE>!</LINE>
+     <LINE>version 12.4</LINE>
+     <LINE>service password-encryption</LINE>
+     <LINE>!</LINE>
+     <LINE>hostname Router1</LINE>
+     <LINE>!</LINE>
+     <LINE>enable secret 5 $1$fx7Q$Wm1dVq3ZsKp0cH9rTn2Lb.</LINE>
+     <LINE>!</LINE>
+     <LINE>interface FastEthernet0/0</LINE>
+     <LINE> description LAN Switch2</LINE>
+     <LINE> ip address 172.20.10.1 255.255.255.0</LINE>
+     <LINE> duplex auto</LINE>
+     <LINE> speed auto</LINE>
+     <LINE>!</LINE>
+     <LINE>interface FastEthernet0/1</LINE>
+     <LINE> description Link to Router2</LINE>
+     <LINE> ip address 172.20.0.1 255.255.255.252</LINE>
+     <LINE> duplex auto</LINE>
+     <LINE> speed auto</LINE>
+     <LINE>!</LINE>
+     <LINE>interface Vlan1</LINE>
+     <LINE> no ip address</LINE>
+     <LINE> shutdown</LINE>
+     <LINE>!</LINE>
+     <LINE>router ospf 10</LINE>
+     <LINE> router-id 1.1.1.1</LINE>
+     <LINE> log-adjacency-changes</LINE>
+     <LINE> network 172.20.10.0 0.0.0.255 area 0</LINE>
+     <LINE> network 172.20.0.0 0.0.0.3 area 0</LINE>
+     <LINE>!</LINE>
+     <LINE>ip classless</LINE>
+     <LINE>!</LINE>
+     <LINE>line con 0</LINE>
+     <LINE>!</LINE>
+     <LINE>line vty 0 4</LINE>
+     <LINE> exec-timeout 10 0</LINE>
+     <LINE> password 7 0822455D0A16</LINE>
+     <LINE> login</LINE>
+     <LINE> transport input telnet ssh</LINE>
+     <LINE>!</LINE>
+     <LINE>end</LINE>
+    </RUNNINGCONFIG>
+    <SAVE_REF_ID>save-ref-id:1000</SAVE_REF_ID>
+   </ENGINE>
+   <WORKSPACE>
+    <LOGICAL>
+     <X>300</X>
+     <Y>300</Y>
+    </LOGICAL>
+   </WORKSPACE>
+  </DEVICE>
+  <DEVICE>
+   <ENGINE>
+    <TYPE customModel="" model="1841">Router</TYPE>
+    <NAME>Router2</NAME>
+    <RUNNINGCONFIG>
+     <LINE>!</LINE>
+     <LINE>version 12.4</LINE>
+     <LINE>service password-encryption</LINE>
+     <LINE>!</LINE>
+     <LINE>hostname Router2</LINE>
+     <LINE>!</LINE>
+     <LINE>enable secret 5 $1$fx7Q$Wm1dVq3ZsKp0cH9rTn2Lb.</LINE>
+     <LINE>!</LINE>
+     <LINE>interface FastEthernet0/0</LINE>
+     <LINE> description Link to Router1</LINE>
+     <LINE> ip address 172.20.0.2 255.255.255.252</LINE>
+     <LINE> duplex auto</LINE>
+     <LINE> speed auto</LINE>
+     <LINE>!</LINE>
+     <LINE>interface FastEthernet0/1</LINE>
+     <LINE> description Link to Router3</LINE>
+     <LINE> ip address 172.20.0.5 255.255.255.252</LINE>
+     <LINE> duplex auto</LINE>
+     <LINE> speed auto</LINE>
+     <LINE>!</LINE>
+     <LINE>interface Vlan1</LINE>
+     <LINE> no ip address</LINE>
+     <LINE> shutdown</LINE>
+     <LINE>!</LINE>
+     <LINE>router ospf 10</LINE>
+     <LINE> router-id 1.1.1.2</LINE>
+     <LINE> log-adjacency-changes</LINE>
+     <LINE> network 172.20.0.0 0.0.0.3 area 0</LINE>
+     <LINE> network 172.20.0.4 0.0.0.3 area 0</LINE>
+     <LINE>!</LINE>
+     <LINE>ip classless</LINE>
+     <LINE>!</LINE>
+     <LINE>line con 0</LINE>
+     <LINE>!</LINE>
+     <LINE>line vty 0 4</LINE>
+     <LINE> exec-timeout 10 0</LINE>
+     <LINE> password 7 0822455D0A16</LINE>
+     <LINE> login</LINE>
+     <LINE> transport input telnet ssh</LINE>
+     <LINE>!</LINE>
+     <LINE>end</LINE>
+    </RUNNINGCONFIG>
+    <SAVE_REF_ID>save-ref-id:1001</SAVE_REF_ID>
+   </ENGINE>
+   <WORKSPACE>
+    <LOGICAL>
+     <X>500</X>
+     <Y>200</Y>
+    </LOGICAL>
+   </WORKSPACE>
+  </DEVICE>
+  <DEVICE>
+   <ENGINE>
+    <TYPE customModel="" model="1841">Router</TYPE>
+    <NAME>Router3</NAME>
+    <RUNNINGCONFIG>
+     <LINE>!</LINE>
+     <LINE>version 12.4</LINE>
+     <LINE>service password-encryption</LINE>
+     <LINE>!</LINE>
+     <LINE>hostname Router3</LINE>
+     <LINE>!</LINE>
+     <LINE>enable secret 5 $1$fx7Q$Wm1dVq3ZsKp0cH9rTn2Lb.</LINE>
+     <LINE>!</LINE>
+     <LINE>interface FastEthernet0/0</LINE>
+     <LINE> description Link to Router2</LINE>
+     <LINE> ip address 172.20.0.6 255.255.255.252</LINE>
+     <LINE> duplex auto</LINE>
+     <LINE> speed auto</LINE>
+     <LINE>!</LINE>
+     <LINE>interface FastEthernet0/1</LINE>
+     <LINE> description Link to Router4</LINE>
+     <LINE> ip address 172.20.0.9 255.255.255.252</LINE>
+     <LINE> duplex auto</LINE>
+     <LINE> speed auto</LINE>
+     <LINE>!</LINE>
+     <LINE>interface Vlan1</LINE>
+     <LINE> no ip address</LINE>
+     <LINE> shutdown</LINE>
+     <LINE>!</LINE>
+     <LINE>router ospf 10</LINE>
+     <LINE> router-id 1.1.1.3</LINE>
+     <LINE> log-adjacency-changes</LINE>
+     <LINE> network 172.20.0.4 0.0.0.3 area 0</LINE>
+     <LINE> network 172.20.0.8 0.0.0.3 area 0</LINE>
+     <LINE>!</LINE>
+     <LINE>ip classless</LINE>
+     <LINE>!</LINE>
+     <LINE>line con 0</LINE>
+     <LINE>!</LINE>
+     <LINE>line vty 0 4</LINE>
+     <LINE> exec-timeout 10 0</LINE>
+     <LINE> password 7 0822455D0A16</LINE>
+     <LINE> login</LINE>
+     <LINE> transport input telnet ssh</LINE>
+     <LINE>!</LINE>
+     <LINE>end</LINE>
+    </RUNNINGCONFIG>
+    <SAVE_REF_ID>save-ref-id:1002</SAVE_REF_ID>
+   </ENGINE>
+   <WORKSPACE>
+    <LOGICAL>
+     <X>700</X>
+     <Y>200</Y>
+    </LOGICAL>
+   </WORKSPACE>
+  </DEVICE>
+  <DEVICE>
+   <ENGINE>
+    <TYPE customModel="" model="1841">Router</TYPE>
+    <NAME>Router4</NAME>
+    <RUNNINGCONFIG>
+     <LINE>!</LINE>
+     <LINE>version 12.4</LINE>
+     <LINE>service password-encryption</LINE>
+     <LINE>!</LINE>
+     <LINE>hostname Router4</LINE>
+     <LINE>!</LINE>
+     <LINE>enable secret 5 $1$fx7Q$Wm1dVq3ZsKp0cH9rTn2Lb.</LINE>
+     <LINE>!</LINE>
+     <LINE>interface FastEthernet0/0</LINE>
+     <LINE> description Link to Router3</LINE>
+     <LINE> ip address 172.20.0.10 255.255.255.252</LINE>
+     <LINE> duplex auto</LINE>
+     <LINE> speed auto</LINE>
+     <LINE>!</LINE>
+     <LINE>interface FastEthernet0/1</LINE>
+     <LINE> description Link to Router5</LINE>
+     <LINE> ip address 172.20.0.13 255.255.255.252</LINE>
+     <LINE> duplex auto</LINE>
+     <LINE> speed auto</LINE>
+     <LINE>!</LINE>
+     <LINE>interface Vlan1</LINE>
+     <LINE> no ip address</LINE>
+     <LINE> shutdown</LINE>
+     <LINE>!</LINE>
+     <LINE>router ospf 10</LINE>
+     <LINE> router-id 1.1.1.4</LINE>
+     <LINE> log-adjacency-changes</LINE>
+     <LINE> network 172.20.0.8 0.0.0.3 area 0</LINE>
+     <LINE> network 172.20.0.12 0.0.0.3 area 0</LINE>
+     <LINE>!</LINE>
+     <LINE>ip classless</LINE>
+     <LINE>!</LINE>
+     <LINE>line con 0</LINE>
+     <LINE>!</LINE>
+     <LINE>line vty 0 4</LINE>
+     <LINE> exec-timeout 10 0</LINE>
+     <LINE> password 7 0822455D0A16</LINE>
+     <LINE> login</LINE>
+     <LINE> transport input telnet ssh</LINE>
+     <LINE>!</LINE>
+     <LINE>end</LINE>
+    </RUNNINGCONFIG>
+    <SAVE_REF_ID>save-ref-id:1003</SAVE_REF_ID>
+   </ENGINE>
+   <WORKSPACE>
+    <LOGICAL>
+     <X>900</X>
+     <Y>200</Y>
+    </LOGICAL>
+   </WORKSPACE>
+  </DEVICE>
+  <DEVICE>
+   <ENGINE>
+    <TYPE customModel="" model="1841">Router</TYPE>
+    <NAME>Router5</NAME>
+    <RUNNINGCONFIG>
+     <LINE>!</LINE>
+     <LINE>version 12.4</LINE>
+     <LINE>service password-encryption</LINE>
+     <LINE>!</LINE>
+     <LINE>hostname Router5</LINE>
+     <LINE>!</LINE>
+     <LINE>enable secret 5 $1$fx7Q$Wm1dVq3ZsKp0cH9rTn2Lb.</LINE>
+     <LINE>!</LINE>
+     <LINE>interface FastEthernet0/0</LINE>
+     <LINE> description Link to Router4</LINE>
+     <LINE> ip address 172.20.0.14 255.255.255.252</LINE>
+     <LINE> duplex auto</LINE>
+     <LINE> speed auto</LINE>
+     <LINE>!</LINE>
+     <LINE>interface FastEthernet0/1</LINE>
+     <LINE> description LAN Switch3</LINE>
+     <LINE> ip address 172.20.20.1 255.255.255.0</LINE>
+     <LINE> duplex auto</LINE>
+     <LINE> speed auto</LINE>
+     <LINE>!</LINE>
+     <LINE>interface Vlan1</LINE>
+     <LINE> no ip address</LINE>
+     <LINE> shutdown</LINE>
+     <LINE>!</LINE>
+     <LINE>router ospf 10</LINE>
+     <LINE> router-id 1.1.1.5</LINE>
+     <LINE> log-adjacency-changes</LINE>
+     <LINE> network 172.20.0.12 0.0.0.3 area 0</LINE>
+     <LINE> network 172.20.20.0 0.0.0.255 area 0</LINE>
+     <LINE>!</LINE>
+     <LINE>ip classless</LINE>
+     <LINE>!</LINE>
+     <LINE>line con 0</LINE>
+     <LINE>!</LINE>
+     <LINE>line vty 0 4</LINE>
+     <LINE> exec-timeout 10 0</LINE>
+     <LINE> password 7 0822455D0A16</LINE>
+     <LINE> login</LINE>
+     <LINE> transport input telnet ssh</LINE>
+     <LINE>!</LINE>
+     <LINE>end</LINE>
+    </RUNNINGCONFIG>
+    <SAVE_REF_ID>save-ref-id:1004</SAVE_REF_ID>
+   </ENGINE>
+   <WORKSPACE>
+    <LOGICAL>
+     <X>1100</X>
+     <Y>300</Y>
+    </LOGICAL>
+   </WORKSPACE>
+  </DEVICE>
+  <DEVICE>
+   <ENGINE>
+    <TYPE customModel="" model="2960-24TT">Switch</TYPE>
+    <NAME>Switch2</NAME>
+    <RUNNINGCONFIG>
+     <LINE>!</LINE>
+     <LINE>version 12.2</LINE>
+     <LINE>service password-encryption</LINE>
+     <LINE>!</LINE>
+     <LINE>hostname Switch2</LINE>
+     <LINE>!</LINE>
+     <LINE>enable secret 5 $1$fx7Q$Wm1dVq3ZsKp0cH9rTn2Lb.</LINE>
+     <LINE>!</LINE>
+     <LINE>interface FastEthernet0/1</LINE>
+     <LINE> switchport access vlan 1</LINE>
+     <LINE> switchport mode access</LINE>
+     <LINE>!</LINE>
+     <LINE>interface FastEthernet0/2</LINE>
+     <LINE> switchport access vlan 1</LINE>
+     <LINE> switchport mode access</LINE>
+     <LINE>!</LINE>
+     <LINE>interface GigabitEthernet0/1</LINE>
+     <LINE> description Uplink to router</LINE>
+     <LINE>!</LINE>
+     <LINE>interface Vlan1</LINE>
+     <LINE> no ip address</LINE>
+     <LINE> shutdown</LINE>
+     <LINE>!</LINE>
+     <LINE>ip default-gateway 172.20.10.1</LINE>
+     <LINE>!</LINE>
+     <LINE>line con 0</LINE>
+     <LINE>!</LINE>
+     <LINE>line vty 0 4</LINE>
+     <LINE> exec-timeout 10 0</LINE>
+     <LINE> password 7 0822455D0A16</LINE>
+     <LINE> login</LINE>
+     <LINE> transport input telnet ssh</LINE>
+     <LINE>!</LINE>
+     <LINE>end</LINE>
+    </RUNNINGCONFIG>
+    <SAVE_REF_ID>save-ref-id:1005</SAVE_REF_ID>
+   </ENGINE>
+   <WORKSPACE>
+    <LOGICAL>
+     <X>300</X>
+     <Y>480</Y>
+    </LOGICAL>
+   </WORKSPACE>
+  </DEVICE>
+  <DEVICE>
+   <ENGINE>
+    <TYPE customModel="" model="2960-24TT">Switch</TYPE>
+    <NAME>Switch3</NAME>
+    <RUNNINGCONFIG>
+     <LINE>!</LINE>
+     <LINE>version 12.2</LINE>
+     <LINE>service password-encryption</LINE>
+     <LINE>!</LINE>
+     <LINE>hostname Switch3</LINE>
+     <LINE>!</LINE>
+     <LINE>enable secret 5 $1$fx7Q$Wm1dVq3ZsKp0cH9rTn2Lb.</LINE>
+     <LINE>!</LINE>
+     <LINE>interface FastEthernet0/1</LINE>
+     <LINE> switchport access vlan 1</LINE>
+     <LINE> switchport mode access</LINE>
+     <LINE>!</LINE>
+     <LINE>interface FastEthernet0/2</LINE>
+     <LINE> switchport access vlan 1</LINE>
+     <LINE> switchport mode access</LINE>
+     <LINE>!</LINE>
+     <LINE>interface FastEthernet0/3</LINE>
+     <LINE> switchport access vlan 1</LINE>
+     <LINE> switchport mode access</LINE>
+     <LINE>!</LINE>
+     <LINE>interface GigabitEthernet0/1</LINE>
+     <LINE> description Uplink to router</LINE>
+     <LINE>!</LINE>
+     <LINE>interface Vlan1</LINE>
+     <LINE> no ip address</LINE>
+     <LINE> shutdown</LINE>
+     <LINE>!</LINE>
+     <LINE>ip default-gateway 172.20.20.1</LINE>
+     <LINE>!</LINE>
+     <LINE>line con 0</LINE>
+     <LINE>!</LINE>
+     <LINE>line vty 0 4</LINE>
+     <LINE> exec-timeout 10 0</LINE>
+     <LINE> password 7 0822455D0A16</LINE>
+     <LINE> login</LINE>
+     <LINE> transport input telnet ssh</LINE>
+     <LINE>!</LINE>
+     <LINE>end</LINE>
+    </RUNNINGCONFIG>
+    <SAVE_REF_ID>save-ref-id:1006</SAVE_REF_ID>
+   </ENGINE>
+   <WORKSPACE>
+    <LOGICAL>
+     <X>1100</X>
+     <Y>480</Y>
+    </LOGICAL>
+   </WORKSPACE>
+  </DEVICE>
+  <DEVICE>
+   <ENGINE>
+    <TYPE customModel="" model="Laptop-PT">Laptop</TYPE>
+    <NAME>L1</NAME>
+    <MODULE><TYPE>eNonRemovableModule</TYPE><SLOT><TYPE>ePtHostModule</TYPE><MODULE>
+     <PORT>
+      <TYPE>eCopperFastEthernet</TYPE>
+      <IP>172.20.10.11</IP>
+      <SUBNET>255.255.255.0</SUBNET>
+      <PORT_GATEWAY>172.20.10.1</PORT_GATEWAY>
+     </PORT>
+    </MODULE></SLOT></MODULE>
+    <SAVE_REF_ID>save-ref-id:1007</SAVE_REF_ID>
+   </ENGINE>
+   <WORKSPACE>
+    <LOGICAL>
+     <X>220</X>
+     <Y>640</Y>
+    </LOGICAL>
+   </WORKSPACE>
+  </DEVICE>
+  <DEVICE>
+   <ENGINE>
+    <TYPE customModel="" model="Laptop-PT">Laptop</TYPE>
+    <NAME>L2</NAME>
+    <MODULE><TYPE>eNonRemovableModule</TYPE><SLOT><TYPE>ePtHostModule</TYPE><MODULE>
+     <PORT>
+      <TYPE>eCopperFastEthernet</TYPE>
+      <IP>172.20.10.12</IP>
+      <SUBNET>255.255.255.0</SUBNET>
+      <PORT_GATEWAY>172.20.10.1</PORT_GATEWAY>
+     </PORT>
+    </MODULE></SLOT></MODULE>
+    <SAVE_REF_ID>save-ref-id:1008</SAVE_REF_ID>
+   </ENGINE>
+   <WORKSPACE>
+    <LOGICAL>
+     <X>380</X>
+     <Y>640</Y>
+    </LOGICAL>
+   </WORKSPACE>
+  </DEVICE>
+  <DEVICE>
+   <ENGINE>
+    <TYPE customModel="" model="PC-PT">Pc</TYPE>
+    <NAME>PC1</NAME>
+    <MODULE><TYPE>eNonRemovableModule</TYPE><SLOT><TYPE>ePtHostModule</TYPE><MODULE>
+     <PORT>
+      <TYPE>eCopperFastEthernet</TYPE>
+      <IP>172.20.20.11</IP>
+      <SUBNET>255.255.255.0</SUBNET>
+      <PORT_GATEWAY>172.20.20.1</PORT_GATEWAY>
+     </PORT>
+    </MODULE></SLOT></MODULE>
+    <SAVE_REF_ID>save-ref-id:1009</SAVE_REF_ID>
+   </ENGINE>
+   <WORKSPACE>
+    <LOGICAL>
+     <X>1000</X>
+     <Y>640</Y>
+    </LOGICAL>
+   </WORKSPACE>
+  </DEVICE>
+  <DEVICE>
+   <ENGINE>
+    <TYPE customModel="" model="PC-PT">Pc</TYPE>
+    <NAME>PC2</NAME>
+    <MODULE><TYPE>eNonRemovableModule</TYPE><SLOT><TYPE>ePtHostModule</TYPE><MODULE>
+     <PORT>
+      <TYPE>eCopperFastEthernet</TYPE>
+      <IP>172.20.20.12</IP>
+      <SUBNET>255.255.255.0</SUBNET>
+      <PORT_GATEWAY>172.20.20.1</PORT_GATEWAY>
+     </PORT>
+    </MODULE></SLOT></MODULE>
+    <SAVE_REF_ID>save-ref-id:1010</SAVE_REF_ID>
+   </ENGINE>
+   <WORKSPACE>
+    <LOGICAL>
+     <X>1100</X>
+     <Y>640</Y>
+    </LOGICAL>
+   </WORKSPACE>
+  </DEVICE>
+  <DEVICE>
+   <ENGINE>
+    <TYPE customModel="" model="Server-PT">Server</TYPE>
+    <NAME>Server0</NAME>
+    <MODULE><TYPE>eNonRemovableModule</TYPE><SLOT><TYPE>ePtHostModule</TYPE><MODULE>
+     <PORT>
+      <TYPE>eCopperFastEthernet</TYPE>
+      <IP>172.20.20.100</IP>
+      <SUBNET>255.255.255.0</SUBNET>
+      <PORT_GATEWAY>172.20.20.1</PORT_GATEWAY>
+     </PORT>
+    </MODULE></SLOT></MODULE>
+    <SAVE_REF_ID>save-ref-id:1011</SAVE_REF_ID>
+   </ENGINE>
+   <WORKSPACE>
+    <LOGICAL>
+     <X>1200</X>
+     <Y>640</Y>
+    </LOGICAL>
+   </WORKSPACE>
+  </DEVICE>
+  <DEVICE>
+   <ENGINE>
+    <TYPE customModel="" model="Power Distribution Device">Power Distribution Device</TYPE>
+    <NAME>Power Distribution Device0</NAME>
+    <SAVE_REF_ID>save-ref-id:1012</SAVE_REF_ID>
+   </ENGINE>
+   <WORKSPACE>
+    <LOGICAL>
+     <X>3900</X>
+     <Y>3900</Y>
+    </LOGICAL>
+   </WORKSPACE>
+  </DEVICE>
+  </DEVICES>
+  <LINKS>
+  <LINK>
+   <TYPE>eCopper</TYPE>
+   <CABLE>
+    <LENGTH>1</LENGTH>
+    <FUNCTIONAL>true</FUNCTIONAL>
+    <FROM>save-ref-id:1005</FROM>
+    <PORT>GigabitEthernet0/1</PORT>
+    <TO>save-ref-id:1000</TO>
+    <PORT>FastEthernet0/0</PORT>
+    <TYPE>eStraightThrough</TYPE>
+   </CABLE>
+  </LINK>
+  <LINK>
+   <TYPE>eCopper</TYPE>
+   <CABLE>
+    <LENGTH>1</LENGTH>
+    <FUNCTIONAL>true</FUNCTIONAL>
+    <FROM>save-ref-id:1000</FROM>
+    <PORT>FastEthernet0/1</PORT>
+    <TO>save-ref-id:1001</TO>
+    <PORT>FastEthernet0/0</PORT>
+    <TYPE>eCrossOver</TYPE>
+   </CABLE>
+  </LINK>
+  <LINK>
+   <TYPE>eCopper</TYPE>
+   <CABLE>
+    <LENGTH>1</LENGTH>
+    <FUNCTIONAL>true</FUNCTIONAL>
+    <FROM>save-ref-id:1001</FROM>
+    <PORT>FastEthernet0/1</PORT>
+    <TO>save-ref-id:1002</TO>
+    <PORT>FastEthernet0/0</PORT>
+    <TYPE>eCrossOver</TYPE>
+   </CABLE>
+  </LINK>
+  <LINK>
+   <TYPE>eCopper</TYPE>
+   <CABLE>
+    <LENGTH>1</LENGTH>
+    <FUNCTIONAL>true</FUNCTIONAL>
+    <FROM>save-ref-id:1002</FROM>
+    <PORT>FastEthernet0/1</PORT>
+    <TO>save-ref-id:1003</TO>
+    <PORT>FastEthernet0/0</PORT>
+    <TYPE>eCrossOver</TYPE>
+   </CABLE>
+  </LINK>
+  <LINK>
+   <TYPE>eCopper</TYPE>
+   <CABLE>
+    <LENGTH>1</LENGTH>
+    <FUNCTIONAL>true</FUNCTIONAL>
+    <FROM>save-ref-id:1003</FROM>
+    <PORT>FastEthernet0/1</PORT>
+    <TO>save-ref-id:1004</TO>
+    <PORT>FastEthernet0/0</PORT>
+    <TYPE>eCrossOver</TYPE>
+   </CABLE>
+  </LINK>
+  <LINK>
+   <TYPE>eCopper</TYPE>
+   <CABLE>
+    <LENGTH>1</LENGTH>
+    <FUNCTIONAL>true</FUNCTIONAL>
+    <FROM>save-ref-id:1004</FROM>
+    <PORT>FastEthernet0/1</PORT>
+    <TO>save-ref-id:1006</TO>
+    <PORT>GigabitEthernet0/1</PORT>
+    <TYPE>eStraightThrough</TYPE>
+   </CABLE>
+  </LINK>
+  <LINK>
+   <TYPE>eCopper</TYPE>
+   <CABLE>
+    <LENGTH>1</LENGTH>
+    <FUNCTIONAL>true</FUNCTIONAL>
+    <FROM>save-ref-id:1005</FROM>
+    <PORT>FastEthernet0/1</PORT>
+    <TO>save-ref-id:1007</TO>
+    <PORT>FastEthernet0</PORT>
+    <TYPE>eStraightThrough</TYPE>
+   </CABLE>
+  </LINK>
+  <LINK>
+   <TYPE>eCopper</TYPE>
+   <CABLE>
+    <LENGTH>1</LENGTH>
+    <FUNCTIONAL>true</FUNCTIONAL>
+    <FROM>save-ref-id:1005</FROM>
+    <PORT>FastEthernet0/2</PORT>
+    <TO>save-ref-id:1008</TO>
+    <PORT>FastEthernet0</PORT>
+    <TYPE>eStraightThrough</TYPE>
+   </CABLE>
+  </LINK>
+  <LINK>
+   <TYPE>eCopper</TYPE>
+   <CABLE>
+    <LENGTH>1</LENGTH>
+    <FUNCTIONAL>true</FUNCTIONAL>
+    <FROM>save-ref-id:1006</FROM>
+    <PORT>FastEthernet0/1</PORT>
+    <TO>save-ref-id:1009</TO>
+    <PORT>FastEthernet0</PORT>
+    <TYPE>eStraightThrough</TYPE>
+   </CABLE>
+  </LINK>
+  <LINK>
+   <TYPE>eCopper</TYPE>
+   <CABLE>
+    <LENGTH>1</LENGTH>
+    <FUNCTIONAL>true</FUNCTIONAL>
+    <FROM>save-ref-id:1006</FROM>
+    <PORT>FastEthernet0/2</PORT>
+    <TO>save-ref-id:1010</TO>
+    <PORT>FastEthernet0</PORT>
+    <TYPE>eStraightThrough</TYPE>
+   </CABLE>
+  </LINK>
+  <LINK>
+   <TYPE>eCopper</TYPE>
+   <CABLE>
+    <LENGTH>1</LENGTH>
+    <FUNCTIONAL>true</FUNCTIONAL>
+    <FROM>save-ref-id:1006</FROM>
+    <PORT>FastEthernet0/3</PORT>
+    <TO>save-ref-id:1011</TO>
+    <PORT>FastEthernet0</PORT>
+    <TYPE>eStraightThrough</TYPE>
+   </CABLE>
+  </LINK>
+  </LINKS>
+ </NETWORK>
+ <USER_PROFILE><NAME></NAME><EMAIL></EMAIL><ADDITIONAL_INFO></ADDITIONAL_INFO></USER_PROFILE>
+ <NOTES>
+  <NOTE uuid="{00000000-0000-0000-0000-000000000000}">
+   <X>620</X>
+   <Y>90</Y>
+   <Z>0.2</Z>
+   <TEXT translate="true">OSPF 10
+AREA 0</TEXT>
+   <NOTECLUSTERID></NOTECLUSTERID>
+  </NOTE>
+  <NOTE uuid="{00000000-0000-0000-0000-000000000001}">
+   <X>300</X>
+   <Y>560</Y>
+   <Z>0.2</Z>
+   <TEXT translate="true">172.20.10.0/24</TEXT>
+   <NOTECLUSTERID></NOTECLUSTERID>
+  </NOTE>
+  <NOTE uuid="{00000000-0000-0000-0000-000000000002}">
+   <X>1100</X>
+   <Y>560</Y>
+   <Z>0.2</Z>
+   <TEXT translate="true">172.20.20.0/24</TEXT>
+   <NOTECLUSTERID></NOTECLUSTERID>
+  </NOTE>
+ </NOTES>
+ <ELLIPSES>
+  <ELLIPSE uuid="{10000000-0000-0000-0000-000000000000}">
+   <TopLeftX>160</TopLeftX>
+   <TopLeftY>420</TopLeftY>
+   <BottomRightX>460</BottomRightX>
+   <BottomRightY>700</BottomRightY>
+   <Color><Red>170</Red><Green>220</Green><Blue>255</Blue></Color>
+   <Filled OUTLINECOLOR="#000000" OUTLINED="true">0</Filled>
+   <ELLIPSECLUSTERID>1-1</ELLIPSECLUSTERID>
+  </ELLIPSE>
+  <ELLIPSE uuid="{10000000-0000-0000-0000-000000000001}">
+   <TopLeftX>940</TopLeftX>
+   <TopLeftY>420</TopLeftY>
+   <BottomRightX>1260</BottomRightX>
+   <BottomRightY>700</BottomRightY>
+   <Color><Red>255</Red><Green>220</Green><Blue>170</Blue></Color>
+   <Filled OUTLINECOLOR="#000000" OUTLINED="true">0</Filled>
+   <ELLIPSECLUSTERID>1-1</ELLIPSECLUSTERID>
+  </ELLIPSE>
+ </ELLIPSES>
+</PACKETTRACER5>

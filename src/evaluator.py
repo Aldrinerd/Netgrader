@@ -14,6 +14,8 @@ from src.models import (
     RuleResult,
     TopologyResult,
 )
+from src.feedback import attach_guidance
+from src.link_attributes import LINK_ATTRIBUTES, compare as compare_link_attribute
 from src.parsers import canonical_device_name, normalize_interface_name
 
 
@@ -148,13 +150,128 @@ def _link_matches(link, src_dev: str, src_intf: str, tgt_dev: str, tgt_intf: str
     return False
 
 
+def _compute_broadcast_domains(devices: dict, links: list) -> dict[tuple[str, str], str]:
+    """
+    Map every (device, interface) endpoint to a broadcast-domain identifier.
+
+    Layer 2 devices bridge their own ports, so interfaces on either side of a
+    switch belong to ONE broadcast domain. Routers and hosts do not bridge, so
+    each of their interfaces terminates a domain.
+
+    This is what makes subnet-uniqueness checking correct: two interfaces in the
+    SAME domain (a PC and its default gateway, for instance) must share a
+    subnet, while two interfaces in DIFFERENT domains must not.
+
+    Simplification: a switch is treated as bridging all of its ports regardless
+    of VLAN. That can merge two domains that VLANs would keep apart, which makes
+    the uniqueness check slightly permissive. That direction is deliberate --
+    wrongly failing a correct configuration is far worse in grading than missing
+    an unusual duplicate.
+    """
+    parent: dict[tuple[str, str], tuple[str, str]] = {}
+
+    def find(node):
+        parent.setdefault(node, node)
+        root = node
+        while parent[root] != root:
+            root = parent[root]
+        while parent[node] != root:  # path compression
+            parent[node], node = root, parent[node]
+        return root
+
+    def union(a, b):
+        root_a, root_b = find(a), find(b)
+        if root_a != root_b:
+            parent[root_a] = root_b
+
+    # A cable joins the two endpoints it connects.
+    for link in links:
+        if not link.source_device or not link.target_device:
+            continue
+        union((link.source_device, link.source_interface),
+              (link.target_device, link.target_interface))
+
+    # A layer 2 device bridges all of its own ports into one domain.
+    for dev_name, dev in devices.items():
+        if dev.device_type not in ("switch", "hub"):
+            continue
+        ports = [(dev_name, intf_name) for intf_name in dev.interfaces]
+        for port in ports[1:]:
+            union(ports[0], port)
+
+    return {endpoint: "seg:%s/%s" % find(endpoint) for endpoint in list(parent)}
+
+
+def _segment_of(segments: dict, dev_name: str, intf_name: str, device_mapping: dict) -> str:
+    """Broadcast domain for an endpoint, tolerating renamed devices."""
+    mapped = device_mapping.get(dev_name, dev_name)
+    for candidate in ((mapped, intf_name), (dev_name, intf_name)):
+        if candidate in segments:
+            return segments[candidate]
+    # Not cabled anywhere: treat the interface itself as its own domain.
+    return f"isolated:{mapped}/{intf_name}"
+
+
+def _gateway_problem(host_dev, host_iface, segments, devices, device_mapping, dev_names):
+    """
+    Validate a host's or switch's default gateway.
+
+    Returns a human-readable problem string, or None when the gateway is fine.
+    A gateway must sit inside the device's own subnet, and -- when the broadcast
+    domain contains a router interface -- must actually be one of them.
+    """
+    if host_dev.device_type not in ("host", "switch", "l3_switch"):
+        return None
+    if not host_dev.default_gateway:
+        return None
+    try:
+        gateway = ipaddress.IPv4Address(host_dev.default_gateway)
+    except Exception:
+        return f"default gateway '{host_dev.default_gateway}' is not a valid IPv4 address"
+
+    if gateway not in host_iface.network:
+        return (f"default gateway {gateway} is outside this interface's own subnet "
+                f"({host_iface.network})")
+
+    # Collect router interface IPs sharing this broadcast domain.
+    own_segment = _segment_of(segments, host_dev.hostname, host_iface_name(host_dev, host_iface), device_mapping)
+    router_ips = set()
+    for dev in devices.values():
+        if dev.device_type not in ("router", "l3_switch"):
+            continue
+        for intf_name, intf in dev.interfaces.items():
+            if not intf.ip_address:
+                continue
+            if _segment_of(segments, dev.hostname, intf_name, device_mapping) == own_segment:
+                try:
+                    router_ips.add(ipaddress.IPv4Address(intf.ip_address))
+                except Exception:
+                    continue
+
+    if router_ips and gateway not in router_ips:
+        listed = ", ".join(str(ip) for ip in sorted(router_ips))
+        return (f"default gateway {gateway} does not match any router interface on "
+                f"this network (found: {listed})")
+    return None
+
+
+def host_iface_name(dev, iface_obj) -> str:
+    """Recover the dictionary key for an interface object on a device."""
+    for name, candidate in dev.interfaces.items():
+        if candidate is iface_obj:
+            return name
+    return getattr(iface_obj, "name", "")
+
+
 def _evaluate_relational_subnet(
     rule: EvaluationRule,
     criteria: EvaluationCriteria,
     devices: dict,
     used_subnets: dict,
-    device_mapping: dict[str, str]
+    device_mapping: dict[str, str],
+    segments: dict | None = None
 ) -> tuple[bool, float, str, str]:
+    segments = segments if segments is not None else {}
     exp = rule.expected_value or {}
     src_dev_name = exp.get("source_device", rule.target_device)
     src_intf_name = exp.get("source_interface", rule.target_interface)
@@ -203,22 +320,25 @@ def _evaluate_relational_subnet(
                 return False, round(rule.points * 0.6, 1), f"/{iface_a.network.prefixlen}", f"Subnet matches ({iface_a.network}), but CIDR prefix /{iface_a.network.prefixlen} does not match required /{exp_prefix}."
 
         # 4. Conflict Resistance (Subnet Reuse Collision)
+        # Keyed by broadcast domain, NOT by interface: devices on one network
+        # are REQUIRED to share a subnet, so only reuse across separate
+        # broadcast domains is a genuine collision.
         net_str = str(iface_a.network)
-        link_key = tuple(sorted([f"{src_dev_name}:{src_intf_name}", f"{tgt_dev_name}:{tgt_intf_name}"]))
-        if net_str in used_subnets and used_subnets[net_str] != link_key:
-            return False, round(rule.points * 0.5, 1), f"Duplicate Subnet {net_str}", f"Subnet {net_str} is already used on another link. Point-to-point subnets must be globally unique."
-        used_subnets[net_str] = link_key
+        segment_key = _segment_of(segments, src_dev_name, src_intf_name, device_mapping)
+        if net_str in used_subnets and used_subnets[net_str] != segment_key:
+            return False, round(rule.points * 0.5, 1), f"Duplicate Subnet {net_str}", f"Subnet {net_str} is already used on a different network segment. Each segment needs its own distinct subnet."
+        used_subnets[net_str] = segment_key
 
         # 5. Default Gateway Consistency
         if criteria.policies.verify_default_gateways:
-            for host_dev, router_dev, r_intf in [(dev_a, dev_b, intf_b), (dev_b, dev_a, intf_a)]:
-                if host_dev.device_type in ("host", "switch") and host_dev.default_gateway:
-                    try:
-                        gw_ip = ipaddress.IPv4Address(host_dev.default_gateway)
-                        if gw_ip != ipaddress.IPv4Address(r_intf.ip_address):
-                            return False, round(rule.points * 0.7, 1), f"Gateway {host_dev.default_gateway}", f"{host_dev.hostname} default gateway ({host_dev.default_gateway}) does not match router interface IP ({r_intf.ip_address})."
-                    except Exception:
-                        pass
+            for host_dev, host_intf in ((dev_a, intf_a), (dev_b, intf_b)):
+                try:
+                    host_iface = ipaddress.IPv4Interface(f"{host_intf.ip_address}/{host_intf.subnet_mask or host_intf.cidr or 24}")
+                except Exception:
+                    continue
+                problem = _gateway_problem(host_dev, host_iface, segments, devices, device_mapping, None)
+                if problem:
+                    return False, round(rule.points * 0.7, 1), f"Gateway {host_dev.default_gateway}", f"{host_dev.hostname}: {problem}."
 
         actual_str = f"{iface_a.ip} ⟷ {iface_b.ip} ({iface_a.network})"
         feedback_str = f"Mutual subnet ({iface_a.network}) verified between {src_dev_name}:{src_intf_name} ({intf_a.ip_address}) and {tgt_dev_name}:{tgt_intf_name} ({intf_b.ip_address})."
@@ -231,10 +351,16 @@ def _evaluate_relational_subnet(
                 return False, round(rule.points * 0.6, 1), f"/{iface_a.network.prefixlen}", f"Configured prefix /{iface_a.network.prefixlen} does not match required /{exp_prefix} on {src_dev_name} {src_intf_name}."
 
         net_str = str(iface_a.network)
-        link_key = tuple(sorted([f"{src_dev_name}:{src_intf_name}"]))
-        if net_str in used_subnets and used_subnets[net_str] != link_key:
-            return False, round(rule.points * 0.5, 1), f"Duplicate Subnet {net_str}", f"Subnet {net_str} is already used on another interface. Subnets must be distinct."
-        used_subnets[net_str] = link_key
+        segment_key = _segment_of(segments, src_dev_name, src_intf_name, device_mapping)
+        if net_str in used_subnets and used_subnets[net_str] != segment_key:
+            return False, round(rule.points * 0.5, 1), f"Duplicate Subnet {net_str}", f"Subnet {net_str} is already used on a different network segment. Each segment needs its own distinct subnet."
+        used_subnets[net_str] = segment_key
+
+        # Default gateway consistency for hosts and switches on this segment.
+        if criteria.policies.verify_default_gateways:
+            problem = _gateway_problem(dev_a, iface_a, segments, devices, device_mapping, None)
+            if problem:
+                return False, round(rule.points * 0.7, 1), f"Gateway {dev_a.default_gateway}", f"{dev_a.hostname}: {problem}."
 
         actual_str = f"{iface_a.ip} ({iface_a.network})"
         feedback_str = f"Valid dynamic subnet ({iface_a.network}) verified on {src_dev_name} {src_intf_name} ({iface_a.ip})."
@@ -259,7 +385,8 @@ def evaluate_student_submission(
     links = student_topology.links
     policies = criteria.policies
     device_mapping = _build_device_mapping(criteria, student_topology)
-    used_subnets: dict[str, tuple] = {}
+    used_subnets: dict[str, str] = {}
+    segments = _compute_broadcast_domains(devices, links)
 
     for rule in criteria.rules:
         pts_possible = float(rule.points)
@@ -335,7 +462,8 @@ def evaluate_student_submission(
                 criteria=criteria,
                 devices=devices,
                 used_subnets=used_subnets,
-                device_mapping=device_mapping
+                device_mapping=device_mapping,
+                segments=segments
             )
 
         # 4. Interface Status / No Shutdown Rule
@@ -403,6 +531,66 @@ def evaluate_student_submission(
                 actual = "Disconnected / Uncabled"
                 feedback = f"No physical connection found between {src_dev_orig} ({src_intf}) and {tgt_dev_orig} ({tgt_intf}). Verify physical cabling in Packet Tracer."
 
+        # 5b. Link Agreement Rule
+        #
+        # The only rule whose subject is a LINK rather than a device. Both
+        # endpoints are resolved through the same mapping and port-matching
+        # helpers as every other rule, so allow_custom_hostnames and
+        # strict_port_matching keep working here.
+        elif rule.category == "link_agreement":
+            attribute = LINK_ATTRIBUTES.get(exp.get("attribute", ""))
+            dev_a = _find_student_device(devices, rule.target_device, device_mapping)
+            dev_b = _find_student_device(devices, exp.get("peer_device", ""), device_mapping)
+            intf_a = _find_student_interface(
+                dev_a.interfaces, rule.target_interface or "", policies.strict_port_matching
+            ) if dev_a else None
+            intf_b = _find_student_interface(
+                dev_b.interfaces, exp.get("peer_interface", "") or "", policies.strict_port_matching
+            ) if dev_b else None
+
+            if attribute is None:
+                # A rubric naming an attribute this build does not know about.
+                # Award the points rather than penalising a student for an
+                # instructions.txt written by a newer version of the tool.
+                pts_earned = pts_possible
+                passed = True
+                actual = "Not evaluated"
+                feedback = f"Checkpoint '{exp.get('attribute', '')}' is not supported by this version and was not graded."
+            elif not dev_a or not dev_b:
+                missing = rule.target_device if not dev_a else exp.get("peer_device", "")
+                pts_earned = 0.0
+                passed = False
+                actual = f"Device '{missing}' missing"
+                feedback = f"Cannot compare the two ends of this link: device '{missing}' is missing."
+            elif not intf_a or not intf_b:
+                missing = (
+                    f"{rule.target_device} {rule.target_interface}" if not intf_a
+                    else f"{exp.get('peer_device')} {exp.get('peer_interface')}"
+                )
+                pts_earned = 0.0
+                passed = False
+                actual = f"Interface '{missing}' missing"
+                feedback = f"Cannot compare the two ends of this link: interface '{missing}' is missing."
+            else:
+                verdict = compare_link_attribute(
+                    attribute, dev_a, intf_a, dev_b, intf_b,
+                    reference_value=exp.get("reference_value"),
+                    enforce_reference=policies.enforce_reference_link_values,
+                )
+                actual = verdict.actual
+                if verdict.passed:
+                    pts_earned = pts_possible
+                    passed = True
+                    feedback = (
+                        f"{attribute.label} agrees across "
+                        f"{rule.target_device} {rule.target_interface} and "
+                        f"{exp.get('peer_device')} {exp.get('peer_interface')}."
+                    )
+                else:
+                    pts_earned = 0.0
+                    passed = False
+                    feedback = verdict.reason
+
         # 6. VLAN & Switchport Rule
         elif rule.category == "vlan_trunk":
             dev = _find_student_device(devices, rule.target_device, device_mapping)
@@ -422,7 +610,19 @@ def evaluate_student_submission(
                     exp_mode = exp.get("switchport_mode", "access")
                     if exp_mode == "trunk":
                         exp_native = exp.get("trunk_native_vlan", 1)
-                        if intf.switchport_mode == "trunk" and intf.trunk_native_vlan == exp_native:
+                        # Native VLAN is judged by the link_agreement rule for
+                        # this link, which asks whether the two ENDS agree --
+                        # the question that decides whether the trunk works.
+                        # Penalising it here as well would charge a student
+                        # twice for one mistake, and would charge them at all
+                        # for a consistent choice that merely differs from the
+                        # instructor's file. Only an instructor who dictated
+                        # exact values gets the reference comparison back.
+                        native_matches = (
+                            intf.trunk_native_vlan == exp_native
+                            or not policies.enforce_reference_link_values
+                        )
+                        if intf.switchport_mode == "trunk" and native_matches:
                             pts_earned = pts_possible
                             passed = True
                             actual = f"Trunk (Native VLAN {intf.trunk_native_vlan})"
@@ -449,6 +649,54 @@ def evaluate_student_submission(
                             passed = False
                             actual = f"Access VLAN {intf.access_vlan or 'None'}"
                             feedback = f"Expected Access VLAN {exp_vlan}, but port is assigned to VLAN {intf.access_vlan or 'default (1)'}."
+
+        # 6b. Default Gateway Rule
+        elif rule.category == "gateway":
+            dev = _find_student_device(devices, rule.target_device, device_mapping)
+            if not dev:
+                pts_earned = 0.0
+                passed = False
+                actual = f"Device '{rule.target_device}' missing"
+                feedback = f"Cannot verify default gateway: device '{rule.target_device}' missing."
+            elif not dev.default_gateway:
+                pts_earned = 0.0
+                passed = False
+                actual = "No default gateway configured"
+                feedback = (f"{rule.target_device} has no default gateway. Without one it cannot "
+                            f"reach networks beyond its own subnet.")
+            else:
+                # Validate against whichever of the device's interfaces carries an IP.
+                problem = None
+                checked_any = False
+                for intf_name, intf in dev.interfaces.items():
+                    if not intf.ip_address:
+                        continue
+                    try:
+                        host_iface = ipaddress.IPv4Interface(f"{intf.ip_address}/{intf.subnet_mask or intf.cidr or 24}")
+                    except Exception:
+                        continue
+                    checked_any = True
+                    problem = _gateway_problem(dev, host_iface, segments, devices, device_mapping, None)
+                    if problem is None:
+                        break
+
+                if not checked_any:
+                    # A switch may legitimately carry a management gateway with no IP
+                    # interface parsed; accept the gateway's presence alone.
+                    pts_earned = pts_possible
+                    passed = True
+                    actual = dev.default_gateway
+                    feedback = f"Default gateway {dev.default_gateway} configured on {rule.target_device}."
+                elif problem:
+                    pts_earned = round(pts_possible * 0.3, 1)
+                    passed = False
+                    actual = dev.default_gateway
+                    feedback = f"{rule.target_device}: {problem}."
+                else:
+                    pts_earned = pts_possible
+                    passed = True
+                    actual = dev.default_gateway
+                    feedback = f"Default gateway {dev.default_gateway} on {rule.target_device} correctly points to a router on its own network."
 
         # 7. Routing / OSPF Rule
         elif rule.category == "routing":
@@ -497,6 +745,14 @@ def evaluate_student_submission(
                     passed = True
                     actual = "Configured (enable secret)"
                     feedback = f"Encrypted enable secret verified on {rule.target_device}."
+                elif dev.has_enable_password:
+                    pts_earned = 0.0
+                    passed = False
+                    actual = "enable password (plaintext)"
+                    feedback = (
+                        f"{rule.target_device} uses 'enable password', which is stored in plaintext "
+                        "or reversible type 7. Replace it with 'enable secret'."
+                    )
                 else:
                     pts_earned = 0.0
                     passed = False
@@ -595,7 +851,7 @@ def evaluate_student_submission(
     else:
         grade_letter = "F"
 
-    return EvaluationReport(
+    report = EvaluationReport(
         lab_title=criteria.lab_title,
         total_score=total_score,
         max_score=max_score,
@@ -606,3 +862,8 @@ def evaluate_student_submission(
         results=rule_results,
         topology=student_topology
     )
+
+    # Every score above is now final. The guidance layer only reads the report
+    # and adds explanation to it; it cannot reach any score field. Keeping this
+    # call last is what makes that boundary structural rather than a promise.
+    return attach_guidance(report)

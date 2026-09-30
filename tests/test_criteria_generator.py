@@ -7,18 +7,18 @@ from src.criteria_generator import (
     parse_instructions_txt,
 )
 from src.pkt_parser import parse_pkt_file
-from src.presets import load_preset
+from tests.fixtures import network_bundle
 from src.models import TopologyResult
 from src.app import process_bundle_dict
 
 
 def test_generate_criteria_from_pt_xml():
-    xml_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cisco-pka-to-xml", "trial.xml")
+    xml_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tests", "fixtures", "sample_topology.xml")
     if not os.path.exists(xml_path):
-        pytest.skip("trial.xml not available")
+        pytest.skip("sample_topology.xml not available")
 
     with open(xml_path, "rb") as f:
-        devs, lnks = parse_pkt_file(f.read(), filename="trial.xml")
+        devs, lnks = parse_pkt_file(f.read(), filename="sample_topology.xml")
 
     top = TopologyResult(devices=devs, links=lnks, conflicts=[])
     criteria = generate_criteria_from_topology(
@@ -55,7 +55,7 @@ def test_generate_criteria_from_pt_xml():
 
 
 def test_generate_criteria_from_ospf_preset():
-    bundle = load_preset("ospf_clean")
+    bundle = network_bundle("ospf_clean")
     top = process_bundle_dict(bundle)
 
     criteria = generate_criteria_from_topology(top, lab_title="OSPF Ring Lab")
@@ -80,7 +80,7 @@ def test_parse_invalid_instructions_txt():
 
 def test_generate_criteria_with_dynamic_subnetting_policy():
     from src.models import EvaluationPolicies
-    bundle = load_preset("ospf_clean")
+    bundle = network_bundle("ospf_clean")
     top = process_bundle_dict(bundle)
     
     policies = EvaluationPolicies(
@@ -114,7 +114,7 @@ def test_generate_criteria_with_dynamic_subnetting_policy():
 
 def test_generate_criteria_with_security_and_description_policies():
     from src.models import EvaluationPolicies
-    bundle = load_preset("ospf_clean")
+    bundle = network_bundle("ospf_clean")
     top = process_bundle_dict(bundle)
     
     policies = EvaluationPolicies(

@@ -1,10 +1,11 @@
 # src/app.py
+import csv
 import io
+import ipaddress
 import os
 import zipfile
-from typing import Annotated
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -17,15 +18,14 @@ from src.criteria_generator import (
 from src.evaluator import evaluate_student_submission
 from src.fusion_engine import infer_topology_links
 from src.models import (
+    ConflictIssue,
     DiscoveredLink,
-    EvaluationCriteria,
     EvaluationReport,
     ParsedDevice,
     TopologyResult,
 )
 from src.parsers import parse_device_bundle
 from src.pkt_parser import parse_pkt_file
-from src.presets import get_available_presets, load_preset
 
 app = FastAPI(
     title="Network Configuration Evaluation & Topology Discovery Tool",
@@ -52,18 +52,36 @@ def process_bundle_dict(files_dict: dict[str, str]) -> TopologyResult:
         return TopologyResult(devices={}, links=[], conflicts=[])
     
     parsed_devices = {}
+    duplicates: list[ConflictIssue] = []
     for filename, content in files_dict.items():
         if content.strip():
             dev = parse_device_bundle(content, filename)
+            first = parsed_devices.get(dev.hostname)
+            if first is not None:
+                # Silently keeping the later file made a device vanish with
+                # nothing to say why. Keep the first and say so.
+                duplicates.append(ConflictIssue(
+                    severity="warning",
+                    category="duplicate_device",
+                    title=f"Two files describe {dev.hostname}",
+                    description=(
+                        f"Both {first.raw_filename} and {dev.raw_filename} configure a device named "
+                        f"{dev.hostname}. Only {first.raw_filename} was used. Give each device its own "
+                        "hostname, or remove the extra file."
+                    ),
+                    involved_devices=[dev.hostname],
+                    evidence_citations=[first.raw_filename, dev.raw_filename],
+                ))
+                continue
             parsed_devices[dev.hostname] = dev
-            
+
     discovered_links = infer_topology_links(parsed_devices)
     detected_conflicts = detect_conflicts(parsed_devices, discovered_links)
-    
+
     return TopologyResult(
         devices=parsed_devices,
         links=discovered_links,
-        conflicts=detected_conflicts
+        conflicts=duplicates + detected_conflicts
     )
 
 
@@ -93,7 +111,12 @@ async def parse_uploaded_files_to_topology(files: list[UploadFile]) -> TopologyR
                                 if z_name.lower().endswith((".pkt", ".pka", ".xml")):
                                     pkt_files.append((os.path.basename(z_name), z_bytes))
                                 else:
-                                    files_dict[os.path.basename(z_name)] = z_bytes.decode("utf-8", errors="replace")
+                                    # Keyed by the full member path, not the
+                                    # basename: R1/running-config.txt and
+                                    # R2/running-config.txt are two devices.
+                                    # Nothing is written to disk, so the path
+                                    # is only a label.
+                                    files_dict[z_name] = z_bytes.decode("utf-8", errors="replace")
             except Exception as e:
                 raise HTTPException(status_code=400, detail=f"Failed to extract zip file {filename}: {str(e)}")
         else:
@@ -107,10 +130,25 @@ async def parse_uploaded_files_to_topology(files: list[UploadFile]) -> TopologyR
         for fname, fbytes in pkt_files:
             try:
                 devs, lnks = parse_pkt_file(fbytes, filename=fname)
-                all_devices.update(devs)
-                all_links.extend(lnks)
             except Exception as e:
                 raise HTTPException(status_code=400, detail=f"Error parsing Packet Tracer file '{fname}': {e}")
+
+            # A file that decrypts and parses but contains no devices is almost
+            # always a Packet Tracer version this decoder does not understand.
+            # Reporting that beats handing back a silent empty topology.
+            if not devs:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"'{fname}' was read successfully, but no devices could be extracted from it "
+                        f"({len(fbytes):,} bytes). This usually means the file was saved by a newer "
+                        "Packet Tracer version than this tool supports. Try 'File > Save As' in Packet "
+                        "Tracer, or upload a .zip of each device's 'show running-config' output instead."
+                    ),
+                )
+
+            all_devices.update(devs)
+            all_links.extend(lnks)
 
         # If supplementary text files were also included, parse and merge them
         if files_dict:
@@ -133,36 +171,83 @@ async def parse_uploaded_files_to_topology(files: list[UploadFile]) -> TopologyR
     return process_bundle_dict(files_dict)
 
 
+def _asset_version() -> str:
+    """
+    Cache-busting token derived from the static assets themselves.
+
+    The template used to hard-code "?v=3.2", so browsers kept serving a stale
+    app.js after the tool was updated -- meaning an instructor could deploy a
+    fix and students would never receive it. Deriving the token from file
+    modification times makes every edit reach the browser automatically.
+    """
+    newest = 0.0
+    for folder in (os.path.join(STATIC_DIR, "css"), os.path.join(STATIC_DIR, "js")):
+        if not os.path.isdir(folder):
+            continue
+        for name in os.listdir(folder):
+            try:
+                newest = max(newest, os.path.getmtime(os.path.join(folder, name)))
+            except OSError:
+                continue
+    return str(int(newest))
+
+
+# --- Instructor access: the machine running the server is the instructor's ---
+
+def is_instructor(request: Request) -> bool:
+    """
+    True when the request comes from the computer that is running the server.
+
+    The deployment model is fixed: the instructor starts the tool on their own
+    PC (``start_server.py --lan``) and students connect over the lab network.
+    So "who is the instructor" reduces to "is this the same machine", which
+    needs no accounts or passwords. Two cases count as the same machine:
+
+    * a loopback address (127.0.0.1 / ::1), the address the launcher opens;
+    * the client address equal to the server's own socket address, which is
+      what happens when the instructor browses to the LAN address
+      (http://192.168.x.y:8000) on their own PC.
+
+    A student cannot fake either: their packets carry their own IP, and
+    uvicorn only honours X-Forwarded-For from 127.0.0.1 by default.
+    """
+    client_host = request.client.host if request.client else None
+    if not client_host:
+        return False
+    try:
+        address = ipaddress.ip_address(client_host)
+    except ValueError:
+        return False
+    mapped = getattr(address, "ipv4_mapped", None)   # ::ffff:127.0.0.1
+    if address.is_loopback or (mapped is not None and mapped.is_loopback):
+        return True
+    server = request.scope.get("server")
+    return bool(server) and server[0] == client_host
+
+
+def require_instructor(request: Request) -> None:
+    """Route dependency: refuse instructor-only endpoints to lab computers."""
+    if not is_instructor(request):
+        raise HTTPException(
+            status_code=403,
+            detail="Instructor tools are only available on the computer running the server.",
+        )
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index_page(request: Request):
-    presets = get_available_presets()
     return templates.TemplateResponse(
         request=request,
         name="index.html",
-        context={"presets": presets}
+        context={
+            "asset_version": _asset_version(),
+            # Decides whether the Instructor Studio tab is rendered at all.
+            # Hiding it is only cosmetic; require_instructor is the real guard.
+            "is_instructor": is_instructor(request),
+        },
     )
 
 
-@app.get("/api/presets")
-async def api_get_presets():
-    return get_available_presets()
-
-
-@app.get("/api/presets/{preset_id}", response_model=TopologyResult)
-async def api_load_preset(preset_id: str):
-    if preset_id == "pkt_trial":
-        trial_xml_path = os.path.join(BASE_DIR, "cisco-pka-to-xml", "trial.xml")
-        if os.path.exists(trial_xml_path):
-            with open(trial_xml_path, "rb") as f:
-                devs, lnks = parse_pkt_file(f.read(), filename="trial.xml")
-            conflicts = detect_conflicts(devs, lnks)
-            return TopologyResult(devices=devs, links=lnks, conflicts=conflicts)
-    try:
-        files_dict = load_preset(preset_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    
-    return process_bundle_dict(files_dict)
 
 
 @app.post("/api/analyze", response_model=TopologyResult)
@@ -172,7 +257,7 @@ async def api_analyze_upload(files: list[UploadFile] = File(...)):
 
 # --- Teacher Mode: Criteria & Instructions Generator Endpoints ---
 
-@app.post("/api/criteria/generate")
+@app.post("/api/criteria/generate", dependencies=[Depends(require_instructor)])
 async def api_generate_criteria(
     files: list[UploadFile] = File(...),
     lab_title: str = Form("Packet Tracer Lab Assignment"),
@@ -216,6 +301,24 @@ async def api_generate_criteria(
         target_total_points=total_points,
         policies=policies
     )
+    # Guard against a reference file that parses but carries nothing gradeable.
+    # A plain text file produces one device named after the filename and a
+    # single "this device must exist" rule -- a rubric that looks valid and is
+    # worthless. Better to refuse it than to let an instructor hand it out.
+    gradeable_rules = [r for r in criteria.rules if r.category != "device"]
+    if not gradeable_rules:
+        device_names = ", ".join(sorted(topology.devices)) or "none"
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "This reference file contains nothing that can be graded. "
+                f"Devices found: {device_names}. No IP addressing, switchport, "
+                "cabling or routing configuration was detected. "
+                "Upload a saved Packet Tracer file (.pkt/.pka/.xml), or a .zip/.txt "
+                "bundle of 'show running-config' output from each device."
+            ),
+        )
+
     instructions_txt = format_criteria_to_instructions_txt(criteria)
 
     return {
@@ -269,3 +372,289 @@ async def api_evaluate_student_submission(
     # 3. Run automated grading
     report = evaluate_student_submission(criteria, student_topology)
     return report
+
+
+# --- Instructor Mode: Batch Grading & Gradebook Export ---
+
+def _student_name_from_filename(filename: str) -> str:
+    """
+    Derive a student identifier from an uploaded filename.
+
+    'Dela Cruz, Juan.pkt'      -> 'Dela Cruz, Juan'
+    'lab3_2021-00123.zip'      -> 'lab3_2021-00123'
+    """
+    base = os.path.basename(filename or "submission")
+    stem, _, _ = base.rpartition(".")
+    return (stem or base).strip() or base
+
+
+_CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe(value):
+    """
+    Neutralise a text cell that a spreadsheet would run as a formula.
+
+    Student names come from filenames and missed checkpoints can quote device
+    names, so both are student-controlled. A leading apostrophe makes Excel
+    and Sheets show the text literally (OWASP CSV injection guidance).
+    Numbers are left alone, so a real negative value stays a number, and so
+    is a lone "-" (the grade shown on an error row), which cannot be a formula.
+    """
+    if isinstance(value, str) and len(value) > 1 and value.startswith(_CSV_FORMULA_PREFIXES):
+        return "'" + value
+    return value
+
+
+def _build_gradebook_csv(lab_title: str, rows: list[dict]) -> str:
+    """
+    Render batch results as CSV for direct import into a gradebook spreadsheet.
+
+    Chapter I frames the problem as manual checking of large batches, so results
+    have to leave the screen in a form Excel opens without any conversion step.
+    """
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, lineterminator="\n")
+    writer.writerow([
+        "Student", "Lab", "Score", "Max Score", "Percentage", "Grade",
+        "Checkpoints Passed", "Checkpoints Failed", "Missed Checkpoints", "Status",
+    ])
+    for row in rows:
+        writer.writerow([_csv_safe(cell) for cell in (
+            row["student"],
+            lab_title,
+            row.get("total_score", ""),
+            row.get("max_score", ""),
+            row.get("percentage", ""),
+            row.get("grade_letter", ""),
+            row.get("passed_count", ""),
+            row.get("failed_count", ""),
+            "; ".join(row.get("missed", [])),
+            row.get("status", "graded"),
+        )])
+    return buffer.getvalue()
+
+
+@app.post("/api/evaluate/batch", dependencies=[Depends(require_instructor)])
+async def api_evaluate_batch(
+    instructions_file: UploadFile = File(...),
+    student_files: list[UploadFile] = File(...)
+):
+    """
+    Instructor batch grading: grade a whole class against one rubric in a single
+    pass and return both a per-student summary and a gradebook-ready CSV.
+
+    Each uploaded file is treated as ONE student's submission. A submission that
+    fails to parse is recorded as an error row rather than aborting the batch,
+    so one corrupt file cannot cost an instructor the entire run.
+    """
+    inst_bytes = await instructions_file.read()
+    inst_content = inst_bytes.decode("utf-8", errors="replace")
+    try:
+        criteria = parse_instructions_txt(inst_content)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid Instructions File: {str(e)}")
+
+    if not student_files:
+        raise HTTPException(status_code=400, detail="No student submissions were uploaded.")
+
+    rows: list[dict] = []
+    for upload in student_files:
+        student = _student_name_from_filename(upload.filename or "")
+        try:
+            topology = await parse_uploaded_files_to_topology([upload])
+            if not topology.devices:
+                raise ValueError("No device configurations or topology found in this submission.")
+            report = evaluate_student_submission(criteria, topology)
+            rows.append({
+                "student": student,
+                "filename": upload.filename,
+                "total_score": round(report.total_score, 1),
+                "max_score": round(report.max_score, 1),
+                "percentage": report.percentage,
+                "grade_letter": report.grade_letter,
+                "passed_count": report.passed_count,
+                "failed_count": report.failed_count,
+                "missed": [r.description for r in report.results if not r.passed],
+                # Categories only -- feeds the class briefing without exposing
+                # any configuration text or identifying detail.
+                "failed_categories": sorted({r.category for r in report.results if not r.passed}),
+                "status": "graded",
+                # The full per-checkpoint report, so the instructor can open
+                # any student from the batch table and see exactly where they
+                # went wrong -- same detail as the Student Grading view.
+                "report": report.model_dump(),
+            })
+        except Exception as e:
+            rows.append({
+                "student": student,
+                "filename": upload.filename,
+                "total_score": 0.0,
+                "max_score": round(sum(r.points for r in criteria.rules), 1),
+                "percentage": 0.0,
+                "grade_letter": "-",
+                "passed_count": 0,
+                "failed_count": len(criteria.rules),
+                "missed": [],
+                "failed_categories": [],
+                "status": f"ERROR: {e}",
+                "report": None,
+            })
+
+    graded = [r for r in rows if r["status"] == "graded"]
+    percentages = [r["percentage"] for r in graded]
+    summary = {
+        "submissions": len(rows),
+        "graded": len(graded),
+        "errors": len(rows) - len(graded),
+        "average_percentage": round(sum(percentages) / len(percentages), 1) if percentages else 0.0,
+        "highest_percentage": max(percentages) if percentages else 0.0,
+        "lowest_percentage": min(percentages) if percentages else 0.0,
+    }
+
+    return {
+        "lab_title": criteria.lab_title,
+        "summary": summary,
+        "results": rows,
+        "csv": _build_gradebook_csv(criteria.lab_title, rows),
+    }
+
+
+# --- Narrative Layer (Phase B): the only endpoints that touch a model ---
+
+@app.get("/api/llm/status")
+def api_llm_status():
+    """
+    Report whether the local model layer is usable.
+
+    Lets the UI say "model ready" or "using built-in guidance" honestly,
+    instead of silently implying an AI wrote text that a template produced.
+    """
+    from src import llm
+    return llm.status()
+
+
+# The endpoints below make blocking HTTP calls to the local model that can take
+# tens of seconds. They are plain `def`, not `async def`, so FastAPI runs them in
+# its thread pool. As coroutines they would stall the event loop, freezing the
+# whole lab (every student's grading, not only the one waiting) until the
+# model answered.
+
+@app.post("/api/report/narrative")
+def api_report_narrative(report: EvaluationReport):
+    """
+    Produce one "what to study next" paragraph for a graded report.
+
+    Deliberately a SEPARATE request from /api/evaluate. The student's score is
+    computed, returned and rendered before this is ever called, which makes
+    "the model cannot affect the grade" a property of the request flow and not
+    just a claim in the architecture document.
+    """
+    from src.narrative import student_summary
+    return student_summary(report)
+
+
+@app.post("/api/class/briefing", dependencies=[Depends(require_instructor)])
+def api_class_briefing(payload: dict):
+    """
+    Instructor briefing for a whole class (Statement of the Problem #4).
+
+    Expects {"categories_per_student": [["interface_ip", "routing"], ...]} --
+    failed rule categories only. No student names, no configuration text and
+    no scores are accepted or needed, which keeps the aggregate compliant with
+    R.A. 10173.
+    """
+    from src.narrative import class_briefing
+    return class_briefing(_categories_from_payload(payload))
+
+
+def _categories_from_payload(payload: dict) -> list[list[str]]:
+    categories = payload.get("categories_per_student")
+    if not isinstance(categories, list) or not categories:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide 'categories_per_student': a list of failed rule categories per submission.",
+        )
+    cleaned = [
+        [str(c) for c in entry if isinstance(c, str)]
+        for entry in categories
+        if isinstance(entry, list)
+    ]
+    if not cleaned:
+        raise HTTPException(status_code=400, detail="No usable submission entries were provided.")
+    return cleaned
+
+
+# --- Follow-up chat: questions about a report or a class, answered by the model ---
+
+def _chat_messages_or_400(payload: dict) -> list[dict]:
+    from src.narrative import clean_chat_messages
+    messages = clean_chat_messages(payload.get("messages"))
+    if not messages or messages[-1]["role"] != "user":
+        raise HTTPException(status_code=400, detail="Send 'messages' ending with the user's question.")
+    return messages
+
+
+def _answer_or_503(reply: str | None) -> dict:
+    """
+    Chat has no template fallback: a canned reply to a free-form question
+    would pass off prewritten text as the model's. If the model cannot answer,
+    the client is told so, and why.
+    """
+    from src import llm
+    if reply:
+        return {"reply": reply, "source": "model", "model": llm.model_name()}
+    status = llm.status()
+    detail = (
+        f"The local AI model did not answer ({status['detail']})."
+        if not status["available"]
+        else "The local AI model did not answer in time. Try again, or ask a shorter question."
+    )
+    raise HTTPException(status_code=503, detail=detail)
+
+
+@app.post("/api/chat/report")
+def api_chat_report(payload: dict):
+    """
+    A student's follow-up question about their own graded report.
+
+    Expects {"report": EvaluationReport, "messages": [{"role", "content"}, ...]}.
+    The topology may be sent empty; only the checkpoint findings are used.
+    Asked after grading and separate from it, so no answer can move a score.
+    """
+    from src import llm
+    from src.narrative import report_chat
+    try:
+        report = EvaluationReport.model_validate(payload.get("report") or {})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Send the graded 'report' the question is about.")
+    messages = _chat_messages_or_400(payload)
+    if not llm.is_available():
+        return _answer_or_503(None)
+    return _answer_or_503(report_chat(report, messages))
+
+
+@app.post("/api/chat/class", dependencies=[Depends(require_instructor)])
+def api_chat_class(payload: dict):
+    """
+    An instructor's follow-up question about the class results.
+
+    Expects {"students": [ClassChatStudent, ...], "messages": [...]} -- the
+    batch table with names (from the submission filenames), scores and missed
+    concepts. Names reach the model only here: the endpoint is instructor-only
+    and the model runs on this computer. Rankings are computed server-side.
+    """
+    from src import llm
+    from src.models import ClassChatStudent
+    from src.narrative import class_chat
+    raw = payload.get("students")
+    if not isinstance(raw, list) or not raw:
+        raise HTTPException(status_code=400, detail="Send 'students': the batch results table.")
+    try:
+        students = [ClassChatStudent.model_validate(row) for row in raw]
+    except Exception:
+        raise HTTPException(status_code=400, detail="Each student needs at least a 'name'.")
+    messages = _chat_messages_or_400(payload)
+    if not llm.is_available():
+        return _answer_or_503(None)
+    return _answer_or_503(class_chat(students, messages))

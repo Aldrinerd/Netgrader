@@ -3,14 +3,27 @@ import os
 import pytest
 from src.pkt_parser import parse_pkt_xml, parse_pkt_file
 
-TRIAL_XML_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cisco-pka-to-xml", "trial.xml")
+SAMPLE_XML_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tests", "fixtures", "sample_topology.xml")
 
-def test_parse_trial_xml():
-    assert os.path.exists(TRIAL_XML_PATH), "trial.xml should exist"
-    with open(TRIAL_XML_PATH, "rb") as f:
+def test_pkt_decoder_is_available():
+    """
+    The vendored decoder must load from a plain checkout. If it does not,
+    every .pkt upload fails with "pka2xml is not available", so this has to
+    fail the suite rather than be skipped.
+    """
+    from src import pkt_parser
+    assert pkt_parser.decrypt_pka is not None, (
+        "pka2xml could not be imported from cisco-pka-to-xml/. "
+        "See cisco-pka-to-xml/VENDORED.md."
+    )
+
+
+def test_parse_sample_topology():
+    assert os.path.exists(SAMPLE_XML_PATH), "sample_topology.xml should exist"
+    with open(SAMPLE_XML_PATH, "rb") as f:
         xml_bytes = f.read()
     
-    devices, links = parse_pkt_xml(xml_bytes, filename="trial.xml")
+    devices, links = parse_pkt_xml(xml_bytes, filename="sample_topology.xml")
     
     # Verify routers, switches, laptops are parsed
     assert "Router1" in devices
@@ -42,7 +55,7 @@ def test_parse_trial_xml():
     assert sw_l1_link.cable_type == "eStraightThrough"
 
 def test_parse_pkt_file_wrapper_with_xml():
-    with open(TRIAL_XML_PATH, "rb") as f:
+    with open(SAMPLE_XML_PATH, "rb") as f:
         xml_bytes = f.read()
     
     devices, links = parse_pkt_file(xml_bytes, filename="sample.xml")
@@ -52,3 +65,34 @@ def test_parse_pkt_file_wrapper_with_xml():
 def test_parse_pkt_invalid_xml():
     with pytest.raises(ValueError, match="Malformed Packet Tracer XML"):
         parse_pkt_xml(b"<PACKETTRACER5><UNCLOSED>", filename="bad.xml")
+
+
+def test_analyze_reports_a_pkt_that_yields_no_devices():
+    """
+    A Packet Tracer file that decrypts and parses but contains no devices must
+    produce an explicit explanation, not a silently empty topology. An empty
+    result reaches the UI as a blank panel, which looks like the upload did
+    nothing at all.
+    """
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cisco-pka-to-xml"))
+    from fastapi.testclient import TestClient
+    from pka2xml import encrypt_pka
+    from src.app import app
+
+    client = TestClient(app)
+    device_less_xml = (
+        b'<?xml version="1.0"?><PACKETTRACER5><NETWORK>'
+        b"<DEVICES></DEVICES><LINKS></LINKS></NETWORK></PACKETTRACER5>"
+    )
+    payload = encrypt_pka(device_less_xml)
+
+    response = client.post(
+        "/api/analyze",
+        files=[("files", ("devices_missing.pkt", payload, "application/octet-stream"))],
+    )
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert "no devices could be extracted" in detail
+    # The message must point the instructor at a workaround.
+    assert "running-config" in detail

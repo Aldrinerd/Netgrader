@@ -20,6 +20,9 @@ SIGNAL_WEIGHTS: dict[str, float] = {
     "ACTIVE_PORT_CARRIER": 0.50,
 }
 
+_SWITCHING_TYPES = ("switch", "l3_switch")
+
+
 def calculate_noisy_or(weights: list[float]) -> float:
     """Calculates combined probability using Noisy-OR formula: P = 1 - product(1 - w_i)."""
     if not weights:
@@ -150,7 +153,8 @@ def infer_topology_links(devices: dict[str, ParsedDevice]) -> list[DiscoveredLin
         for j in range(i + 1, len(device_list)):
             dev_a = device_list[i]
             dev_b = device_list[j]
-            if dev_a.device_type == "switch" and dev_b.device_type == "switch":
+            if (dev_a.device_type in _SWITCHING_TYPES
+                    and dev_b.device_type in _SWITCHING_TYPES):
                 for intf_a_name, intf_a in dev_a.interfaces.items():
                     if intf_a.switchport_mode == "trunk":
                         for intf_b_name, intf_b in dev_b.interfaces.items():

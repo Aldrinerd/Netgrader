@@ -2,12 +2,12 @@
 import pytest
 from src.criteria_generator import generate_criteria_from_topology
 from src.evaluator import evaluate_student_submission
-from src.presets import load_preset
+from tests.fixtures import network_bundle
 from src.app import process_bundle_dict
 
 
 def test_evaluate_perfect_submission():
-    bundle = load_preset("ospf_clean")
+    bundle = network_bundle("ospf_clean")
     top = process_bundle_dict(bundle)
     criteria = generate_criteria_from_topology(top, lab_title="Perfect OSPF Submission")
 
@@ -26,11 +26,11 @@ def test_evaluate_perfect_submission():
 
 def test_evaluate_flawed_submission():
     # Instructor reference: OSPF Clean
-    clean_top = process_bundle_dict(load_preset("ospf_clean"))
+    clean_top = process_bundle_dict(network_bundle("ospf_clean"))
     criteria = generate_criteria_from_topology(clean_top, lab_title="OSPF Challenge")
 
     # Student submission: Scenario 2 (has R1 and R2 with wrong subnets and missing R3)
-    flawed_top = process_bundle_dict(load_preset("subnet_cabling_error"))
+    flawed_top = process_bundle_dict(network_bundle("subnet_cabling_error"))
 
     report = evaluate_student_submission(criteria, flawed_top)
 
@@ -44,7 +44,7 @@ def test_evaluate_flawed_submission():
 
 
 def test_evaluate_vlan_mismatch_submission():
-    clean_sw = process_bundle_dict(load_preset("vlan_trunk_mismatch"))
+    clean_sw = process_bundle_dict(network_bundle("vlan_trunk_mismatch"))
     criteria = generate_criteria_from_topology(clean_sw, lab_title="VLAN Lab")
 
     report = evaluate_student_submission(criteria, clean_sw)
@@ -53,7 +53,7 @@ def test_evaluate_vlan_mismatch_submission():
 
 def test_dynamic_subnetting_valid_custom_ip_scheme():
     from src.models import EvaluationPolicies
-    ref_top = process_bundle_dict(load_preset("ospf_clean"))
+    ref_top = process_bundle_dict(network_bundle("ospf_clean"))
     policies = EvaluationPolicies(
         allow_dynamic_subnetting=True,
         enforce_prefix_length=True,
@@ -73,6 +73,11 @@ interface GigabitEthernet0/1
 interface GigabitEthernet0/2
  ip address 172.16.10.1 255.255.255.0
  no shutdown
+router ospf 1
+ network 172.16.0.0 0.0.0.3 area 0
+ network 172.16.0.4 0.0.0.3 area 0
+ network 172.16.10.0 0.0.0.255 area 0
+!
 show cdp neighbors detail
 Device ID: R2
 Interface: GigabitEthernet0/0, Port ID (outgoing port): GigabitEthernet0/0
@@ -89,6 +94,11 @@ interface GigabitEthernet0/1
 interface GigabitEthernet0/2
  ip address 172.16.20.1 255.255.255.0
  no shutdown
+router ospf 1
+ network 172.16.0.0 0.0.0.3 area 0
+ network 172.16.0.8 0.0.0.3 area 0
+ network 172.16.20.0 0.0.0.255 area 0
+!
 show cdp neighbors detail
 Device ID: R1
 Interface: GigabitEthernet0/0, Port ID (outgoing port): GigabitEthernet0/0
@@ -105,6 +115,11 @@ interface GigabitEthernet0/1
 interface GigabitEthernet0/2
  ip address 172.16.30.1 255.255.255.0
  no shutdown
+router ospf 1
+ network 172.16.0.4 0.0.0.3 area 0
+ network 172.16.0.8 0.0.0.3 area 0
+ network 172.16.30.0 0.0.0.255 area 0
+!
 show cdp neighbors detail
 Device ID: R1
 Interface: GigabitEthernet0/0, Port ID (outgoing port): GigabitEthernet0/1
@@ -127,7 +142,7 @@ Interface: GigabitEthernet0/1, Port ID (outgoing port): GigabitEthernet0/1
 
 def test_dynamic_subnetting_mismatched_subnet_pair():
     from src.models import EvaluationPolicies
-    ref_top = process_bundle_dict(load_preset("ospf_clean"))
+    ref_top = process_bundle_dict(network_bundle("ospf_clean"))
     policies = EvaluationPolicies(allow_dynamic_subnetting=True)
     criteria = generate_criteria_from_topology(ref_top, lab_title="Dynamic Subnetting Lab", policies=policies)
     
@@ -160,7 +175,7 @@ Interface: GigabitEthernet0/0, Port ID (outgoing port): GigabitEthernet0/0
 
 def test_flexible_hostnames_matching():
     from src.models import EvaluationPolicies
-    ref_top = process_bundle_dict(load_preset("ospf_clean"))
+    ref_top = process_bundle_dict(network_bundle("ospf_clean"))
     policies = EvaluationPolicies(
         allow_custom_hostnames=True,
         allow_dynamic_subnetting=True
@@ -194,11 +209,11 @@ Interface: GigabitEthernet0/0, Port ID (outgoing port): GigabitEthernet0/0
 
 def test_automdix_cabling_tolerance():
     from src.models import EvaluationPolicies
-    clean_top = process_bundle_dict(load_preset("ospf_clean"))
+    clean_top = process_bundle_dict(network_bundle("ospf_clean"))
     policies = EvaluationPolicies(strict_cable_type=False)
     criteria = generate_criteria_from_topology(clean_top, lab_title="Cabling Tolerance", policies=policies)
     
-    flawed_top = process_bundle_dict(load_preset("ospf_clean"))
+    flawed_top = process_bundle_dict(network_bundle("ospf_clean"))
     for l in flawed_top.links:
         l.conflicts.append("Cable type mismatch: Straight-Through used instead of Cross-Over")
     
@@ -211,7 +226,7 @@ def test_automdix_cabling_tolerance():
 
 def test_flexible_ospf_process_ids():
     from src.models import EvaluationPolicies, EvaluationRule
-    ref_top = process_bundle_dict(load_preset("ospf_clean"))
+    ref_top = process_bundle_dict(network_bundle("ospf_clean"))
     policies = EvaluationPolicies(allow_flexible_process_ids=True)
     criteria = generate_criteria_from_topology(ref_top, lab_title="OSPF Process ID Lab", policies=policies)
     

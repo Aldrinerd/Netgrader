@@ -2,30 +2,39 @@
 import pytest
 from fastapi.testclient import TestClient
 from src.app import app
-from src.presets import get_available_presets
+from tests.fixtures import network_bundle
 
 client = TestClient(app)
 
-def test_full_pipeline_all_presets():
-    presets = get_available_presets()
-    for preset in presets:
-        p_id = preset["id"]
-        response = client.get(f"/api/presets/{p_id}")
-        assert response.status_code == 200, f"Preset {p_id} failed"
-        data = response.json()
-        
-        # Verify schema integrity
-        assert "devices" in data
-        assert "links" in data
-        assert "conflicts" in data
-        primary_devices = [d for d in data["devices"].values() if not d.get("is_placeholder")]
-        assert len(primary_devices) == preset["device_count"]
-        
-        # Ensure all links have valid confidence and classification
-        for link in data["links"]:
-            assert 0.0 <= link["confidence"] <= 1.0
-            assert link["classification"] in ("verified", "inferred", "unverified")
-            assert len(link["signals"]) > 0
+EXPECTED_DEVICE_COUNTS = {
+    "ospf_clean": 3,
+    "subnet_cabling_error": 2,
+    "vlan_trunk_mismatch": 2,
+}
+
+
+@pytest.mark.parametrize("fixture_name,expected_devices", EXPECTED_DEVICE_COUNTS.items())
+def test_full_pipeline_via_upload(fixture_name, expected_devices):
+    """Every reference bundle must survive the whole parse -> fuse -> detect pipeline."""
+    bundle = network_bundle(fixture_name)
+    files = [("files", (name, text.encode("utf-8"), "text/plain")) for name, text in bundle.items()]
+    response = client.post("/api/analyze", files=files)
+    assert response.status_code == 200, f"Bundle {fixture_name} failed"
+    data = response.json()
+
+    # Verify schema integrity
+    assert "devices" in data
+    assert "links" in data
+    assert "conflicts" in data
+    primary_devices = [d for d in data["devices"].values() if not d.get("is_placeholder")]
+    assert len(primary_devices) == expected_devices
+
+    # Ensure all links have valid confidence and classification
+    for link in data["links"]:
+        assert 0.0 <= link["confidence"] <= 1.0
+        assert link["classification"] in ("verified", "inferred", "unverified")
+        assert len(link["signals"]) > 0
+
 
 def test_end_to_end_custom_upload():
     sw1 = """

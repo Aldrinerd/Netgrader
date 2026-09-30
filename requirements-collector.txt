@@ -1,0 +1,6 @@
+# GUI-automation extras used ONLY by scripts/pt_collector.py, which types
+# show commands into Packet Tracer and scrapes the CLI via the clipboard.
+# Largely superseded by direct .pkt/.pka upload. Do not install on lab PCs.
+#   python -m pip install --user -r requirements-collector.txt
+pyautogui>=0.9.54
+pyperclip>=1.8.2

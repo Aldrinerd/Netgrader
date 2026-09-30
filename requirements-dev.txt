@@ -1,0 +1,10 @@
+# Test and development extras. NOT needed on lab computers.
+#   python -m pip install --user -r requirements-dev.txt
+-r requirements.txt
+pytest>=8.0.0
+httpx>=0.27.0
+requests>=2.31.0
+
+# Only needed if open item O-1 (compare-against-answer-key graph analysis)
+# is implemented. Currently unused by src/.
+# networkx>=3.0

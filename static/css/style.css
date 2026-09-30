@@ -1442,3 +1442,570 @@ html, body {
 .toggle-control:focus-within .toggle-slider {
     box-shadow: 0 0 0 2px var(--accent-blue);
 }
+
+/* ============================================================
+   Batch Grading & Gradebook Export
+   ============================================================ */
+.batch-card .form-hint {
+    display: block;
+    margin-top: 6px;
+    font-size: 0.78rem;
+    color: var(--text-muted, #8b98a9);
+}
+
+.batch-results {
+    margin-top: 16px;
+    border-top: 1px solid var(--border-color, #2a3441);
+    padding-top: 14px;
+}
+
+.batch-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+    gap: 8px;
+    margin-bottom: 14px;
+}
+
+.batch-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px 4px;
+    background: var(--bg-elevated, #1a2130);
+    border: 1px solid var(--border-color, #2a3441);
+    border-radius: 8px;
+}
+
+.batch-stat-value {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--accent-primary, #4da3ff);
+    line-height: 1.2;
+}
+
+.batch-stat-label {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted, #8b98a9);
+    margin-top: 2px;
+    text-align: center;
+}
+
+.batch-stat-error .batch-stat-value { color: var(--danger, #ff6b6b); }
+
+.batch-table-wrap {
+    max-height: 560px;
+    overflow: auto;
+    border: 1px solid var(--border-color, #2a3441);
+    border-radius: 8px;
+}
+
+.batch-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+}
+
+.batch-table thead th {
+    position: sticky;
+    top: 0;
+    background: var(--bg-elevated, #1a2130);
+    text-align: left;
+    padding: 8px 10px;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted, #8b98a9);
+    border-bottom: 1px solid var(--border-color, #2a3441);
+}
+
+.batch-table tbody td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border-subtle, #222b38);
+    vertical-align: middle;
+}
+
+.batch-table tbody tr:last-child td { border-bottom: none; }
+.batch-student { font-weight: 600; }
+.batch-pct { font-variant-numeric: tabular-nums; }
+
+.batch-status {
+    font-size: 0.72rem;
+    color: var(--text-muted, #8b98a9);
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.batch-row-error { background: rgba(255, 107, 107, 0.07); }
+.batch-row-error .batch-status { color: var(--danger, #ff6b6b); }
+
+.grade-chip {
+    display: inline-block;
+    min-width: 26px;
+    text-align: center;
+    padding: 2px 7px;
+    border-radius: 5px;
+    font-weight: 700;
+    font-size: 0.72rem;
+    background: var(--bg-base, #131922);
+    border: 1px solid var(--border-color, #2a3441);
+}
+
+.grade-Aplus, .grade-A { color: #3ddc97; border-color: rgba(61, 220, 151, 0.4); }
+.grade-B          { color: #4da3ff; border-color: rgba(77, 163, 255, 0.4); }
+.grade-C          { color: #ffc861; border-color: rgba(255, 200, 97, 0.4); }
+.grade-D, .grade-F { color: #ff6b6b; border-color: rgba(255, 107, 107, 0.4); }
+
+@media (max-width: 520px) {
+    .batch-status { display: none; }
+    .batch-table thead th:nth-child(5) { display: none; }
+}
+
+/* Per-student review: "where did this student go wrong?" */
+.batch-review-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+.batch-review-toolbar .form-hint { margin-top: 0; }
+.batch-review-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.batch-review-cell { white-space: nowrap; }
+.batch-review-btn { padding: 3px 8px; font-size: 0.72rem; }
+.batch-row-open td { background: rgba(77, 163, 255, 0.06); }
+
+.batch-table tbody tr.batch-detail-row td {
+    padding: 0;
+    background: var(--bg-base, #131922);
+}
+.batch-review {
+    padding: 12px;
+    border-left: 3px solid var(--accent-blue, #4da3ff);
+    /* Never wider than the visible table area, even when the table itself
+       scrolls sideways in a narrow left panel. */
+    box-sizing: border-box;
+    max-width: 100cqw;
+    position: sticky;
+    left: 0;
+}
+
+/* The left panel is often narrow on a wide screen, so size columns by the
+   table's own width, not the viewport's. */
+.batch-table-wrap { container-type: inline-size; }
+@container (max-width: 460px) {
+    .batch-status,
+    .batch-table thead th:nth-child(5) { display: none; }
+}
+.batch-review-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.batch-review-title { font-weight: 700; color: var(--danger, #ff6b6b); }
+.batch-review-title.ok { color: #3ddc97; }
+.batch-review-topics {
+    font-size: 0.74rem;
+    color: var(--text-muted, #8b98a9);
+    margin-bottom: 10px;
+}
+.batch-review-label { font-weight: 600; }
+.batch-review-cost { color: var(--danger, #ff6b6b); font-variant-numeric: tabular-nums; }
+.batch-review-device + .batch-review-device { margin-top: 10px; }
+.batch-review-device-name {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+}
+.batch-review-device-count {
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--danger, #ff6b6b);
+}
+.batch-review-empty { font-size: 0.75rem; color: var(--text-muted, #8b98a9); }
+
+/* Map: devices where the reviewed student made mistakes */
+.node-mistake-ring {
+    fill: none;
+    stroke: #ff6b6b;
+    stroke-width: 3;
+    stroke-dasharray: 6 4;
+}
+
+/* Failure and diagnostic text inside the topology panel */
+.empty-state .empty-error {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: rgba(255, 107, 107, 0.09);
+    border: 1px solid rgba(255, 107, 107, 0.32);
+    color: #ff9d9d;
+    font-size: 0.82rem;
+    max-width: 460px;
+    text-align: left;
+    word-break: break-word;
+}
+
+.empty-state .empty-hint {
+    margin-top: 10px;
+    max-width: 460px;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    color: var(--text-muted, #8b98a9);
+}
+
+.empty-state .empty-hint code {
+    background: var(--bg-base, #131922);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 0.92em;
+}
+
+/* ============================================================
+   Pedagogical Guidance & Study Topics
+   ============================================================ */
+.rule-res-guidance {
+    margin-top: 8px;
+    padding: 9px 11px;
+    border-left: 3px solid var(--accent-primary, #4da3ff);
+    border-radius: 0 6px 6px 0;
+    background: rgba(77, 163, 255, 0.07);
+    font-size: 0.78rem;
+    line-height: 1.55;
+    color: var(--text-secondary, #b9c4d2);
+}
+
+.rule-res-guidance .guidance-label {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 0.66rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--accent-primary, #4da3ff);
+}
+
+.report-study-topics {
+    margin: 12px 0 14px;
+    padding: 12px;
+    border: 1px solid var(--border-color, #2a3441);
+    border-radius: 10px;
+    background: var(--bg-elevated, #1a2130);
+}
+
+.study-header {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted, #8b98a9);
+    margin-bottom: 10px;
+}
+
+.study-topic {
+    padding: 9px 0;
+    border-bottom: 1px solid var(--border-subtle, #222b38);
+}
+
+.study-topic:last-child { border-bottom: none; padding-bottom: 0; }
+
+.study-topic-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+}
+
+.study-topic-name {
+    font-weight: 600;
+    font-size: 0.83rem;
+    color: var(--text-primary, #e6edf5);
+}
+
+.study-topic-cost {
+    flex-shrink: 0;
+    font-size: 0.74rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: #ff9d9d;
+}
+
+.study-topic-why {
+    margin-top: 3px;
+    font-size: 0.76rem;
+    line-height: 1.5;
+    color: var(--text-secondary, #b9c4d2);
+}
+
+.study-topic-count {
+    margin-top: 3px;
+    font-size: 0.7rem;
+    color: var(--text-muted, #8b98a9);
+}
+
+/* ============================================================
+   Narrative Layer (student summary & class briefing)
+   ============================================================ */
+.report-narrative,
+.batch-briefing {
+    margin: 12px 0 14px;
+    padding: 12px 14px;
+    border: 1px solid var(--border-color, #2a3441);
+    border-radius: 10px;
+    background: linear-gradient(180deg, rgba(77,163,255,0.06), transparent);
+}
+
+.narrative-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted, #8b98a9);
+    margin-bottom: 8px;
+}
+
+.narrative-src {
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 0.66rem;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+}
+
+/* The badge is deliberately honest about who wrote the text. */
+.narrative-src.model {
+    color: #c9a8ff;
+    background: rgba(170, 130, 255, 0.12);
+    border-color: rgba(170, 130, 255, 0.35);
+}
+
+.narrative-src.template {
+    color: var(--text-muted, #8b98a9);
+    background: rgba(139, 152, 169, 0.1);
+    border-color: rgba(139, 152, 169, 0.28);
+}
+
+.narrative-text {
+    margin: 0;
+    font-size: 0.83rem;
+    line-height: 1.6;
+    color: var(--text-secondary, #b9c4d2);
+}
+
+.narrative-loading {
+    font-size: 0.78rem;
+    color: var(--text-muted, #8b98a9);
+    font-style: italic;
+}
+
+.concept-list {
+    margin-top: 10px;
+    border-top: 1px solid var(--border-subtle, #222b38);
+    padding-top: 8px;
+}
+
+.concept-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 4px 0;
+    font-size: 0.78rem;
+}
+
+.concept-name { color: var(--text-secondary, #b9c4d2); }
+
+.concept-count {
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted, #8b98a9);
+}
+
+/* ============================================================
+   Local AI status indicator (header)
+   ============================================================ */
+.ai-status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+    color: var(--text-secondary);
+    background: rgba(156, 163, 175, 0.08);
+    border: 1px solid rgba(156, 163, 175, 0.25);
+}
+.ai-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #9CA3AF;
+}
+.ai-status-indicator[data-state="ready"] {
+    color: #c9a8ff;
+    background: rgba(170, 130, 255, 0.1);
+    border-color: rgba(170, 130, 255, 0.35);
+}
+.ai-status-indicator[data-state="ready"] .ai-status-dot { background: #a78bfa; }
+.ai-status-indicator[data-state="missing"] {
+    color: var(--accent-amber);
+    background: rgba(245, 158, 11, 0.08);
+    border-color: rgba(245, 158, 11, 0.3);
+}
+.ai-status-indicator[data-state="missing"] .ai-status-dot { background: var(--accent-amber); }
+.ai-status-indicator[data-state="checking"] .ai-status-dot { animation: ai-blink 1s infinite; }
+@keyframes ai-blink { 50% { opacity: 0.3; } }
+
+/* ============================================================
+   Follow-up chat
+   ============================================================ */
+.ai-chat {
+    margin: 12px 0 14px;
+    padding: 12px 14px;
+    border: 1px solid rgba(170, 130, 255, 0.25);
+    border-radius: 10px;
+    background: linear-gradient(180deg, rgba(170, 130, 255, 0.05), transparent);
+}
+.ai-chat-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted, #8b98a9);
+    margin-bottom: 8px;
+}
+.ai-chat-log {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 320px;
+    overflow-y: auto;
+}
+.ai-chat-log:not(:empty) { margin-bottom: 10px; }
+.ai-msg {
+    max-width: 92%;
+    padding: 8px 11px;
+    border-radius: 10px;
+    font-size: 0.8rem;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+.ai-msg-user {
+    align-self: flex-end;
+    background: var(--accent-blue);
+    color: #fff;
+    border-bottom-right-radius: 3px;
+}
+.ai-msg-assistant {
+    align-self: flex-start;
+    background: var(--bg-surface-subtle);
+    color: var(--text-secondary, #b9c4d2);
+    border: 1px solid var(--border-color);
+    border-bottom-left-radius: 3px;
+}
+.ai-msg-pending {
+    align-self: flex-start;
+    color: var(--text-muted);
+    font-style: italic;
+}
+.ai-msg-error {
+    align-self: stretch;
+    max-width: none;
+    color: #ff8f8f;
+    background: rgba(255, 107, 107, 0.08);
+    border: 1px solid rgba(255, 107, 107, 0.3);
+}
+.ai-chat-suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+.ai-chat-chip {
+    font: inherit;
+    font-size: 0.72rem;
+    padding: 4px 10px;
+    border-radius: 999px;
+    cursor: pointer;
+    color: #c9a8ff;
+    background: rgba(170, 130, 255, 0.08);
+    border: 1px solid rgba(170, 130, 255, 0.3);
+}
+.ai-chat-chip:hover:not(:disabled) { background: rgba(170, 130, 255, 0.18); }
+.ai-chat-chip:disabled { opacity: 0.5; cursor: default; }
+.ai-chat-form {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+}
+.ai-chat-input {
+    flex: 1;
+    min-width: 0;
+    resize: vertical;
+    font: inherit;
+    font-size: 0.8rem;
+    padding: 8px 10px;
+    border-radius: 8px;
+    color: var(--text-primary, #F9FAFB);
+    background: var(--bg-base);
+    border: 1px solid var(--border-highlight);
+}
+.ai-chat-input:focus { outline: none; border-color: #a78bfa; }
+.ai-chat-input:disabled { opacity: 0.55; cursor: not-allowed; }
+.ai-chat-send:disabled { opacity: 0.5; cursor: not-allowed; }
+.ai-chat-note {
+    margin-top: 8px;
+    font-size: 0.7rem;
+    line-height: 1.5;
+    color: var(--text-muted);
+}
+.ai-chat-note-off { color: var(--accent-amber); }
+
+/* Batch table: names under Highest / Lowest, and sortable headers */
+.batch-stat-who {
+    margin-top: 4px;
+    font-size: 0.66rem;
+    line-height: 1.3;
+    text-align: center;
+    color: var(--text-secondary, #b9c4d2);
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.batch-sort {
+    font: inherit;
+    color: inherit;
+    text-transform: inherit;
+    letter-spacing: inherit;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.batch-sort:hover { color: var(--text-primary, #F9FAFB); }
+.batch-sort.active { color: var(--accent-blue, #4da3ff); }
+.batch-sort[data-dir="asc"]::after { content: " \25B2"; font-size: 0.6rem; }
+.batch-sort[data-dir="desc"]::after { content: " \25BC"; font-size: 0.6rem; }

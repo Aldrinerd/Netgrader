@@ -4,10 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Network Topology Discovery & Automated Evaluation Engine</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css?v=3.2">
+    <!-- Fonts are served locally so the tool works with no internet access. -->
+    <link rel="stylesheet" href="/static/css/fonts.css?v={{ asset_version }}">
+    <link rel="stylesheet" href="/static/css/style.css?v={{ asset_version }}">
 </head>
 <body class="dark-theme">
     <div class="app-layout">
@@ -24,10 +23,13 @@
                     <span class="mode-icon">⚡</span>
                     <span class="mode-text">Topology Discovery</span>
                 </button>
+                {% if is_instructor %}
+                <!-- Rendered only for the computer running the server (see is_instructor in src/app.py). -->
                 <button id="nav-mode-teacher" class="mode-tab-btn" data-mode="teacher">
                     <span class="mode-icon">👨‍🏫</span>
                     <span class="mode-text">Instructor Studio</span>
                 </button>
+                {% endif %}
                 <button id="nav-mode-student" class="mode-tab-btn" data-mode="student">
                     <span class="mode-icon">👨‍🎓</span>
                     <span class="mode-text">Student Grading</span>
@@ -39,6 +41,11 @@
                     <span class="status-dot pulsing"></span>
                     <span class="status-label" id="engine-status-label">Inference Engine: Active</span>
                 </div>
+                <!-- Whether the local AI model is reachable. Filled by app.js from /api/llm/status. -->
+                <button type="button" id="ai-status" class="ai-status-indicator" data-state="checking" title="Checking the local AI model...">
+                    <span class="ai-status-dot"></span>
+                    <span class="ai-status-label" id="ai-status-label">AI: checking</span>
+                </button>
                 <button id="reset-btn" class="btn btn-outline btn-sm" title="Clear current workspace">Reset View</button>
             </div>
         </header>
@@ -48,32 +55,8 @@
             <!-- Left Side: Dynamic Control Panels according to Mode -->
             <section class="control-panel" id="control-panel">
                 
-                <!-- MODE 1: LIVE TOPOLOGY DISCOVERY & SHOWCASE SCENARIOS -->
+                <!-- MODE 1: LIVE TOPOLOGY DISCOVERY -->
                 <div id="panel-mode-visualizer" class="mode-panel active">
-                    <!-- 1-Click Presentation Presets -->
-                    <div class="panel-card presets-card">
-                        <div class="card-header">
-                            <span class="card-icon">⚡</span>
-                            <h3>Showcase Demo Scenarios</h3>
-                        </div>
-                        <p class="card-desc">Load preconfigured lab bundles to demonstrate multi-signal inference and error detection during defense:</p>
-                        <div class="presets-list">
-                            {% for preset in presets %}
-                            <div class="preset-item" data-preset-id="{{ preset.id }}">
-                                <div class="preset-top">
-                                    <span class="preset-name">{{ preset.name }}</span>
-                                    <span class="badge badge-{{ preset.badge_color }}">{{ preset.badge }}</span>
-                                </div>
-                                <p class="preset-description">{{ preset.description }}</p>
-                                <div class="preset-meta">
-                                    <span class="device-tag">💻 {{ preset.device_count }} Devices</span>
-                                    <span class="load-btn-text">Click to Run Analysis →</span>
-                                </div>
-                            </div>
-                            {% endfor %}
-                        </div>
-                    </div>
-
                     <!-- Custom Upload Area -->
                     <div class="panel-card upload-card">
                         <div class="card-header">
@@ -116,6 +99,7 @@
                     </div>
                 </div>
 
+                {% if is_instructor %}
                 <!-- MODE 2: INSTRUCTOR STUDIO (CREATE CRITERIA / INSTRUCTIONS.TXT) -->
                 <div id="panel-mode-teacher" class="mode-panel">
                     <div class="panel-card teacher-authoring-card">
@@ -325,7 +309,66 @@
                             </button>
                         </div>
                     </div>
+
+                    <!-- Batch Grading: grade a whole class in one pass -->
+                    <div class="panel-card batch-card">
+                        <div class="card-header">
+                            <span class="card-icon">📊</span>
+                            <h3>Batch Grading &amp; Gradebook Export</h3>
+                            <span class="badge badge-blue">Whole Class</span>
+                        </div>
+                        <p class="card-desc">Grade an entire class against one rubric, then export the scores as a CSV your gradebook can open directly. <strong>One file per student</strong> &mdash; the filename becomes the student's name.</p>
+
+                        <div class="form-group">
+                            <label for="batch-inst-input">1. Instructions file (<code>instructions.txt</code>):</label>
+                            <input type="file" id="batch-inst-input" class="form-input" accept=".txt,.json">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="batch-sub-input">2. Student submissions (select many):</label>
+                            <input type="file" id="batch-sub-input" class="form-input" multiple accept=".pkt,.pka,.xml,.zip,.txt">
+                            <span class="form-hint" id="batch-file-count">No submissions selected</span>
+                        </div>
+
+                        <button id="batch-grade-btn" class="btn btn-primary btn-block">
+                            <span>⚡ Grade All Submissions</span>
+                        </button>
+
+                        <div id="batch-results" class="batch-results" style="display:none;">
+                            <div class="batch-summary" id="batch-summary"></div>
+                            <div class="batch-review-toolbar">
+                                <span class="form-hint">Click <strong>Review</strong> on a student to see every checkpoint they missed.</span>
+                                <div class="batch-review-actions">
+                                    <button type="button" id="batch-review-all-btn" class="btn btn-outline btn-sm">🔍 Review all</button>
+                                    <button type="button" id="batch-collapse-all-btn" class="btn btn-outline btn-sm">Collapse all</button>
+                                </div>
+                            </div>
+                            <div class="batch-table-wrap">
+                                <table class="batch-table">
+                                    <thead>
+                                        <tr>
+                                            <th><button type="button" class="batch-sort" data-sort="student">Student</button></th>
+                                            <th><button type="button" class="batch-sort" data-sort="pct">Score</button></th>
+                                            <th><button type="button" class="batch-sort" data-sort="pct">%</button></th>
+                                            <th><button type="button" class="batch-sort" data-sort="pct">Grade</button></th>
+                                            <th>Status</th><th>Mistakes</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="batch-table-body"></tbody>
+                                </table>
+                            </div>
+                            <div id="batch-briefing" class="batch-briefing" style="display:none;"></div>
+                            <!-- Follow-up questions about the class results (aggregate only, no names) -->
+                            <div id="batch-chat" class="ai-chat" style="display:none;"></div>
+
+                            <button id="batch-csv-btn" class="btn btn-primary btn-block" style="margin-top:12px;">
+                                <span>📥 Download Gradebook CSV</span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
+
+                {% endif %}
 
                 <!-- MODE 3: STUDENT SUBMISSION & AUTOMATED GRADING -->
                 <div id="panel-mode-student" class="mode-panel">
@@ -417,6 +460,14 @@
                         </div>
 
                         <!-- Itemized Checklist -->
+                        <div id="report-narrative" class="report-narrative" style="display:none;"></div>
+
+                        <!-- Concepts to revisit, ranked by points lost -->
+                        <div id="report-study-topics" class="report-study-topics" style="display:none;"></div>
+
+                        <!-- Follow-up questions about this report, answered by the local model -->
+                        <div id="report-chat" class="ai-chat" style="display:none;"></div>
+
                         <div id="report-results-list" class="report-results-list">
                             <!-- Populated by JS -->
                         </div>
@@ -465,7 +516,7 @@
                     <div id="empty-state" class="empty-state">
                         <div class="empty-icon">🌐</div>
                         <h3 id="empty-state-title">No Network Loaded</h3>
-                        <p id="empty-state-desc">Select a 1-Click Demo Scenario on the left, upload student Cisco files, or switch to Instructor Studio to author a new lab assignment.</p>
+                        <p id="empty-state-desc">Upload a Packet Tracer file or Cisco configuration bundle on the left{% if is_instructor %}, or switch to Instructor Studio to author a new lab assignment{% endif %}.</p>
                     </div>
                     <svg id="topology-svg" class="topology-svg" width="100%" height="100%"></svg>
                 </div>
@@ -490,6 +541,6 @@
     <!-- Toast Notification Overlay -->
     <div id="toast-container" class="toast-container"></div>
 
-    <script src="/static/js/app.js?v=3.2"></script>
+    <script src="/static/js/app.js?v={{ asset_version }}"></script>
 </body>
 </html>
