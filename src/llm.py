@@ -153,3 +153,35 @@ def generate(prompt: str, system: str = "", max_tokens: int = 320) -> str | None
     except Exception:
         # Daemon down, model missing, timeout, malformed JSON, anything at all.
         return None
+
+
+def chat(messages: list[dict], system: str = "", max_tokens: int = 400) -> str | None:
+    """
+    Run one multi-turn chat completion. Returns None on ANY failure.
+
+    ``messages`` is a list of {"role": "user"|"assistant", "content": str},
+    oldest first. Same contract as generate(): bounded by the timeout, never
+    raises, and the caller decides what to show when it returns None.
+    """
+    if not is_enabled():
+        return None
+
+    body = {
+        "model": model_name(),
+        "messages": ([{"role": "system", "content": system}] if system else []) + list(messages),
+        "stream": False,
+        "options": {"temperature": 0.3, "num_predict": max_tokens},
+    }
+    try:
+        request = urllib.request.Request(
+            _host() + "/api/chat",
+            data=json.dumps(body).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=_timeout()) as response:
+            payload = json.loads(response.read().decode("utf-8", errors="replace"))
+        text = ((payload.get("message") or {}).get("content") or "").strip()
+        return text or None
+    except Exception:
+        return None

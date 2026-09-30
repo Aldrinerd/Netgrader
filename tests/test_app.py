@@ -4,7 +4,8 @@ from fastapi.testclient import TestClient
 from src.app import app
 from tests.fixtures import network_bundle
 
-client = TestClient(app)
+# Requests come from the server's own machine, i.e. the instructor.
+client = TestClient(app, client=("127.0.0.1", 50000))
 
 def test_index_page():
     response = client.get("/")

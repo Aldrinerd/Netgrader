@@ -763,6 +763,220 @@ document.addEventListener('DOMContentLoaded', () => {
         // Fired only after the score is rendered. If it never returns, the
         // student still has a complete, final grade on screen.
         requestNarrative(report);
+        openReportChat(report);
+    }
+
+    // --- Local AI status (header indicator) ---
+    // Tells everyone up front whether the paragraphs and chat will come from
+    // the local model or not, instead of leaving it to a badge that only
+    // appears after a summary loads.
+    const aiStatusBtn = document.getElementById('ai-status');
+    const aiStatusLabel = document.getElementById('ai-status-label');
+    const chatBoxes = new Map();   // host element -> chat box, told when status changes
+    let aiStatusPromise = null;
+
+    function refreshAiStatus() {
+        aiStatusPromise = fetch('/api/llm/status')
+            .then(res => (res.ok ? res.json() : Promise.reject(new Error(`status ${res.status}`))))
+            .catch(() => ({ enabled: true, available: false, detail: 'could not reach the server to check' }))
+            .then(status => {
+                paintAiStatus(status);
+                chatBoxes.forEach(box => box.setAvailability(status));
+                return status;
+            });
+        return aiStatusPromise;
+    }
+
+    function paintAiStatus(status) {
+        if (!aiStatusBtn) return;
+        let state, label, title;
+        if (status.available) {
+            state = 'ready';
+            label = `AI: ${status.model}`;
+            title = `Local AI model ${status.model} is running on the server. Summaries, briefings and follow-up answers are written by it. Grades never are.`;
+        } else if (status.enabled === false) {
+            state = 'off';
+            label = 'AI: off';
+            title = 'The local AI layer is switched off (NCA_LLM_ENABLED=0). Summaries use built-in text; follow-up chat is unavailable.';
+        } else {
+            state = 'missing';
+            label = /not pulled/.test(status.detail || '') ? 'AI: model missing' : 'AI: not installed';
+            title = `Local AI unavailable: ${status.detail}. Summaries use built-in text; follow-up chat is unavailable. Click to check again.`;
+        }
+        aiStatusBtn.dataset.state = state;
+        aiStatusBtn.title = title;
+        if (aiStatusLabel) aiStatusLabel.textContent = label;
+    }
+
+    if (aiStatusBtn) {
+        aiStatusBtn.addEventListener('click', async () => {
+            if (aiStatusLabel) aiStatusLabel.textContent = 'AI: checking';
+            aiStatusBtn.dataset.state = 'checking';
+            const status = await refreshAiStatus();
+            showToast(status.available ? `Local AI ready (${status.model})` : `Local AI unavailable: ${status.detail}`);
+        });
+    }
+    refreshAiStatus();
+    // The server caches its probe for 30 s, so this costs one cheap request.
+    setInterval(refreshAiStatus, 60000);
+
+    // --- Follow-up chat ---
+    // One reusable box: under a student's report, and under the class briefing.
+    // It never shows a prewritten answer. If the model is unavailable the box
+    // says so and disables itself.
+    function createChatBox(host, { title, suggestions, endpoint, buildPayload, readyNote }) {
+        host.style.display = 'block';
+        host.innerHTML = `
+            <div class="ai-chat-head">
+                <span>${escapeHtml(title)}</span>
+                <span class="narrative-src model ai-chat-badge">Local AI</span>
+            </div>
+            <div class="ai-chat-log" aria-live="polite"></div>
+            <div class="ai-chat-suggestions"></div>
+            <form class="ai-chat-form">
+                <textarea class="ai-chat-input" rows="2" maxlength="1000"
+                    placeholder="Ask a follow-up question... (Enter to send, Shift+Enter for a new line)"></textarea>
+                <button type="submit" class="btn btn-primary btn-sm ai-chat-send">Send</button>
+            </form>
+            <div class="ai-chat-note"></div>
+        `;
+        const log = host.querySelector('.ai-chat-log');
+        const chips = host.querySelector('.ai-chat-suggestions');
+        const form = host.querySelector('.ai-chat-form');
+        const input = host.querySelector('.ai-chat-input');
+        const sendBtn = host.querySelector('.ai-chat-send');
+        const note = host.querySelector('.ai-chat-note');
+        const history = [];
+        let busy = false;
+        let available = false;
+
+        suggestions.forEach(text => {
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = 'ai-chat-chip';
+            chip.textContent = text;
+            chip.addEventListener('click', () => ask(text));
+            chips.appendChild(chip);
+        });
+
+        function addMessage(kind, text) {
+            const msg = document.createElement('div');
+            msg.className = `ai-msg ai-msg-${kind}`;
+            msg.textContent = text;
+            log.appendChild(msg);
+            log.scrollTop = log.scrollHeight;
+            return msg;
+        }
+
+        function syncControls() {
+            const enabled = available && !busy;
+            input.disabled = !available;
+            sendBtn.disabled = !enabled;
+            chips.querySelectorAll('button').forEach(b => { b.disabled = !enabled; });
+            chips.style.display = available && history.length === 0 ? 'flex' : 'none';
+        }
+
+        async function ask(question) {
+            question = (question || '').trim();
+            if (!question || busy || !available) return;
+            input.value = '';
+            history.push({ role: 'user', content: question });
+            addMessage('user', question);
+            busy = true;
+            syncControls();
+            const pending = addMessage('pending', 'Thinking... the local model can take up to a minute on a lab computer.');
+            try {
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(buildPayload(history))
+                });
+                if (!res.ok) throw new Error(await describeFailure(res, `The AI could not answer (error ${res.status}).`));
+                const data = await res.json();
+                pending.remove();
+                history.push({ role: 'assistant', content: data.reply });
+                addMessage('assistant', data.reply);
+            } catch (err) {
+                pending.remove();
+                // Drop the unanswered question from history and hand it back,
+                // so a retry does not send it twice.
+                history.pop();
+                addMessage('error', err.message);
+                input.value = question;
+                // The model may have gone away; re-check so the header and
+                // every chat box reflect it.
+                refreshAiStatus();
+            } finally {
+                busy = false;
+                syncControls();
+                if (available) input.focus();
+            }
+        }
+
+        form.addEventListener('submit', (e) => { e.preventDefault(); ask(input.value); });
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(input.value); }
+        });
+
+        const box = {
+            setAvailability(status) {
+                available = !!status.available;
+                if (available) {
+                    note.textContent = readyNote(status.model);
+                    note.className = 'ai-chat-note';
+                } else {
+                    note.textContent = `Follow-up questions need the local AI model, which is not available on the server (${status.detail}). Everything above is complete without it.`;
+                    note.className = 'ai-chat-note ai-chat-note-off';
+                }
+                syncControls();
+            }
+        };
+        chatBoxes.set(host, box);
+        box.setAvailability({ available: false, detail: 'checking' });
+        (aiStatusPromise || refreshAiStatus()).then(status => box.setAvailability(status));
+        return box;
+    }
+
+    function openReportChat(report) {
+        const host = document.getElementById('report-chat');
+        if (!host) return;
+        // Only the checkpoint findings are used, so the topology is not sent.
+        const findings = { ...report, topology: {} };
+        createChatBox(host, {
+            title: 'Ask about your results',
+            suggestions: report.failed_count > 0
+                ? ['Why did I lose the most points?', 'Explain my first mistake in simple terms', 'Which show commands should I use to check my work?']
+                : ['What could I practise next to go further?'],
+            endpoint: '/api/chat/report',
+            buildPayload: messages => ({ report: findings, messages }),
+            readyNote: model => `Answered by the local model (${model}) using only the graded results above. It cannot change your grade. Check anything important with your instructor.`
+        });
+    }
+
+    function openClassChat(rows) {
+        const host = document.getElementById('batch-chat');
+        if (!host) return;
+        // The results table, with names (the submission filenames). Only the
+        // instructor can reach this, and the model runs on this computer.
+        // Rankings are computed by the server, not by the model.
+        const students = rows.map(r => ({
+            name: r.student,
+            status: r.status,
+            percentage: r.percentage,
+            grade_letter: r.grade_letter,
+            total_score: r.total_score,
+            max_score: r.max_score,
+            failed_count: r.failed_count,
+            topics: ((r.report && r.report.study_topics) || []).map(t => t.topic)
+        }));
+        if (students.length === 0) { host.style.display = 'none'; return; }
+        createChatBox(host, {
+            title: 'Ask about this class',
+            suggestions: ['Who got the lowest grade?', 'Which students need the most help, and with what?', 'Which topic should I reteach first?'],
+            endpoint: '/api/chat/class',
+            buildPayload: messages => ({ students, messages }),
+            readyNote: model => `Answered by the local model (${model}) from this results table, including student names. It runs on this computer; nothing is sent anywhere else.`
+        });
     }
 
     async function requestNarrative(report) {
@@ -827,20 +1041,26 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        results.forEach(res => {
-            const card = document.createElement('div');
-            card.className = `rule-result-card ${res.passed ? 'passed' : 'failed'}`;
-            card.innerHTML = `
-                <div class="rule-res-top">
-                    <span class="rule-res-desc">${res.passed ? '✅' : '❌'} ${res.description}</span>
-                    <span class="rule-res-pts">${res.points_earned.toFixed(1)} / ${res.points_possible.toFixed(1)} pts</span>
-                </div>
-                <div class="rule-res-feedback">${res.feedback}</div>
-                ${res.actual_value ? `<div class="rule-res-actual">Found: ${res.actual_value}</div>` : ''}
-                ${res.guidance ? `<div class="rule-res-guidance"><span class="guidance-label">How to fix this</span>${escapeHtml(res.guidance)}</div>` : ''}
-            `;
-            reportResultsList.appendChild(card);
-        });
+        results.forEach(res => reportResultsList.appendChild(buildRuleResultCard(res)));
+    }
+
+    // One checkpoint as a card. Shared by the Student Grading report and the
+    // instructor's per-student review in Batch Grading, so both show the same
+    // detail. Every field is escaped: descriptions and "Found:" values can carry
+    // hostnames and config text taken straight from a student's file.
+    function buildRuleResultCard(res) {
+        const card = document.createElement('div');
+        card.className = `rule-result-card ${res.passed ? 'passed' : 'failed'}`;
+        card.innerHTML = `
+            <div class="rule-res-top">
+                <span class="rule-res-desc">${res.passed ? '✅' : '❌'} ${escapeHtml(res.description)}</span>
+                <span class="rule-res-pts">${res.points_earned.toFixed(1)} / ${res.points_possible.toFixed(1)} pts</span>
+            </div>
+            <div class="rule-res-feedback">${escapeHtml(res.feedback)}</div>
+            ${res.actual_value ? `<div class="rule-res-actual">Found: ${escapeHtml(res.actual_value)}</div>` : ''}
+            ${res.guidance ? `<div class="rule-res-guidance"><span class="guidance-label">How to fix this</span>${escapeHtml(res.guidance)}</div>` : ''}
+        `;
+        return card;
     }
 
     filterChips.forEach(chip => {
@@ -856,41 +1076,54 @@ document.addEventListener('DOMContentLoaded', () => {
         studentDownloadReportBtn.addEventListener('click', () => {
             if (!latestEvaluationReport) return;
             const rep = latestEvaluationReport;
-            let reportTxt = `================================================================================\n`;
-            reportTxt += `STUDENT LAB EVALUATION & GRADE REPORT\n`;
-            reportTxt += `================================================================================\n`;
-            reportTxt += `Assignment  : ${rep.lab_title}\n`;
-            reportTxt += `Final Grade : ${rep.grade_letter} (${rep.percentage}%)\n`;
-            reportTxt += `Total Score : ${rep.total_score} / ${rep.max_score} pts\n`;
-            reportTxt += `Summary     : ${rep.passed_count} Passed | ${rep.failed_count} Failed\n`;
-            reportTxt += `--------------------------------------------------------------------------------\n\n`;
-            reportTxt += `ITEMIZED CHECKLIST BREAKDOWN:\n`;
-            rep.results.forEach((r, idx) => {
-                const num = String(idx + 1).padStart(2, '0');
-                reportTxt += `[${r.passed ? 'PASSED' : 'FAILED'}] #${num} (${r.points_earned}/${r.points_possible} pts): ${r.description}\n`;
-                reportTxt += `   Feedback: ${r.feedback}\n`;
-                if (r.actual_value) reportTxt += `   Actual  : ${r.actual_value}\n`;
-                if (r.guidance) reportTxt += `   Guidance: ${r.guidance}\n`;
-                reportTxt += `\n`;
-            });
-
-            if (rep.study_topics && rep.study_topics.length) {
-                reportTxt += `WHAT TO STUDY NEXT:\n\n`;
-                rep.study_topics.forEach((t, i) => {
-                    reportTxt += `${i + 1}. ${t.topic}  (-${t.points_lost} pts, ${t.checkpoints_failed} checkpoints)\n`;
-                    reportTxt += `   ${t.why_it_matters}\n\n`;
-                });
-            }
-
-            const blob = new Blob([reportTxt], { type: 'text/plain;charset=utf-8' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `grade_report_${rep.grade_letter}.txt`;
-            a.click();
-            URL.revokeObjectURL(url);
+            downloadText(buildReportText(rep), `grade_report_${rep.grade_letter}.txt`);
             showToast("Downloaded grade_report.txt");
         });
+    }
+
+    // Plain-text grade report. `studentName` is set when an instructor exports
+    // one student's report from Batch Grading.
+    function buildReportText(rep, studentName) {
+        let reportTxt = `================================================================================\n`;
+        reportTxt += `STUDENT LAB EVALUATION & GRADE REPORT\n`;
+        reportTxt += `================================================================================\n`;
+        if (studentName) reportTxt += `Student     : ${studentName}\n`;
+        reportTxt += `Assignment  : ${rep.lab_title}\n`;
+        reportTxt += `Final Grade : ${rep.grade_letter} (${rep.percentage}%)\n`;
+        reportTxt += `Total Score : ${rep.total_score} / ${rep.max_score} pts\n`;
+        reportTxt += `Summary     : ${rep.passed_count} Passed | ${rep.failed_count} Failed\n`;
+        reportTxt += `--------------------------------------------------------------------------------\n\n`;
+        reportTxt += `ITEMIZED CHECKLIST BREAKDOWN:\n`;
+        rep.results.forEach((r, idx) => {
+            const num = String(idx + 1).padStart(2, '0');
+            reportTxt += `[${r.passed ? 'PASSED' : 'FAILED'}] #${num} (${r.points_earned}/${r.points_possible} pts): ${r.description}\n`;
+            reportTxt += `   Feedback: ${r.feedback}\n`;
+            if (r.actual_value) reportTxt += `   Actual  : ${r.actual_value}\n`;
+            if (r.guidance) reportTxt += `   Guidance: ${r.guidance}\n`;
+            reportTxt += `\n`;
+        });
+
+        if (rep.study_topics && rep.study_topics.length) {
+            reportTxt += `WHAT TO STUDY NEXT:\n\n`;
+            rep.study_topics.forEach((t, i) => {
+                reportTxt += `${i + 1}. ${t.topic}  (-${t.points_lost} pts, ${t.checkpoints_failed} checkpoints)\n`;
+                reportTxt += `   ${t.why_it_matters}\n\n`;
+            });
+        }
+
+        return reportTxt;
+    }
+
+    function downloadText(text, filename) {
+        const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
     }
 
     // --- SHARED TOPOLOGY GRAPH RENDERER ---
@@ -973,8 +1206,13 @@ document.addEventListener('DOMContentLoaded', () => {
         return fallback || `Server error ${res.status} ${res.statusText}`;
     }
 
-    function renderTopology(data) {
+    // Devices to ring in red on the map. Set only when an instructor opens a
+    // student's mistakes from Batch Grading; every other render clears it.
+    let highlightedDevices = new Set();
+
+    function renderTopology(data, options = {}) {
         currentTopology = data;
+        highlightedDevices = new Set(options.highlightDevices || []);
         if (emptyState) {
             delete emptyState.dataset.panelState;
             emptyState.style.display = 'none';
@@ -1348,6 +1586,15 @@ document.addEventListener('DOMContentLoaded', () => {
             glowCircle.setAttribute('fill', isPlaceholder ? 'rgba(156, 163, 175, 0.15)' : (isSwitch ? 'rgba(16, 185, 129, 0.15)' : (isHost ? 'rgba(139, 92, 246, 0.15)' : 'rgba(59, 130, 246, 0.15)')));
             nodeGroup.appendChild(glowCircle);
 
+            if (highlightedDevices.has(dev.hostname)) {
+                const ring = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                ring.setAttribute('cx', node.x);
+                ring.setAttribute('cy', node.y);
+                ring.setAttribute('r', '31');
+                ring.classList.add('node-mistake-ring');
+                nodeGroup.appendChild(ring);
+            }
+
             nodeGroup.appendChild(createDeviceIcon(node.x, node.y, nodeColor, {
                 isPlaceholder, isSwitch, isHost, isL3Switch
             }));
@@ -1634,6 +1881,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const batchSummary = document.getElementById('batch-summary');
     const batchTableBody = document.getElementById('batch-table-body');
     const batchCsvBtn = document.getElementById('batch-csv-btn');
+    const batchReviewAllBtn = document.getElementById('batch-review-all-btn');
+    const batchCollapseAllBtn = document.getElementById('batch-collapse-all-btn');
+    // Table row -> that student's batch result, for "Review all".
+    const batchRowData = new WeakMap();
     let batchCsvText = '';
     let batchLabTitle = 'lab';
 
@@ -1694,8 +1945,8 @@ document.addEventListener('DOMContentLoaded', () => {
         batchSummary.innerHTML = `
             <div class="batch-stat"><span class="batch-stat-value">${s.graded}</span><span class="batch-stat-label">Graded</span></div>
             <div class="batch-stat"><span class="batch-stat-value">${s.average_percentage}%</span><span class="batch-stat-label">Class Average</span></div>
-            <div class="batch-stat"><span class="batch-stat-value">${s.highest_percentage}%</span><span class="batch-stat-label">Highest</span></div>
-            <div class="batch-stat"><span class="batch-stat-value">${s.lowest_percentage}%</span><span class="batch-stat-label">Lowest</span></div>
+            <div class="batch-stat"><span class="batch-stat-value">${s.highest_percentage}%</span><span class="batch-stat-label">Highest</span>${whoScored(data.results, s.highest_percentage)}</div>
+            <div class="batch-stat"><span class="batch-stat-value">${s.lowest_percentage}%</span><span class="batch-stat-label">Lowest</span>${whoScored(data.results, s.lowest_percentage)}</div>
             <div class="batch-stat ${s.errors > 0 ? 'batch-stat-error' : ''}"><span class="batch-stat-value">${s.errors}</span><span class="batch-stat-label">Errors</span></div>
         `;
 
@@ -1704,6 +1955,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const tr = document.createElement('tr');
             const failed = row.status !== 'graded';
             tr.className = failed ? 'batch-row-error' : '';
+            tr.dataset.student = row.student;
+            tr.dataset.pct = row.percentage;
+            tr.dataset.graded = failed ? '0' : '1';
             const statusText = failed ? row.status : `${row.passed_count} passed / ${row.failed_count} failed`;
             tr.innerHTML = `
                 <td class="batch-student">${escapeHtml(row.student)}</td>
@@ -1711,12 +1965,218 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="batch-pct">${row.percentage}%</td>
                 <td><span class="grade-chip grade-${row.grade_letter.replace('+','plus').replace('-','none')}">${row.grade_letter}</span></td>
                 <td class="batch-status">${escapeHtml(statusText)}</td>
+                <td class="batch-review-cell"></td>
             `;
+            if (!failed && row.report) {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'btn btn-outline btn-sm batch-review-btn';
+                btn.textContent = row.failed_count > 0 ? `🔍 Review (${row.failed_count})` : '✅ Review';
+                btn.addEventListener('click', () => toggleStudentReview(tr, row));
+                batchRowData.set(tr, row);
+                tr.querySelector('.batch-review-cell').appendChild(btn);
+            } else {
+                tr.querySelector('.batch-review-cell').textContent = '—';
+            }
             batchTableBody.appendChild(tr);
         });
 
+        batchSort = { key: null, dir: 1 };
+        paintSortHeaders();
         batchResults.style.display = 'block';
         requestClassBriefing(data.results);
+        openClassChat(data.results);
+    }
+
+    // Names under the Highest / Lowest cards. Names are the submission
+    // filenames, so this answers "who got the lowest?" without asking the AI.
+    function whoScored(rows, pct) {
+        const names = rows.filter(r => r.status === 'graded' && r.percentage === pct).map(r => r.student);
+        if (names.length === 0) return '';
+        const shown = names.slice(0, 2).map(escapeHtml).join('<br>');
+        const more = names.length > 2 ? `<br>+${names.length - 2} more` : '';
+        return `<span class="batch-stat-who" title="${escapeHtml(names.join('; '))}">${shown}${more}</span>`;
+    }
+
+    // --- Sortable batch table ---
+    // Click Student to sort by name, Score / % / Grade to sort by percentage;
+    // click again to reverse. Open review rows travel with their student, and
+    // ungradeable submissions always stay at the bottom.
+    let batchSort = { key: null, dir: 1 };
+
+    function sortBatchTable(key) {
+        if (!batchTableBody) return;
+        // Scores open lowest-first: the students who need attention.
+        batchSort = { key, dir: batchSort.key === key ? -batchSort.dir : 1 };
+        const pairs = Array.from(batchTableBody.children)
+            .filter(tr => !tr.classList.contains('batch-detail-row'))
+            .map(tr => {
+                const next = tr.nextElementSibling;
+                return [tr, next && next.classList.contains('batch-detail-row') ? next : null];
+            });
+        const value = tr => (key === 'student' ? tr.dataset.student.toLowerCase() : parseFloat(tr.dataset.pct));
+        pairs.sort(([a], [b]) => {
+            const aErr = a.dataset.graded !== '1';
+            const bErr = b.dataset.graded !== '1';
+            if (aErr !== bErr) return aErr ? 1 : -1;
+            const va = value(a), vb = value(b);
+            return (va < vb ? -1 : va > vb ? 1 : 0) * batchSort.dir;
+        });
+        pairs.forEach(([tr, detail]) => {
+            batchTableBody.appendChild(tr);
+            if (detail) batchTableBody.appendChild(detail);
+        });
+        paintSortHeaders();
+    }
+
+    function paintSortHeaders() {
+        document.querySelectorAll('.batch-sort').forEach(btn => {
+            const active = btn.dataset.sort === batchSort.key;
+            btn.classList.toggle('active', active);
+            btn.dataset.dir = active ? (batchSort.dir === 1 ? 'asc' : 'desc') : '';
+            btn.closest('th').setAttribute('aria-sort', active ? (batchSort.dir === 1 ? 'ascending' : 'descending') : 'none');
+        });
+    }
+
+    document.querySelectorAll('.batch-sort').forEach(btn => {
+        btn.addEventListener('click', () => sortBatchTable(btn.dataset.sort));
+    });
+
+    // --- Per-student review: where did this student go wrong? ---
+
+    // Opens (or closes) a detail row under the student's table row listing every
+    // missed checkpoint, grouped by device, with the same feedback, "Found:"
+    // value and fix guidance the student would see in Student Grading.
+    function toggleStudentReview(tr, row, forceOpen) {
+        const next = tr.nextElementSibling;
+        const isOpen = next && next.classList.contains('batch-detail-row');
+        if (isOpen && forceOpen !== true) {
+            next.remove();
+            tr.classList.remove('batch-row-open');
+            return;
+        }
+        if (isOpen) return;
+
+        const detail = document.createElement('tr');
+        detail.className = 'batch-detail-row';
+        const td = document.createElement('td');
+        td.colSpan = 6;
+        td.appendChild(buildStudentReview(row));
+        detail.appendChild(td);
+        tr.after(detail);
+        tr.classList.add('batch-row-open');
+    }
+
+    function buildStudentReview(row) {
+        const report = row.report;
+        const missed = report.results.filter(r => !r.passed);
+        const pointsLost = missed.reduce((sum, r) => sum + (r.points_possible - r.points_earned), 0);
+
+        const wrap = document.createElement('div');
+        wrap.className = 'batch-review';
+
+        const head = document.createElement('div');
+        head.className = 'batch-review-head';
+        head.innerHTML = missed.length
+            ? `<span class="batch-review-title">❌ ${missed.length} checkpoint${missed.length === 1 ? '' : 's'} missed · −${pointsLost.toFixed(1)} pts</span>`
+            : `<span class="batch-review-title ok">✅ Every checkpoint passed</span>`;
+
+        const actions = document.createElement('div');
+        actions.className = 'batch-review-actions';
+        const mapBtn = makeReviewButton('🗺️ Show on map', () => showStudentOnMap(row, missed));
+        const passedBtn = makeReviewButton('Show passed too', () => {
+            showingPassed = !showingPassed;
+            passedBtn.textContent = showingPassed ? 'Mistakes only' : 'Show passed too';
+            fillList();
+        });
+        const dlBtn = makeReviewButton('📥 Report', () => {
+            const safe = row.student.replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '').toLowerCase() || 'student';
+            downloadText(buildReportText(report, row.student), `grade_report_${safe}.txt`);
+        });
+        actions.append(mapBtn, passedBtn, dlBtn);
+        head.appendChild(actions);
+        wrap.appendChild(head);
+
+        const topics = report.study_topics || [];
+        if (topics.length) {
+            const t = document.createElement('div');
+            t.className = 'batch-review-topics';
+            t.innerHTML = '<span class="batch-review-label">Weakest areas:</span> '
+                + topics.slice(0, 3).map(tp => `${escapeHtml(tp.topic)} <span class="batch-review-cost">−${tp.points_lost}</span>`).join(' · ');
+            wrap.appendChild(t);
+        }
+
+        const list = document.createElement('div');
+        list.className = 'batch-review-list';
+        wrap.appendChild(list);
+
+        let showingPassed = false;
+        function fillList() {
+            list.innerHTML = '';
+            const shown = showingPassed ? report.results : missed;
+            if (shown.length === 0) {
+                list.innerHTML = '<div class="batch-review-empty">Nothing to fix for this student.</div>';
+                return;
+            }
+            // Group by device so the instructor sees *where* the mistakes are,
+            // not just a flat list.
+            const byDevice = new Map();
+            shown.forEach(r => {
+                const key = r.target_device || 'General';
+                if (!byDevice.has(key)) byDevice.set(key, []);
+                byDevice.get(key).push(r);
+            });
+            byDevice.forEach((items, device) => {
+                const miss = items.filter(r => !r.passed).length;
+                const group = document.createElement('div');
+                group.className = 'batch-review-device';
+                group.innerHTML = `<div class="batch-review-device-name">${escapeHtml(device)}`
+                    + (miss ? ` <span class="batch-review-device-count">${miss} missed</span>` : '')
+                    + `</div>`;
+                items.forEach(r => group.appendChild(buildRuleResultCard(r)));
+                list.appendChild(group);
+            });
+        }
+        fillList();
+        return wrap;
+    }
+
+    function makeReviewButton(label, onClick) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-outline btn-sm';
+        btn.textContent = label;
+        btn.addEventListener('click', onClick);
+        return btn;
+    }
+
+    // Draws the student's own topology on the main map with the devices they
+    // got wrong ringed in red.
+    function showStudentOnMap(row, missed) {
+        const report = row.report;
+        if (!report.topology) return;
+        const devices = new Set(missed.map(r => r.target_device).filter(Boolean));
+        renderTopology(report.topology, { highlightDevices: devices });
+        if (canvasMainTitle) canvasMainTitle.textContent = `Reviewing: ${row.student}`;
+        showToast(devices.size
+            ? `${row.student}: ${devices.size} device${devices.size === 1 ? '' : 's'} with mistakes ringed in red`
+            : `${row.student}: no device-level mistakes`);
+    }
+
+    if (batchReviewAllBtn) {
+        batchReviewAllBtn.addEventListener('click', () => {
+            Array.from(batchTableBody.children).forEach(tr => {
+                const row = batchRowData.get(tr);
+                if (row) toggleStudentReview(tr, row, true);
+            });
+        });
+    }
+
+    if (batchCollapseAllBtn) {
+        batchCollapseAllBtn.addEventListener('click', () => {
+            batchTableBody.querySelectorAll('.batch-detail-row').forEach(d => d.remove());
+            batchTableBody.querySelectorAll('.batch-row-open').forEach(r => r.classList.remove('batch-row-open'));
+        });
     }
 
     async function requestClassBriefing(rows) {

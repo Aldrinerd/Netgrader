@@ -1,9 +1,10 @@
 # src/app.py
 import csv
 import io
+import ipaddress
 import os
 import zipfile
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -167,12 +168,59 @@ def _asset_version() -> str:
     return str(int(newest))
 
 
+# --- Instructor access: the machine running the server is the instructor's ---
+
+def is_instructor(request: Request) -> bool:
+    """
+    True when the request comes from the computer that is running the server.
+
+    The deployment model is fixed: the instructor starts the tool on their own
+    PC (``start_server.py --lan``) and students connect over the lab network.
+    So "who is the instructor" reduces to "is this the same machine", which
+    needs no accounts or passwords. Two cases count as the same machine:
+
+    * a loopback address (127.0.0.1 / ::1), the address the launcher opens;
+    * the client address equal to the server's own socket address, which is
+      what happens when the instructor browses to the LAN address
+      (http://192.168.x.y:8000) on their own PC.
+
+    A student cannot fake either: their packets carry their own IP, and
+    uvicorn only honours X-Forwarded-For from 127.0.0.1 by default.
+    """
+    client_host = request.client.host if request.client else None
+    if not client_host:
+        return False
+    try:
+        address = ipaddress.ip_address(client_host)
+    except ValueError:
+        return False
+    mapped = getattr(address, "ipv4_mapped", None)   # ::ffff:127.0.0.1
+    if address.is_loopback or (mapped is not None and mapped.is_loopback):
+        return True
+    server = request.scope.get("server")
+    return bool(server) and server[0] == client_host
+
+
+def require_instructor(request: Request) -> None:
+    """Route dependency: refuse instructor-only endpoints to lab computers."""
+    if not is_instructor(request):
+        raise HTTPException(
+            status_code=403,
+            detail="Instructor tools are only available on the computer running the server.",
+        )
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index_page(request: Request):
     return templates.TemplateResponse(
         request=request,
         name="index.html",
-        context={"asset_version": _asset_version()},
+        context={
+            "asset_version": _asset_version(),
+            # Decides whether the Instructor Studio tab is rendered at all.
+            # Hiding it is only cosmetic; require_instructor is the real guard.
+            "is_instructor": is_instructor(request),
+        },
     )
 
 
@@ -185,7 +233,7 @@ async def api_analyze_upload(files: list[UploadFile] = File(...)):
 
 # --- Teacher Mode: Criteria & Instructions Generator Endpoints ---
 
-@app.post("/api/criteria/generate")
+@app.post("/api/criteria/generate", dependencies=[Depends(require_instructor)])
 async def api_generate_criteria(
     files: list[UploadFile] = File(...),
     lab_title: str = Form("Packet Tracer Lab Assignment"),
@@ -345,7 +393,7 @@ def _build_gradebook_csv(lab_title: str, rows: list[dict]) -> str:
     return buffer.getvalue()
 
 
-@app.post("/api/evaluate/batch")
+@app.post("/api/evaluate/batch", dependencies=[Depends(require_instructor)])
 async def api_evaluate_batch(
     instructions_file: UploadFile = File(...),
     student_files: list[UploadFile] = File(...)
@@ -390,6 +438,10 @@ async def api_evaluate_batch(
                 # any configuration text or identifying detail.
                 "failed_categories": sorted({r.category for r in report.results if not r.passed}),
                 "status": "graded",
+                # The full per-checkpoint report, so the instructor can open
+                # any student from the batch table and see exactly where they
+                # went wrong -- same detail as the Student Grading view.
+                "report": report.model_dump(),
             })
         except Exception as e:
             rows.append({
@@ -404,6 +456,7 @@ async def api_evaluate_batch(
                 "missed": [],
                 "failed_categories": [],
                 "status": f"ERROR: {e}",
+                "report": None,
             })
 
     graded = [r for r in rows if r["status"] == "graded"]
@@ -428,7 +481,7 @@ async def api_evaluate_batch(
 # --- Narrative Layer (Phase B): the only endpoints that touch a model ---
 
 @app.get("/api/llm/status")
-async def api_llm_status():
+def api_llm_status():
     """
     Report whether the local model layer is usable.
 
@@ -439,8 +492,14 @@ async def api_llm_status():
     return llm.status()
 
 
+# The endpoints below make blocking HTTP calls to the local model that can take
+# tens of seconds. They are plain `def`, not `async def`, so FastAPI runs them in
+# its thread pool. As coroutines they would stall the event loop, freezing the
+# whole lab (every student's grading, not only the one waiting) until the
+# model answered.
+
 @app.post("/api/report/narrative")
-async def api_report_narrative(report: EvaluationReport):
+def api_report_narrative(report: EvaluationReport):
     """
     Produce one "what to study next" paragraph for a graded report.
 
@@ -453,8 +512,8 @@ async def api_report_narrative(report: EvaluationReport):
     return student_summary(report)
 
 
-@app.post("/api/class/briefing")
-async def api_class_briefing(payload: dict):
+@app.post("/api/class/briefing", dependencies=[Depends(require_instructor)])
+def api_class_briefing(payload: dict):
     """
     Instructor briefing for a whole class (Statement of the Problem #4).
 
@@ -464,7 +523,10 @@ async def api_class_briefing(payload: dict):
     R.A. 10173.
     """
     from src.narrative import class_briefing
+    return class_briefing(_categories_from_payload(payload))
 
+
+def _categories_from_payload(payload: dict) -> list[list[str]]:
     categories = payload.get("categories_per_student")
     if not isinstance(categories, list) or not categories:
         raise HTTPException(
@@ -478,4 +540,79 @@ async def api_class_briefing(payload: dict):
     ]
     if not cleaned:
         raise HTTPException(status_code=400, detail="No usable submission entries were provided.")
-    return class_briefing(cleaned)
+    return cleaned
+
+
+# --- Follow-up chat: questions about a report or a class, answered by the model ---
+
+def _chat_messages_or_400(payload: dict) -> list[dict]:
+    from src.narrative import clean_chat_messages
+    messages = clean_chat_messages(payload.get("messages"))
+    if not messages or messages[-1]["role"] != "user":
+        raise HTTPException(status_code=400, detail="Send 'messages' ending with the user's question.")
+    return messages
+
+
+def _answer_or_503(reply: str | None) -> dict:
+    """
+    Chat has no template fallback: a canned reply to a free-form question
+    would pass off prewritten text as the model's. If the model cannot answer,
+    the client is told so, and why.
+    """
+    from src import llm
+    if reply:
+        return {"reply": reply, "source": "model", "model": llm.model_name()}
+    status = llm.status()
+    detail = (
+        f"The local AI model did not answer ({status['detail']})."
+        if not status["available"]
+        else "The local AI model did not answer in time. Try again, or ask a shorter question."
+    )
+    raise HTTPException(status_code=503, detail=detail)
+
+
+@app.post("/api/chat/report")
+def api_chat_report(payload: dict):
+    """
+    A student's follow-up question about their own graded report.
+
+    Expects {"report": EvaluationReport, "messages": [{"role", "content"}, ...]}.
+    The topology may be sent empty; only the checkpoint findings are used.
+    Asked after grading and separate from it, so no answer can move a score.
+    """
+    from src import llm
+    from src.narrative import report_chat
+    try:
+        report = EvaluationReport.model_validate(payload.get("report") or {})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Send the graded 'report' the question is about.")
+    messages = _chat_messages_or_400(payload)
+    if not llm.is_available():
+        return _answer_or_503(None)
+    return _answer_or_503(report_chat(report, messages))
+
+
+@app.post("/api/chat/class", dependencies=[Depends(require_instructor)])
+def api_chat_class(payload: dict):
+    """
+    An instructor's follow-up question about the class results.
+
+    Expects {"students": [ClassChatStudent, ...], "messages": [...]} -- the
+    batch table with names (from the submission filenames), scores and missed
+    concepts. Names reach the model only here: the endpoint is instructor-only
+    and the model runs on this computer. Rankings are computed server-side.
+    """
+    from src import llm
+    from src.models import ClassChatStudent
+    from src.narrative import class_chat
+    raw = payload.get("students")
+    if not isinstance(raw, list) or not raw:
+        raise HTTPException(status_code=400, detail="Send 'students': the batch results table.")
+    try:
+        students = [ClassChatStudent.model_validate(row) for row in raw]
+    except Exception:
+        raise HTTPException(status_code=400, detail="Each student needs at least a 'name'.")
+    messages = _chat_messages_or_400(payload)
+    if not llm.is_available():
+        return _answer_or_503(None)
+    return _answer_or_503(class_chat(students, messages))

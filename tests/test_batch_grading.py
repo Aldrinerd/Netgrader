@@ -18,7 +18,8 @@ from src.criteria_generator import format_criteria_to_instructions_txt, generate
 from src.models import EvaluationPolicies
 from tests.fixtures import network_bundle
 
-client = TestClient(app)
+# Requests come from the server's own machine, i.e. the instructor.
+client = TestClient(app, client=("127.0.0.1", 50000))
 
 
 def _zip_bytes(bundle: dict[str, str]) -> bytes:

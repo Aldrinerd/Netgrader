@@ -193,6 +193,23 @@ class RuleResult(BaseModel):
     guidance: str | None = None
 
 
+class ClassChatStudent(BaseModel):
+    """
+    One row of the batch results, as sent to the instructor's class chat.
+
+    `name` is the submission's filename stem -- instructors name each file
+    after the student, so this is the student's name.
+    """
+    name: str
+    status: str = "graded"
+    percentage: float = 0.0
+    grade_letter: str = "-"
+    total_score: float = 0.0
+    max_score: float = 0.0
+    failed_count: int = 0
+    topics: list[str] = Field(default_factory=list)
+
+
 class StudyTopic(BaseModel):
     """A concept to revisit, ranked by how many points it cost."""
     topic: str

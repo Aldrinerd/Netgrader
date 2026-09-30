@@ -21,7 +21,8 @@ from src.evaluator import evaluate_student_submission
 from src.models import EvaluationPolicies
 from tests.fixtures import network_bundle
 
-client = TestClient(app)
+# Requests come from the server's own machine, i.e. the instructor.
+client = TestClient(app, client=("127.0.0.1", 50000))
 
 
 @pytest.fixture(autouse=True)

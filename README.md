@@ -66,6 +66,14 @@ to connect.
 > access point. If the firewall is allowed and students still cannot connect,
 > ask IT whether client isolation is enabled on the lab network.
 
+**Instructor Studio only appears on the serving computer.** Students connecting
+from other lab computers see *Topology Discovery* and *Student Grading* only.
+The Instructor Studio tab is not sent to them at all, and the server refuses
+its features (rubric generation, batch grading, class briefing) from any other
+machine. There is no password to set up. Just run the tool on the instructor's
+own PC, and it works whether you open `http://127.0.0.1:8000/` or the lab
+address on that PC.
+
 ### If something goes wrong
 
 Double-click `start_server.py`, or run it with `--check`, to get a report:
@@ -147,7 +155,7 @@ Upload (.pkt / .pka / .xml / .zip / .txt)
   confidence-rated links and an evidence drawer citing exact config lines.
 - **Instructor Studio** — generate a rubric from your reference file, with
   nine policy switches controlling grading strictness, plus **batch grading**
-  for the whole class.
+  for the whole class. Only visible on the computer running the server.
 - **Student Grading** — upload `instructions.txt` plus your attempt, get a
   scorecard.
 
@@ -165,6 +173,28 @@ You get a class average, the highest and lowest scores, a per-student table,
 and a **Download Gradebook CSV** button. The CSV opens directly in Excel and
 includes each student's score, percentage, letter grade, and the list of
 checkpoints they missed.
+
+The **Highest** and **Lowest** cards show who scored it (every name, when
+students tie). Click the **Student**, **Score**, **%** or **Grade** column
+headings to sort the table; click again to reverse. Scores sort lowest-first,
+and files that could not be graded always stay at the bottom.
+
+#### Seeing where a student went wrong
+
+Each row in the table has a **Review** button, labelled with the number of
+checkpoints the student missed (for example `🔍 Review (21)`). Clicking it
+opens the student's mistakes directly under their row:
+
+- every missed checkpoint, **grouped by device** (R1, R2, SW1, ...), with the
+  same feedback, *Found:* value and *How to fix this* guidance the student sees
+  in Student Grading;
+- their **weakest areas**, ranked by points lost;
+- **Show on map**, which draws that student's own topology on the right with
+  the devices they got wrong ringed in red;
+- **Show passed too**, to see the full checklist rather than only mistakes;
+- **Report**, which downloads that one student's grade report as a text file.
+
+**Review all** opens every student at once; **Collapse all** closes them.
 
 A submission that fails to parse is listed as an error row and the rest of the
 class still grades — one corrupt file cannot cost you the whole batch.
@@ -187,6 +217,56 @@ designs a **completely different but correct** addressing scheme still scores
 | `allow_flexible_process_ids` | Ignores locally-significant OSPF process IDs; checks areas and networks instead. |
 | `grade_security_baseline` | Checks `enable secret`, `service password-encryption`, and `line vty` login. |
 | `grade_interface_descriptions` | Checks that interface descriptions name the correct peer. |
+
+### Optional: the local AI
+
+Grading never uses AI. A small language model running **on the serving
+computer** can add three things on top of a finished grade:
+
+| Feature | Where | Without the model |
+|---|---|---|
+| "What to study next" paragraph | Student report | Built-in text (badge: *Built-in guidance*) |
+| Instructional briefing | Batch Grading | Built-in text (badge: *Built-in analysis*) |
+| **Follow-up chat** | Under the student report ("Ask about your results") and under the class briefing ("Ask about this class") | Disabled, with a note explaining why. It never shows a prewritten answer. |
+
+The **AI indicator** in the top bar shows the current state:
+
+- **AI: llama3.2:3b** (purple): the model is running, and the features above are
+  written by it.
+- **AI: not installed** / **AI: model missing** (amber): built-in text only, and
+  chat is off. Hover over it for the reason; click it to check again.
+
+It rechecks every minute, so installing or starting the model is picked up
+without restarting the tool.
+
+To enable it, install [Ollama](https://ollama.com) on the serving computer and
+download the model once (about 2 GB):
+
+```
+ollama pull llama3.2:3b
+```
+
+Nothing is installed on student computers. On a typical lab PC's processor, a
+3B model takes roughly 10–40 seconds per answer. The tool waits up to 45
+seconds, and other students keep working while it waits.
+
+About the follow-up chat:
+
+- A **student** can ask about their own report ("Why did I lose the most
+  points?", "Which show commands should I use to check my work?"). The model
+  sees their missed checkpoints and is told it cannot change the grade, not to
+  invent errors, and not to write out the full fix.
+- The **instructor** can ask about the class, including about individual
+  students ("Who got the lowest grade?", "Which students struggled with
+  OSPF?", "Which topic should I reteach first?"). The model sees the results
+  table with **student names** (taken from the submission filenames), scores,
+  grades and missed concepts. That is safe because the model runs on this
+  computer, nothing is sent anywhere else, and only the instructor's PC can use
+  this chat. The student chat and the class briefing never see names.
+- The tool works out rankings, ties and who missed what itself, and the model
+  only reads the answer off. A small model is unreliable at comparing numbers.
+  It can still word an open-ended answer loosely, so check anything that
+  matters against the table.
 
 ---
 

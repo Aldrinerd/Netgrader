@@ -116,3 +116,78 @@ Three defects were found and fixed:
 ### Verification
 - Full suite: **86 tests passing**.
 - Batch grading and the launcher were verified in a real browser against a live server.
+
+## Session: 2026-09-22 — Instructor-Only Access & Per-Student Review
+
+### Instructor Studio restricted to the serving computer
+- Before this change, anyone on the lab network could open Instructor Studio and call its endpoints: generate a rubric from a reference file, batch-grade the class, or request the class briefing. Hiding the tab alone would not have fixed this, because the API was open too.
+- Added `is_instructor()` / `require_instructor` to `src/app.py`. A request counts as the instructor's when it comes from a loopback address, or when its client address equals the server's own socket address (the instructor opening the LAN URL on their own PC). No accounts or passwords, which fits the one-PC-serves-the-lab deployment.
+- `/api/criteria/generate`, `/api/evaluate/batch` and `/api/class/briefing` now return `403` to other machines. `/api/evaluate`, `/api/criteria/parse` and `/api/analyze` remain open, because students need them.
+- `templates/index.html` renders the Instructor Studio tab and panel only when `is_instructor` is true, so lab computers never receive the markup.
+- Known trade-off: the instructor cannot use Instructor Studio from a second machine. If that is needed, add a passcode printed by `start_server.py` at startup, exchanged for a signed cookie.
+
+### Per-student review in Batch Grading
+- Previously, the batch table showed a score and a count of failed checkpoints. To see *which* checkpoints a student missed, the instructor had to re-grade that student alone in Student Grading.
+- `/api/evaluate/batch` now includes each student's full `EvaluationReport` in their row (`report`; `null` for an unparseable submission).
+- Added a **Review** button per row (labelled with the missed-checkpoint count) that opens the student's mistakes under the row: missed checkpoints grouped by device, with feedback, *Found:* value and fix guidance, plus their weakest areas ranked by points lost.
+- Inside the review: **Show on map** draws the student's topology with the devices they got wrong ringed in red; **Show passed too** toggles the full checklist; **Report** downloads that student's text report. **Review all** / **Collapse all** act on the whole class.
+- The checkpoint card and text report are now shared helpers (`buildRuleResultCard`, `buildReportText`) used by both Student Grading and the batch review, so the two views cannot drift apart.
+- Checkpoint descriptions, feedback and *Found:* values are now HTML-escaped. They can contain hostnames and config text from a student's file, and that text now renders on the instructor's page.
+- The batch table uses a container query to drop the Status column when the left panel is narrow. The review panel is kept to the table's visible width.
+
+### Verification
+- Added `tests/test_instructor_access.py` (9 tests). It checks that the tab is absent from a lab PC's page, that the three endpoints return `403` to a lab PC, that students can still grade their own work, that the LAN-address and IPv4-mapped loopback cases work, and that batch rows carry a full report.
+- Existing suites that call instructor endpoints now use a `TestClient` whose client address is `127.0.0.1`.
+- Full suite: **212 tests passing**.
+- Verified in a real browser against a live server: batch-graded two submissions, opened each review, used Review all, and confirmed Show on map rings the faulty routers. Also confirmed the instructor is still recognised when opening the LAN address on the serving PC.
+
+## Session: 2026-09-22 (continued) — Local AI Audit, Status Indicator & Follow-up Chat
+
+### Audit: is the local AI actually used?
+- `src/llm.py` makes real HTTP calls to Ollama (`/api/tags` to probe, `/api/generate` to write). Prompts are built live from each report, and every response carries `source: "model"` or `"template"`.
+- Checked against a stand-in Ollama server: grading made **0** model calls, while the student summary and class briefing each made one, with prompts containing that report's concepts and counts. With the server gone, both fell back to template text, labelled as such.
+- **On the development machine, Ollama was not installed.** Every paragraph shown so far had been template text. The UI gave no up-front sign of this.
+
+### Header AI indicator
+- New button in the top bar, driven by `/api/llm/status`. It shows **AI: <model>** (purple), **AI: not installed** / **AI: model missing** (amber), or **AI: off**. The reason appears on hover, and clicking re-checks. It refreshes every 60 seconds.
+
+### Follow-up chat
+- Added `llm.chat()` (Ollama `/api/chat`), with the same contract as `generate()`: bounded by the timeout, never raises, returns `None` on failure.
+- Added `narrative.report_chat` / `class_chat` and the endpoints `/api/chat/report` (open to students) and `/api/chat/class` (instructor-only).
+- One reusable chatbox is used under the student report and under the class briefing. It has suggested questions, multi-turn history, Enter to send, and a pending indicator.
+- **No template fallback for chat.** Without a model, the endpoint returns `503` with the reason and the chatbox disables itself with a note. Presenting canned text as an answer would be the "premade AI" this audit was checking for.
+- Student chat context includes each missed checkpoint's *Found:* value, which is more than the summary paragraphs send. This is documented in SYSTEM.md §7. The score is never sent.
+
+### Fixed: model calls froze the whole server
+- `/api/report/narrative`, `/api/class/briefing` and `/api/llm/status` were `async def` while making blocking `urllib` calls. Each call stalled the event loop, so every student's request waited up to 45 seconds for one model answer. All model-calling endpoints are now plain `def`, which FastAPI runs in its thread pool.
+
+### Verification
+- Added `tests/test_chat.py` (14 tests). It covers: `llm.chat` hitting a real HTTP stand-in; history sanitising; an honest `503` with no model or a silent one; replies grounded in the report's findings; no score in the model's input; history reaching the model; class chat being instructor-only and aggregate-only; and a guard that model-calling endpoints are not coroutines.
+- Full suite: **226 tests passing**.
+- Verified in a real browser: with no model, the header reads *AI: not installed* and the chat is disabled with the reason. With a stand-in model on port 11434, the header switched to *AI: llama3.2:3b*, and both chats answered over two turns with history intact. When the stand-in was stopped, the chat disabled itself on the next status poll. A failed answer shows the error and puts the question back in the box for a retry.
+
+## Session: 2026-09-22 (continued) — Class Chat With Names, Sortable Batch Table
+
+### Why
+- Once Ollama was installed, the instructor asked the class chat "who got the lowest grade". It correctly replied that it had no per-student data: the class chat had only been given anonymous totals. The group chose to (a) show the answer on the page and (b) give the instructor's class chat the full results table.
+- **Convention recorded:** each submission file is named after the student (`Dela Cruz, Juan.pkt`), and the filename stem is the only source of student identity.
+
+### On the page
+- The **Highest** and **Lowest** stat cards now show who scored it, with every name listed on a tie.
+- The batch table sorts by Student, Score, % or Grade; clicking again reverses. Scores sort lowest-first. Open review rows move with their student, and ungradeable files stay at the bottom.
+
+### Class chat sees the results table
+- `/api/chat/class` now takes `students` (`ClassChatStudent`: name, status, percentage, grade, score, missed count, missed concepts) instead of anonymous category lists. It is still instructor-only.
+- `narrative._class_context` computes the ranking, lowest and highest (with ties), class average, and students per concept, so the 3B model reads answers rather than comparing numbers. Names are cleaned to one short printable line, and a test shows a crafted filename cannot forge a row.
+- The class briefing and student chat remain name-free, which a test asserts. SYSTEM.md §7 now states that names reach the local model only in the instructor chat.
+
+### Measured and fixed: follow-up questions misread the findings
+- In the browser, after "who got the lowest grade", the follow-up "which students struggled with OSPF?" got "Neither student… missed any concepts related to OSPF". Both had.
+- The context was correct. The model was misreading it. Across 20 two-turn runs on llama3.2:3b, findings in the system prompt were misread 7–9 times at temperature 0.3 and 0.1; findings placed next to the latest question were read correctly 20/20 at both.
+- `narrative._chat` now attaches the findings to the latest user turn on every request. Through the shipped code path: class chat 20/20, student chat 10/10 on follow-up turns.
+- Remaining limitation: open-ended answers can still be loosely worded (for example "all three students struggled…" before correctly excluding the student with 100%). The on-page table and cards are the reliable source for facts.
+
+### Verification
+- `tests/test_chat.py` now has 19 tests. The new ones cover ranking and tie text, the name-injection guard, the missing-table `400`, briefing and student-chat anonymity, and findings being attached only to the latest turn.
+- Full suite: **231 tests passing**.
+- Verified in the browser against the real local model with three submissions (two tied at 16.5%): the stat cards named both, sorting worked, and the chat answered "who got the lowest grade" → both tied, then "which students struggled with OSPF?" → both, correctly.

@@ -4,7 +4,8 @@ import pytest
 from fastapi.testclient import TestClient
 from src.app import app
 
-client = TestClient(app)
+# Requests come from the server's own machine, i.e. the instructor.
+client = TestClient(app, client=("127.0.0.1", 50000))
 
 def test_full_policy_generation_and_grading_flow_xml():
     trial_xml_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cisco-pka-to-xml", "trial.xml")

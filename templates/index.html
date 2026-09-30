@@ -23,10 +23,13 @@
                     <span class="mode-icon">⚡</span>
                     <span class="mode-text">Topology Discovery</span>
                 </button>
+                {% if is_instructor %}
+                <!-- Rendered only for the computer running the server (see is_instructor in src/app.py). -->
                 <button id="nav-mode-teacher" class="mode-tab-btn" data-mode="teacher">
                     <span class="mode-icon">👨‍🏫</span>
                     <span class="mode-text">Instructor Studio</span>
                 </button>
+                {% endif %}
                 <button id="nav-mode-student" class="mode-tab-btn" data-mode="student">
                     <span class="mode-icon">👨‍🎓</span>
                     <span class="mode-text">Student Grading</span>
@@ -38,6 +41,11 @@
                     <span class="status-dot pulsing"></span>
                     <span class="status-label" id="engine-status-label">Inference Engine: Active</span>
                 </div>
+                <!-- Whether the local AI model is reachable. Filled by app.js from /api/llm/status. -->
+                <button type="button" id="ai-status" class="ai-status-indicator" data-state="checking" title="Checking the local AI model...">
+                    <span class="ai-status-dot"></span>
+                    <span class="ai-status-label" id="ai-status-label">AI: checking</span>
+                </button>
                 <button id="reset-btn" class="btn btn-outline btn-sm" title="Clear current workspace">Reset View</button>
             </div>
         </header>
@@ -91,6 +99,7 @@
                     </div>
                 </div>
 
+                {% if is_instructor %}
                 <!-- MODE 2: INSTRUCTOR STUDIO (CREATE CRITERIA / INSTRUCTIONS.TXT) -->
                 <div id="panel-mode-teacher" class="mode-panel">
                     <div class="panel-card teacher-authoring-card">
@@ -327,15 +336,30 @@
 
                         <div id="batch-results" class="batch-results" style="display:none;">
                             <div class="batch-summary" id="batch-summary"></div>
+                            <div class="batch-review-toolbar">
+                                <span class="form-hint">Click <strong>Review</strong> on a student to see every checkpoint they missed.</span>
+                                <div class="batch-review-actions">
+                                    <button type="button" id="batch-review-all-btn" class="btn btn-outline btn-sm">🔍 Review all</button>
+                                    <button type="button" id="batch-collapse-all-btn" class="btn btn-outline btn-sm">Collapse all</button>
+                                </div>
+                            </div>
                             <div class="batch-table-wrap">
                                 <table class="batch-table">
                                     <thead>
-                                        <tr><th>Student</th><th>Score</th><th>%</th><th>Grade</th><th>Status</th></tr>
+                                        <tr>
+                                            <th><button type="button" class="batch-sort" data-sort="student">Student</button></th>
+                                            <th><button type="button" class="batch-sort" data-sort="pct">Score</button></th>
+                                            <th><button type="button" class="batch-sort" data-sort="pct">%</button></th>
+                                            <th><button type="button" class="batch-sort" data-sort="pct">Grade</button></th>
+                                            <th>Status</th><th>Mistakes</th>
+                                        </tr>
                                     </thead>
                                     <tbody id="batch-table-body"></tbody>
                                 </table>
                             </div>
                             <div id="batch-briefing" class="batch-briefing" style="display:none;"></div>
+                            <!-- Follow-up questions about the class results (aggregate only, no names) -->
+                            <div id="batch-chat" class="ai-chat" style="display:none;"></div>
 
                             <button id="batch-csv-btn" class="btn btn-primary btn-block" style="margin-top:12px;">
                                 <span>📥 Download Gradebook CSV</span>
@@ -343,6 +367,8 @@
                         </div>
                     </div>
                 </div>
+
+                {% endif %}
 
                 <!-- MODE 3: STUDENT SUBMISSION & AUTOMATED GRADING -->
                 <div id="panel-mode-student" class="mode-panel">
@@ -439,6 +465,9 @@
                         <!-- Concepts to revisit, ranked by points lost -->
                         <div id="report-study-topics" class="report-study-topics" style="display:none;"></div>
 
+                        <!-- Follow-up questions about this report, answered by the local model -->
+                        <div id="report-chat" class="ai-chat" style="display:none;"></div>
+
                         <div id="report-results-list" class="report-results-list">
                             <!-- Populated by JS -->
                         </div>
@@ -487,7 +516,7 @@
                     <div id="empty-state" class="empty-state">
                         <div class="empty-icon">🌐</div>
                         <h3 id="empty-state-title">No Network Loaded</h3>
-                        <p id="empty-state-desc">Upload a Packet Tracer file or Cisco configuration bundle on the left, or switch to Instructor Studio to author a new lab assignment.</p>
+                        <p id="empty-state-desc">Upload a Packet Tracer file or Cisco configuration bundle on the left{% if is_instructor %}, or switch to Instructor Studio to author a new lab assignment{% endif %}.</p>
                     </div>
                     <svg id="topology-svg" class="topology-svg" width="100%" height="100%"></svg>
                 </div>

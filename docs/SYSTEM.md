@@ -275,11 +275,65 @@ Enforced structurally, not by convention:
   Every score is already computed and stored before any model can run.
 - `src/llm.py` returns `None` on any failure — daemon down, model missing,
   timeout, malformed JSON. It never raises into a caller.
-- The model receives **structured findings**, never configuration text and
-  never student names. Small input, small hallucination surface, and compliant
-  with R.A. 10173.
+- The model receives **structured findings**, never configuration text. Small
+  input, small hallucination surface. **Student names reach the model in
+  exactly one place, the instructor's class chat** (below). There, the model
+  is local, the endpoint is instructor-only, and nothing leaves the serving
+  computer, which is the basis for R.A. 10173 compliance. The paragraphs and
+  the student chat never carry a name.
 - With no model installed, output is still complete and useful. This is what
   keeps the offline claim true.
+
+### Where the model is used
+
+| Touchpoint | Endpoint | Model input | With no model |
+|---|---|---|---|
+| Student "what to study next" | `/api/report/narrative` | Study topics and counts | Template, `source: "template"` |
+| Class briefing | `/api/class/briefing` | Concepts × students affected | Template, `source: "template"` |
+| Student follow-up chat | `/api/chat/report` | Study topics **plus each missed checkpoint**: device, interface, description, feedback and *Found:* value | `503` with the reason |
+| Instructor follow-up chat | `/api/chat/class` | **Results table with names** (from submission filenames), score, grade, missed concepts, plus server-computed ranking, lowest/highest (ties included), average and students per concept | `503` with the reason |
+
+Every response says who wrote it (`source: "model"` or `"template"`), and the
+UI shows it as a badge. The header's AI indicator reads `/api/llm/status` on
+load and every 60 s.
+
+**Chat has no template fallback, on purpose.** A canned reply to a free-form
+question would pass prewritten text off as the model's. When the model is
+missing or does not answer, the endpoint returns `503` with the reason, and the
+chatbox disables itself and says so.
+
+**What chat sends that the paragraphs do not.** To answer "what is wrong on
+R1?", the student chat includes each missed checkpoint's *Found:* value, for
+example `172.16.50.1/24` or `No matching OSPF config`. That is a fragment the
+grader extracted, not the student's configuration text, and it carries no name.
+The score, percentage and grade are not sent. `tests/test_chat.py` asserts the
+findings contain no score-like text.
+
+**Chat guard rails** (`src/narrative.py`):
+
+- Findings are attached to the **latest question** on every request, not
+  placed in the system prompt. Measured on llama3.2:3b over a two-turn class
+  chat, findings in the system prompt were misread on the follow-up 7–9 times
+  in 20 (for example "neither student missed OSPF" when both had). Findings
+  next to the question were read correctly 20/20, and the student chat 10/10.
+  Because they are rebuilt on every request, history trimming cannot drop them.
+- Client history is sanitised: `user`/`assistant` roles only, 1,000 characters
+  per message, the last 12 messages, and it must end with the user's question.
+- The student prompt says the grade is final, disputes go to the instructor,
+  only answer about this lab, never invent an error, and do not write the full
+  fixing configuration.
+- The class chat is instructor-only. Everything a question could hinge on
+  (rank, lowest, highest with ties, class average, which students missed each
+  concept) is computed in `_class_context`, because a 3B model is unreliable
+  at comparing numbers. The model reads the answers; it does not compute
+  them. Names are cleaned to one short printable line, so a filename cannot
+  forge extra rows. The briefing stays anonymous.
+
+**Threading.** Every endpoint that waits on the model is a plain `def`, which
+FastAPI runs in its thread pool. They were previously `async def` while making
+blocking `urllib` calls, which stalled the event loop, so every other request
+in the lab froze until the model answered. A test guards against this
+returning.
 
 Configuration: `NCA_LLM_ENABLED`, `NCA_LLM_HOST`, `NCA_LLM_MODEL`,
 `NCA_LLM_TIMEOUT`. All optional.
@@ -349,7 +403,10 @@ worse than no instrument.
   links and an evidence drawer citing exact config lines. Routers draw as a
   short cylinder, switches as a port-marked box, PCs as a monitor.
 - **Instructor Studio** — generate a rubric, set the ten policy switches, and
-  batch-grade a whole class to a gradebook CSV.
+  batch-grade a whole class to a gradebook CSV. Each batch row has a
+  **Review** button that shows that student's missed checkpoints grouped by
+  device, and can draw their topology with the faulty devices ringed in red.
+  Rendered only for the instructor (see *Instructor access* below).
 - **Student Grading** — upload `instructions.txt` plus an attempt, get a
   scorecard with per-checkpoint guidance.
 
@@ -359,13 +416,43 @@ worse than no instrument.
 |---|---|---|
 | GET | `/` | The application. |
 | POST | `/api/analyze` | Upload → `TopologyResult`. |
-| POST | `/api/criteria/generate` | Reference + policies → `instructions.txt`. |
+| POST | `/api/criteria/generate` | Reference + policies → `instructions.txt`. **Instructor only.** |
 | POST | `/api/criteria/parse` | `instructions.txt` → `EvaluationCriteria`. |
 | POST | `/api/evaluate` | Criteria + submission → `EvaluationReport`. |
-| POST | `/api/evaluate/batch` | Whole class → per-student results + CSV. |
+| POST | `/api/evaluate/batch` | Whole class → per-student results + CSV. Each graded row carries the full `EvaluationReport` under `report` (`null` for an error row). **Instructor only.** |
 | GET | `/api/llm/status` | Narrative layer availability. |
 | POST | `/api/report/narrative` | Student summary. |
-| POST | `/api/class/briefing` | Instructor class briefing. |
+| POST | `/api/class/briefing` | Instructor class briefing. **Instructor only.** |
+| POST | `/api/chat/report` | Follow-up question about one report → model answer, or `503` if no model. |
+| POST | `/api/chat/class` | Follow-up question about the class results table (with names) → model answer, or `503`. **Instructor only.** |
+
+### Instructor access
+
+The deployment model is fixed: the instructor runs the server on their own PC
+and students connect over the lab network. So "instructor" is defined as
+**a request from the machine running the server**, and no accounts or
+passwords are needed. `is_instructor()` in `src/app.py` accepts:
+
+- a loopback client address (`127.0.0.1`, `::1`, `::ffff:127.0.0.1`), which
+  is what the launcher opens; or
+- a client address equal to the server's own socket address, which is what
+  happens when the instructor browses to the LAN address on that same PC.
+
+Two layers use it:
+
+1. **Rendering.** `index.html` wraps the Instructor Studio tab and panel in
+   `{% if is_instructor %}`, so lab computers never receive that markup. This
+   is only cosmetic.
+2. **Enforcement.** The instructor-only routes above depend on
+   `require_instructor`, which returns `403` to any other client. This is the
+   real guard, because a student could call an endpoint directly without
+   using the page.
+
+A student cannot pass the check by spoofing a header. The check reads the TCP
+peer address, and uvicorn only honours `X-Forwarded-For` from `127.0.0.1` by
+default. The trade-off is that Instructor Studio cannot be used from a second
+machine, such as a laptop on the same network. That would need a passcode or
+login added on top.
 
 ---
 
@@ -386,7 +473,7 @@ worse than no instrument.
 
 ```bash
 python -m pip install --user -r requirements-dev.txt
-python -m pytest -q          # 203 tests
+python -m pytest -q          # 231 tests
 python -m validation         # SOP #3 metrics; exit 1 on any incorrect behaviour
 ```
 
