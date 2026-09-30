@@ -18,6 +18,7 @@ from src.criteria_generator import (
 from src.evaluator import evaluate_student_submission
 from src.fusion_engine import infer_topology_links
 from src.models import (
+    ConflictIssue,
     DiscoveredLink,
     EvaluationReport,
     ParsedDevice,
@@ -51,18 +52,36 @@ def process_bundle_dict(files_dict: dict[str, str]) -> TopologyResult:
         return TopologyResult(devices={}, links=[], conflicts=[])
     
     parsed_devices = {}
+    duplicates: list[ConflictIssue] = []
     for filename, content in files_dict.items():
         if content.strip():
             dev = parse_device_bundle(content, filename)
+            first = parsed_devices.get(dev.hostname)
+            if first is not None:
+                # Silently keeping the later file made a device vanish with
+                # nothing to say why. Keep the first and say so.
+                duplicates.append(ConflictIssue(
+                    severity="warning",
+                    category="duplicate_device",
+                    title=f"Two files describe {dev.hostname}",
+                    description=(
+                        f"Both {first.raw_filename} and {dev.raw_filename} configure a device named "
+                        f"{dev.hostname}. Only {first.raw_filename} was used. Give each device its own "
+                        "hostname, or remove the extra file."
+                    ),
+                    involved_devices=[dev.hostname],
+                    evidence_citations=[first.raw_filename, dev.raw_filename],
+                ))
+                continue
             parsed_devices[dev.hostname] = dev
-            
+
     discovered_links = infer_topology_links(parsed_devices)
     detected_conflicts = detect_conflicts(parsed_devices, discovered_links)
-    
+
     return TopologyResult(
         devices=parsed_devices,
         links=discovered_links,
-        conflicts=detected_conflicts
+        conflicts=duplicates + detected_conflicts
     )
 
 
@@ -92,7 +111,12 @@ async def parse_uploaded_files_to_topology(files: list[UploadFile]) -> TopologyR
                                 if z_name.lower().endswith((".pkt", ".pka", ".xml")):
                                     pkt_files.append((os.path.basename(z_name), z_bytes))
                                 else:
-                                    files_dict[os.path.basename(z_name)] = z_bytes.decode("utf-8", errors="replace")
+                                    # Keyed by the full member path, not the
+                                    # basename: R1/running-config.txt and
+                                    # R2/running-config.txt are two devices.
+                                    # Nothing is written to disk, so the path
+                                    # is only a label.
+                                    files_dict[z_name] = z_bytes.decode("utf-8", errors="replace")
             except Exception as e:
                 raise HTTPException(status_code=400, detail=f"Failed to extract zip file {filename}: {str(e)}")
         else:

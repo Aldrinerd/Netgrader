@@ -609,9 +609,29 @@ def classify_device_role(device: ParsedDevice) -> None:
         device.device_type = "switch"
 
 
+# Filenames that say what a file is, not which device it came from. A zip with
+# one folder per device (R1/running-config.txt, R2/running-config.txt) names
+# the device by its folder instead.
+_GENERIC_CONFIG_STEMS = {
+    "running-config", "running_config", "runningconfig", "run", "show-run",
+    "show_run", "showrun", "show-running-config", "show_running_config",
+    "startup-config", "startup_config", "config", "configuration", "conf",
+}
+
+
+def _fallback_device_name(filename: str) -> str:
+    """Name a device by its file when the config has no `hostname` line."""
+    path = filename.replace("\\", "/").rstrip("/")
+    folder, _, base = path.rpartition("/")
+    stem = base.rsplit(".", 1)[0]
+    if stem.lower() in _GENERIC_CONFIG_STEMS and folder:
+        return folder.rpartition("/")[2]
+    return stem
+
+
 def parse_device_bundle(raw_text: str, filename: str) -> ParsedDevice:
     """Ingests raw multi-command output and produces a structured ParsedDevice object."""
-    base_name = os.path.basename(filename).rsplit(".", 1)[0]
+    base_name = _fallback_device_name(filename)
     device = ParsedDevice(
         hostname=base_name,
         canonical_name=canonical_device_name(base_name),
