@@ -466,6 +466,7 @@ login added on top.
 | Parse-fidelity breadth | Four devices' worth of config text. A parser bug in a construct those bundles do not contain still hides. |
 | Group invariants | HSRP, VRRP, GLBP, STP root election, VTP domain consistency and MST region matching are not yet expressible. They need a rule whose subject is a *set* of devices. |
 | Protocol coverage | EIGRP, BGP, DHCP, NAT, ACLs, port-security and spanning-tree are not parsed or graded. |
+| Undocumented file format | `.pkt`/`.pka` is a proprietary format Cisco does not publish. Reading it relies on community reverse engineering of its encryption (`cisco-pka-to-xml/`), not a Cisco API, so a new Packet Tracer version can change the format without notice. A file that decrypts but yields no devices is reported as a likely version mismatch, with the config-bundle upload as the fallback. Whether reading the format is acceptable under Packet Tracer's license terms should be confirmed for the institution's use. |
 
 ---
 
