@@ -8,17 +8,17 @@ from src.app import app
 client = TestClient(app, client=("127.0.0.1", 50000))
 
 def test_full_policy_generation_and_grading_flow_xml():
-    trial_xml_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tests", "fixtures", "trial.xml")
-    if not os.path.exists(trial_xml_path):
-        pytest.skip("trial.xml not available")
+    sample_xml_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tests", "fixtures", "sample_topology.xml")
+    if not os.path.exists(sample_xml_path):
+        pytest.skip("sample_topology.xml not available")
 
-    with open(trial_xml_path, "rb") as f:
+    with open(sample_xml_path, "rb") as f:
         xml_bytes = f.read()
 
     # 1. Instructor generates rubric with flexible cabling enabled
     gen_res = client.post(
         "/api/criteria/generate",
-        files=[("files", ("trial.xml", xml_bytes, "application/xml"))],
+        files=[("files", ("sample_topology.xml", xml_bytes, "application/xml"))],
         data={
             "lab_title": "Advanced CCNA Campus Network",
             "total_points": 100.0,
@@ -36,7 +36,7 @@ def test_full_policy_generation_and_grading_flow_xml():
         "/api/evaluate",
         files=[
             ("instructions_file", ("instructions.txt", instructions_txt.encode("utf-8"), "text/plain")),
-            ("student_files", ("student_trial.xml", xml_bytes, "application/xml"))
+            ("student_files", ("student_sample_topology.xml", xml_bytes, "application/xml"))
         ]
     )
     assert eval_res.status_code == 200

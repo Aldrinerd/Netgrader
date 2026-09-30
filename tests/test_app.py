@@ -62,13 +62,13 @@ Interface: GigabitEthernet0/0, Port ID (outgoing port): GigabitEthernet0/0
 
 def test_upload_pkt_xml_endpoint():
     import os
-    trial_xml_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tests", "fixtures", "trial.xml")
-    with open(trial_xml_path, "rb") as f:
+    sample_xml_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tests", "fixtures", "sample_topology.xml")
+    with open(sample_xml_path, "rb") as f:
         xml_content = f.read()
     
     response = client.post(
         "/api/analyze",
-        files=[("files", ("trial.xml", xml_content, "application/xml"))]
+        files=[("files", ("sample_topology.xml", xml_content, "application/xml"))]
     )
     assert response.status_code == 200
     data = response.json()
@@ -77,14 +77,14 @@ def test_upload_pkt_xml_endpoint():
 
 def test_api_criteria_generate_and_evaluate_flow():
     import os
-    trial_xml_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tests", "fixtures", "trial.xml")
-    with open(trial_xml_path, "rb") as f:
+    sample_xml_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tests", "fixtures", "sample_topology.xml")
+    with open(sample_xml_path, "rb") as f:
         xml_content = f.read()
 
     # 1. Teacher generates criteria
     gen_res = client.post(
         "/api/criteria/generate",
-        files=[("files", ("trial.xml", xml_content, "application/xml"))],
+        files=[("files", ("sample_topology.xml", xml_content, "application/xml"))],
         data={"lab_title": "Enterprise CCNA Lab", "total_points": 100.0}
     )
     assert gen_res.status_code == 200
@@ -120,13 +120,13 @@ def test_api_criteria_generate_and_evaluate_flow():
 
 def test_api_generate_criteria_with_policy_form_data():
     import os
-    trial_xml_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tests", "fixtures", "trial.xml")
-    with open(trial_xml_path, "rb") as f:
+    sample_xml_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tests", "fixtures", "sample_topology.xml")
+    with open(sample_xml_path, "rb") as f:
         xml_content = f.read()
 
     response = client.post(
         "/api/criteria/generate",
-        files=[("files", ("trial.xml", xml_content, "application/xml"))],
+        files=[("files", ("sample_topology.xml", xml_content, "application/xml"))],
         data={
             "lab_title": "Dynamic Subnetting Campus Lab",
             "total_points": 100.0,

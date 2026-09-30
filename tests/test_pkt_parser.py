@@ -3,7 +3,7 @@ import os
 import pytest
 from src.pkt_parser import parse_pkt_xml, parse_pkt_file
 
-TRIAL_XML_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tests", "fixtures", "trial.xml")
+SAMPLE_XML_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tests", "fixtures", "sample_topology.xml")
 
 def test_pkt_decoder_is_available():
     """
@@ -18,12 +18,12 @@ def test_pkt_decoder_is_available():
     )
 
 
-def test_parse_trial_xml():
-    assert os.path.exists(TRIAL_XML_PATH), "trial.xml should exist"
-    with open(TRIAL_XML_PATH, "rb") as f:
+def test_parse_sample_topology():
+    assert os.path.exists(SAMPLE_XML_PATH), "sample_topology.xml should exist"
+    with open(SAMPLE_XML_PATH, "rb") as f:
         xml_bytes = f.read()
     
-    devices, links = parse_pkt_xml(xml_bytes, filename="trial.xml")
+    devices, links = parse_pkt_xml(xml_bytes, filename="sample_topology.xml")
     
     # Verify routers, switches, laptops are parsed
     assert "Router1" in devices
@@ -55,7 +55,7 @@ def test_parse_trial_xml():
     assert sw_l1_link.cable_type == "eStraightThrough"
 
 def test_parse_pkt_file_wrapper_with_xml():
-    with open(TRIAL_XML_PATH, "rb") as f:
+    with open(SAMPLE_XML_PATH, "rb") as f:
         xml_bytes = f.read()
     
     devices, links = parse_pkt_file(xml_bytes, filename="sample.xml")

@@ -13,12 +13,12 @@ from src.app import process_bundle_dict
 
 
 def test_generate_criteria_from_pt_xml():
-    xml_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tests", "fixtures", "trial.xml")
+    xml_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tests", "fixtures", "sample_topology.xml")
     if not os.path.exists(xml_path):
-        pytest.skip("trial.xml not available")
+        pytest.skip("sample_topology.xml not available")
 
     with open(xml_path, "rb") as f:
-        devs, lnks = parse_pkt_file(f.read(), filename="trial.xml")
+        devs, lnks = parse_pkt_file(f.read(), filename="sample_topology.xml")
 
     top = TopologyResult(devices=devs, links=lnks, conflicts=[])
     criteria = generate_criteria_from_topology(
