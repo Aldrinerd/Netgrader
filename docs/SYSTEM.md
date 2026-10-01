@@ -78,7 +78,10 @@ Upload (.pkt / .pka / .xml / .zip / .txt)
 | `static/js/core/` | Shared helpers. `dom.js` is the only new module allowed to build markup from strings; `legacy/app.js` still does and is being retired. |
 | `static/js/map/` | The topology map (`createTopologyMap`) and its SVG shapes. |
 | `static/js/legacy/app.js` | The pre-refresh screens, shrinking as each is rewritten (spec `docs/superpowers/specs/2026-10-01-ui-refresh-design.md`). |
-| `static/js/unsupported.js` | Classic script loaded with `nomodule`; shows the old-browser notice. |
+| `static/js/display-boot.js` | Classic script in `<head>`: applies saved display settings before first paint; `window.NetgraderDisplay`. |
+| `static/js/boot-check.js` | Classic script: shows the old-browser notice if the app never started. |
+| `static/js/shell/` | The rail's Display menu. |
+| `static/js/core/icons.js` | Icons from the vendored Tabler sprite. |
 | `templates/base.html` | Page shell; one partial per screen under `templates/partials/`. |
 | `static/css/tokens.css` | Design tokens. Component styles read these. |
 | `validation/` | SOP #3 measurement instrument. Imported by nothing in `src/`. |
@@ -406,6 +409,8 @@ worse than no instrument.
 
 ### Screens
 
+Navigation is a left rail: **Discovery**, **Instructor** (instructor's machine only) and **Grading**, with **Display** and **AI status** at the bottom. The **Display** menu sets text size (Small to Extra large), theme (Dark, Light, Follow system), contrast (Standard, High) and motion (Follow system, Reduce). Settings are saved per browser and applied before the page draws (`static/js/display-boot.js`). Colours come only from `static/css/tokens.css`, whose contrast is tested in `tests/test_theme_tokens.py`. Icons are Tabler (MIT), vendored as `static/icons/sprite.svg` and rebuilt with `scripts/build_icon_sprite.py`.
+
 - **Topology Discovery** — visualise any upload as a map with confidence-rated
   links and an evidence drawer citing exact config lines. Routers draw as a
   short cylinder, switches as a port-marked box, PCs as a monitor.
@@ -483,7 +488,7 @@ login added on top.
 
 ```bash
 python -m pip install --user -r requirements-dev.txt
-python -m pytest -q          # 281 tests
+python -m pytest -q          # 329 tests
 node --test tests/js/*.test.mjs   # JavaScript unit tests (developer machines; pytest also runs them)
 python -m validation         # SOP #3 metrics; exit 1 on any incorrect behaviour
 ```
