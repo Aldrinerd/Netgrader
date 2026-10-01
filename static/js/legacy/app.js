@@ -1,5 +1,12 @@
-// static/js/app.js
-document.addEventListener('DOMContentLoaded', () => {
+// static/js/legacy/app.js
+// The pre-refresh UI, moved here unchanged and started by main.js. Pieces
+// leave this file as the UI refresh rewrites each screen (spec 2026-10-01).
+import { escapeHtml } from '../core/dom.js';
+import { describeFailure } from '../core/api.js';
+import { showToast as showToastIn } from '../core/toast.js';
+import { createTopologyMap } from '../map/topology.js';
+
+export function initLegacyApp() {
     // --- Mode Navigation Elements ---
     const modeTabs = document.querySelectorAll('.mode-tab-btn');
     const modePanels = {
@@ -23,6 +30,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const drawerEntityType = document.getElementById('drawer-entity-type');
     const drawerBody = document.getElementById('drawer-body');
     const toastContainer = document.getElementById('toast-container');
+
+    // Function declarations below are hoisted, so the drawers exist already.
+    const map = createTopologyMap(svg, {
+        onNodeSelect: dev => openNodeDiagnosticDrawer(dev),
+        onLinkSelect: link => openEdgeDiagnosticDrawer(link),
+    });
 
     const togglePortsBtn = document.getElementById('toggle-ports-btn');
     const toggleIpsBtn = document.getElementById('toggle-ips-btn');
@@ -100,52 +113,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let studentSubmissionFiles = [];
     let latestEvaluationReport = null;
 
-    let currentTopology = null;
-    let simulationNodes = [];
-    let simulationLinks = [];
-
-    // Canvas Interaction State
-    let isDraggingNode = false;
-    let draggedNode = null;
-    let isPanning = false;
-    let panStartX = 0;
-    let panStartY = 0;
-    let viewTransform = { x: 0, y: 0, k: 1 };
-
-    let showPortLabels = true;
-    let showIpLabels = false;
-
     // Helper: Toast Notifications
     function showToast(msg, duration = 3000) {
-        if (!toastContainer) return;
-        const toast = document.createElement('div');
-        toast.className = 'toast';
-        // Text only: some messages carry a student's filename.
-        const icon = document.createElement('span');
-        icon.textContent = '✨';
-        const text = document.createElement('span');
-        text.textContent = msg;
-        toast.append(icon, text);
-        toastContainer.appendChild(toast);
-        setTimeout(() => {
-            toast.style.opacity = '0';
-            toast.style.transform = 'translateY(-10px)';
-            toast.style.transition = 'all 0.25s ease';
-            setTimeout(() => toast.remove(), 250);
-        }, duration);
-    }
-
-    // Helper: Short interface names
-    function shortInterfaceName(name) {
-        if (!name || name === 'Unspecified') return '';
-        return name
-            .replace(/^GigabitEthernet/i, 'Gi')
-            .replace(/^FastEthernet/i, 'Fa')
-            .replace(/^Ethernet/i, 'Eth')
-            .replace(/^Serial/i, 'Se')
-            .replace(/^Loopback/i, 'Lo')
-            .replace(/^Vlan/i, 'Vl')
-            .replace(/^Port-channel/i, 'Po');
+        showToastIn(toastContainer, msg, duration);
     }
 
     // --- Mode Switching ---
@@ -181,29 +151,26 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Common Toggle Event Listeners ---
     if (togglePortsBtn) {
         togglePortsBtn.addEventListener('click', () => {
-            showPortLabels = !showPortLabels;
-            togglePortsBtn.classList.toggle('active', showPortLabels);
-            drawSvgGraph();
+            const next = !map.getLabels().ports;
+            map.setLabels({ ports: next });
+            togglePortsBtn.classList.toggle('active', next);
         });
     }
 
     if (toggleIpsBtn) {
         toggleIpsBtn.addEventListener('click', () => {
-            showIpLabels = !showIpLabels;
-            toggleIpsBtn.classList.toggle('active', showIpLabels);
-            drawSvgGraph();
+            const next = !map.getLabels().ips;
+            map.setLabels({ ips: next });
+            toggleIpsBtn.classList.toggle('active', next);
         });
     }
 
     if (zoomFitBtn) {
-        zoomFitBtn.addEventListener('click', () => {
-            fitGraphToViewport();
-        });
+        zoomFitBtn.addEventListener('click', () => map.fit());
     }
 
     if (resetBtn) {
         resetBtn.addEventListener('click', () => {
-            currentTopology = null;
             selectedFiles = [];
             teacherSelectedFiles = [];
             studentSubmissionFiles = [];
@@ -226,11 +193,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 studentInstStatus.className = 'badge badge-amber';
             }
 
-            svg.innerHTML = '';
+            map.reset();
             if (emptyState) emptyState.style.display = 'block';
             if (diagnosticDrawer) diagnosticDrawer.style.display = 'none';
             if (conflictCard) conflictCard.style.display = 'none';
-            viewTransform = { x: 0, y: 0, k: 1 };
             showToast("View reset successfully.");
         });
     }
@@ -279,9 +245,9 @@ document.addEventListener('DOMContentLoaded', () => {
             document.documentElement.style.setProperty('--sidebar-width', `${newWidth}px`);
             localStorage.setItem('network_eval_sidebar_width', `${newWidth}`);
 
-            if (currentTopology && typeof fitGraphToViewport === 'function') {
+            if (map.getTopology()) {
                 clearTimeout(window._resizerTimer);
-                window._resizerTimer = setTimeout(() => fitGraphToViewport(), 50);
+                window._resizerTimer = setTimeout(() => map.fit(), 50);
             }
         };
 
@@ -291,8 +257,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 sidebarResizer.classList.remove('is-dragging');
                 document.body.style.cursor = '';
                 document.body.style.userSelect = '';
-                if (currentTopology && typeof fitGraphToViewport === 'function') {
-                    fitGraphToViewport();
+                if (map.getTopology()) {
+                    map.fit();
                 }
             }
         };
@@ -309,8 +275,8 @@ document.addEventListener('DOMContentLoaded', () => {
         sidebarResizer.addEventListener('dblclick', () => {
             document.documentElement.style.setProperty('--sidebar-width', '440px');
             localStorage.setItem('network_eval_sidebar_width', '440px');
-            if (currentTopology && typeof fitGraphToViewport === 'function') {
-                fitGraphToViewport();
+            if (map.getTopology()) {
+                map.fit();
             }
             showToast("Sidebar width reset to default.");
         });
@@ -413,11 +379,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Window Resize Handling
     window.addEventListener('resize', () => {
-        if (currentTopology && !isDraggingNode && !isPanning) {
+        if (map.getTopology() && !map.isInteracting()) {
             clearTimeout(window._resizeTimer);
-            window._resizeTimer = setTimeout(() => {
-                fitGraphToViewport();
-            }, 80);
+            window._resizeTimer = setTimeout(() => map.fit(), 80);
         }
     });
 
@@ -1139,18 +1103,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const emptyStateDefaultHTML = emptyState ? emptyState.innerHTML : '';
     let pendingOperations = 0;
 
-    // Escapes for both element content and quoted attribute values. Anything
-    // taken from an uploaded file (device names, descriptions, config lines)
-    // or a filename must pass through this before reaching innerHTML.
-    function escapeHtml(text) {
-        return (text == null ? '' : String(text))
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
-    }
-
     function showLoading(msg) {
         if (!emptyState) return;
         pendingOperations++;
@@ -1185,7 +1137,8 @@ document.addEventListener('DOMContentLoaded', () => {
         delete emptyState.dataset.panelState;
         applyEmptyStateText(currentMode);
 
-        const hasTopology = currentTopology && Object.keys(currentTopology.devices || {}).length > 0;
+        const shown = map.getTopology();
+        const hasTopology = shown && Object.keys(shown.devices || {}).length > 0;
         emptyState.style.display = hasTopology ? 'none' : 'block';
     }
 
@@ -1206,491 +1159,28 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Reads an error body that may not be JSON (a proxy or crash can return HTML).
-    async function describeFailure(res, fallback) {
-        try {
-            const body = await res.json();
-            if (body && body.detail) {
-                return typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail);
-            }
-        } catch (e) { /* response was not JSON */ }
-        return fallback || `Server error ${res.status} ${res.statusText}`;
-    }
-
-    // Devices to ring in red on the map. Set only when an instructor opens a
-    // student's mistakes from Batch Grading; every other render clears it.
-    let highlightedDevices = new Set();
-
+    // Draws a topology, or explains why there is nothing to draw. Empty-state
+    // and conflict handling stay here; the map itself is map/topology.js.
+    // highlightDevices rings devices in red; set only when an instructor opens
+    // a student's mistakes from Batch Grading.
     function renderTopology(data, options = {}) {
-        currentTopology = data;
-        highlightedDevices = new Set(options.highlightDevices || []);
         if (emptyState) {
             delete emptyState.dataset.panelState;
             emptyState.style.display = 'none';
         }
-        svg.innerHTML = '';
-
-        const devices = Object.values(data.devices || {});
-        const links = data.links || [];
-        const conflicts = data.conflicts || [];
-
         if (conflictCard) {
-            renderConflictSummary(conflicts);
+            renderConflictSummary(data.conflicts || []);
         }
-
-        if (devices.length === 0) {
+        if (Object.keys(data.devices || {}).length === 0) {
+            map.reset();
             showPanelMessage(`<div class="empty-icon">⚠️</div><h3>No Devices Found</h3>`
                 + `<p>The file was read, but no device configurations could be extracted from it.</p>`
                 + `<p class="empty-hint">If this is a Packet Tracer file, it may have been saved by a newer version than this tool supports. `
                 + `Try <strong>File &gt; Save As</strong> in Packet Tracer, or upload a .zip of each device's <code>show running-config</code> output instead.</p>`);
             return;
         }
-
-        const devEntries = Object.entries(data.devices || {});
-        const hasCoordinates = devEntries.some(([_, d]) => d.x_coord !== null && d.y_coord !== null);
-
-        if (hasCoordinates) {
-            simulationNodes = devEntries.map(([devKey, d]) => {
-                const x = d.x_coord !== null ? d.x_coord : 400;
-                const y = d.y_coord !== null ? d.y_coord : 300;
-                return { id: devKey, device: d, x: x, y: y };
-            });
-        } else {
-            const radius = 220;
-            const centerX = 450;
-            const centerY = 320;
-            simulationNodes = devEntries.map(([devKey, d], idx) => {
-                const angle = (idx / devEntries.length) * 2 * Math.PI - Math.PI / 2;
-                return {
-                    id: devKey,
-                    device: d,
-                    x: centerX + radius * Math.cos(angle),
-                    y: centerY + radius * Math.sin(angle)
-                };
-            });
-        }
-
-        simulationLinks = links.map(l => {
-            const source = simulationNodes.find(n => n.id === l.source_device);
-            const target = simulationNodes.find(n => n.id === l.target_device);
-            return {
-                data: l,
-                source: source || { x: 200, y: 200, id: l.source_device },
-                target: target || { x: 400, y: 200, id: l.target_device }
-            };
-        });
-
-        fitGraphToViewport();
+        map.render(data, { highlightDevices: options.highlightDevices });
     }
-
-    function fitGraphToViewport() {
-        if (!simulationNodes || simulationNodes.length === 0) return;
-
-        const rect = svg.getBoundingClientRect();
-        const width = rect.width || 800;
-        const height = rect.height || 600;
-
-        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-        simulationNodes.forEach(n => {
-            minX = Math.min(minX, n.x);
-            maxX = Math.max(maxX, n.x);
-            minY = Math.min(minY, n.y);
-            maxY = Math.max(maxY, n.y);
-        });
-
-        const graphWidth = (maxX - minX) || 100;
-        const graphHeight = (maxY - minY) || 100;
-        const graphCenterX = (minX + maxX) / 2;
-        const graphCenterY = (minY + maxY) / 2;
-
-        const marginX = Math.max(90, width * 0.10);
-        const marginY = Math.max(80, height * 0.12);
-
-        const availableWidth = Math.max(100, width - 2 * marginX);
-        const availableHeight = Math.max(100, height - 2 * marginY);
-
-        const scaleX = availableWidth / graphWidth;
-        const scaleY = availableHeight / graphHeight;
-        let scale = Math.min(scaleX, scaleY);
-        scale = Math.max(0.35, Math.min(scale, 1.4));
-
-        viewTransform.k = scale;
-        viewTransform.x = (width / 2) - graphCenterX * scale;
-        viewTransform.y = (height / 2) - graphCenterY * scale;
-
-        drawSvgGraph();
-    }
-
-    function createSvgBadge(x, y, text, badgeClass = 'port-label-badge', isIp = false) {
-        const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-        group.classList.add(badgeClass);
-
-        const charWidth = isIp ? 5.8 : 6.4;
-        const width = Math.max(26, text.length * charWidth + 8);
-        const height = 15;
-
-        const rectElem = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        rectElem.setAttribute('x', x - width / 2);
-        rectElem.setAttribute('y', y - height / 2);
-        rectElem.setAttribute('width', width);
-        rectElem.setAttribute('height', height);
-        rectElem.setAttribute('rx', '3');
-        rectElem.setAttribute('ry', '3');
-        rectElem.setAttribute('fill', isIp ? '#064E3B' : '#0F172A');
-        rectElem.setAttribute('stroke', isIp ? '#10B981' : '#3B82F6');
-        rectElem.setAttribute('stroke-width', '1');
-
-        const textElem = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        textElem.setAttribute('x', x);
-        textElem.setAttribute('y', y + 3.5);
-        textElem.setAttribute('text-anchor', 'middle');
-        textElem.setAttribute('font-family', 'JetBrains Mono, monospace');
-        textElem.setAttribute('font-size', isIp ? '9px' : '9.5px');
-        textElem.setAttribute('font-weight', '600');
-        textElem.setAttribute('fill', isIp ? '#6EE7B7' : '#93C5FD');
-        textElem.textContent = text;
-
-        group.appendChild(rectElem);
-        group.appendChild(textElem);
-        return group;
-    }
-
-    /**
-     * Device icons drawn as silhouettes instead of lettered circles: a short
-     * cylinder for routers, a flat box with a port row for switches, and a
-     * monitor on a stand for PCs. Everything is centred on (x, y) and stays
-     * inside the r=26 glow, so node spacing, dragging and hit areas are
-     * unchanged from the circle they replace.
-     */
-    function createDeviceIcon(x, y, color, kind) {
-        const NS = 'http://www.w3.org/2000/svg';
-        const group = document.createElementNS(NS, 'g');
-
-        const shape = (name, attrs) => {
-            const el = document.createElementNS(NS, name);
-            const merged = Object.assign({ fill: '#1F2937', stroke: color, 'stroke-width': 2 }, attrs);
-            for (const [key, value] of Object.entries(merged)) el.setAttribute(key, value);
-            // A device we only inferred is outlined, never solid.
-            if (kind.isPlaceholder) el.setAttribute('stroke-dasharray', '4,3');
-            group.appendChild(el);
-            return el;
-        };
-
-        const caption = (content, dy, size) => {
-            const el = document.createElementNS(NS, 'text');
-            el.setAttribute('x', x);
-            el.setAttribute('y', y + dy);
-            el.setAttribute('text-anchor', 'middle');
-            el.setAttribute('fill', color);
-            el.setAttribute('font-size', size + 'px');
-            el.setAttribute('font-weight', 'bold');
-            el.setAttribute('font-family', 'Outfit, sans-serif');
-            el.textContent = content;
-            group.appendChild(el);
-            return el;
-        };
-
-        if (kind.isPlaceholder) {
-            shape('circle', { cx: x, cy: y, r: 20 });
-            caption('?', 4, 10.5);
-            return group;
-        }
-
-        if (kind.isHost) {
-            shape('rect', { x: x - 17, y: y - 14, width: 34, height: 23, rx: 2.5 });
-            shape('rect', {
-                x: x - 12.5, y: y - 9.5, width: 25, height: 14, rx: 1,
-                fill: color, 'fill-opacity': 0.22, stroke: 'none', 'stroke-width': 0
-            });
-            shape('rect', { x: x - 4, y: y + 9, width: 8, height: 4, 'stroke-width': 1.5 });
-            shape('line', {
-                x1: x - 12, y1: y + 14.5, x2: x + 12, y2: y + 14.5,
-                fill: 'none', 'stroke-width': 2.5, 'stroke-linecap': 'round'
-            });
-            return group;
-        }
-
-        if (kind.isSwitch) {
-            shape('rect', { x: x - 23, y: y - 11, width: 46, height: 22, rx: 3 });
-            for (let i = 0; i < 5; i++) {
-                shape('rect', {
-                    x: x - 17 + i * 7, y: y + 3, width: 4, height: 4, rx: 0.5,
-                    fill: color, 'fill-opacity': 0.55, stroke: 'none', 'stroke-width': 0
-                });
-            }
-            if (kind.isL3Switch) caption('L3', -1.5, 8.5);
-            return group;
-        }
-
-        // Router: a short cylinder. Body silhouette first, then the top rim
-        // ellipse over it so the near edge of the lid reads correctly.
-        const rx = 20;
-        const ry = 6;
-        const half = 9;
-        shape('path', {
-            d: `M ${x - rx} ${y - half}`
-                + ` L ${x - rx} ${y + half}`
-                + ` A ${rx} ${ry} 0 0 0 ${x + rx} ${y + half}`
-                + ` L ${x + rx} ${y - half}`
-                + ` A ${rx} ${ry} 0 0 0 ${x - rx} ${y - half} Z`
-        });
-        shape('ellipse', { cx: x, cy: y - half, rx: rx, ry: ry });
-        return group;
-    }
-
-    function drawSvgGraph() {
-        svg.innerHTML = '';
-        const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-        svg.appendChild(defs);
-
-        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-        g.setAttribute('id', 'graph-root');
-        g.setAttribute('transform', `translate(${viewTransform.x}, ${viewTransform.y}) scale(${viewTransform.k})`);
-        svg.appendChild(g);
-
-        // 1. Draw Links
-        simulationLinks.forEach(linkObj => {
-            const link = linkObj.data;
-            const src = linkObj.source;
-            const tgt = linkObj.target;
-
-            const lineGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-            lineGroup.classList.add('graph-link-group');
-            lineGroup.style.cursor = 'pointer';
-
-            const hasConflict = link.conflicts && link.conflicts.length > 0;
-            let strokeColor = '#10B981';
-            let strokeDash = 'none';
-
-            if (hasConflict) {
-                strokeColor = '#EF4444';
-            } else if (link.classification === 'inferred') {
-                strokeColor = '#F59E0B';
-                strokeDash = '6,4';
-            } else if (link.classification === 'unverified') {
-                strokeColor = '#6B7280';
-                strokeDash = '3,3';
-            }
-
-            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            line.setAttribute('x1', src.x);
-            line.setAttribute('y1', src.y);
-            line.setAttribute('x2', tgt.x);
-            line.setAttribute('y2', tgt.y);
-            line.setAttribute('stroke', strokeColor);
-            line.setAttribute('stroke-width', hasConflict ? '3.5' : '2.5');
-            line.setAttribute('stroke-dasharray', strokeDash);
-            line.setAttribute('stroke-linecap', 'round');
-            lineGroup.appendChild(line);
-
-            const dx = tgt.x - src.x;
-            const dy = tgt.y - src.y;
-            const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-            const ux = dx / dist;
-            const uy = dy / dist;
-            const px = -uy;
-            const py = ux;
-
-            const midX = (src.x + tgt.x) / 2;
-            const midY = (src.y + tgt.y) / 2;
-
-            const badgeBg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-            const confText = hasConflict ? 'ERR' : `${Math.round(link.confidence * 100)}%`;
-            badgeBg.setAttribute('x', midX - 18);
-            badgeBg.setAttribute('y', midY - 9);
-            badgeBg.setAttribute('width', '36');
-            badgeBg.setAttribute('height', '18');
-            badgeBg.setAttribute('rx', '9');
-            badgeBg.setAttribute('fill', '#111827');
-            badgeBg.setAttribute('stroke', strokeColor);
-            badgeBg.setAttribute('stroke-width', '1');
-            lineGroup.appendChild(badgeBg);
-
-            const badgeLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            badgeLabel.setAttribute('x', midX);
-            badgeLabel.setAttribute('y', midY + 3.5);
-            badgeLabel.setAttribute('text-anchor', 'middle');
-            badgeLabel.setAttribute('fill', strokeColor);
-            badgeLabel.setAttribute('font-size', '9.5px');
-            badgeLabel.setAttribute('font-weight', 'bold');
-            badgeLabel.setAttribute('font-family', 'JetBrains Mono, monospace');
-            badgeLabel.textContent = confText;
-            lineGroup.appendChild(badgeLabel);
-
-            const offsetDist = Math.max(48, Math.min(dist * 0.28, 75));
-            const portSideOffset = 13;
-            const ipSideOffset = -14;
-
-            // Port Labels
-            if (showPortLabels) {
-                const srcPortText = shortInterfaceName(link.source_interface);
-                const tgtPortText = shortInterfaceName(link.target_interface);
-
-                if (srcPortText) {
-                    const spX = src.x + ux * offsetDist + px * portSideOffset;
-                    const spY = src.y + uy * offsetDist + py * portSideOffset;
-                    lineGroup.appendChild(createSvgBadge(spX, spY, srcPortText, 'port-label-badge', false));
-                }
-
-                if (tgtPortText) {
-                    const tpX = tgt.x - ux * offsetDist + px * portSideOffset;
-                    const tpY = tgt.y - uy * offsetDist + py * portSideOffset;
-                    lineGroup.appendChild(createSvgBadge(tpX, tpY, tgtPortText, 'port-label-badge', false));
-                }
-            }
-
-            // IP Address Labels
-            if (showIpLabels && currentTopology && currentTopology.devices) {
-                const srcDev = currentTopology.devices[link.source_device];
-                const tgtDev = currentTopology.devices[link.target_device];
-                const srcIntf = srcDev?.interfaces?.[link.source_interface];
-                const tgtIntf = tgtDev?.interfaces?.[link.target_interface];
-
-                if (srcIntf && srcIntf.ip_address) {
-                    const ipText = `${srcIntf.ip_address}/${srcIntf.cidr || 24}`;
-                    const sipX = src.x + ux * offsetDist + px * ipSideOffset;
-                    const sipY = src.y + uy * offsetDist + py * ipSideOffset;
-                    lineGroup.appendChild(createSvgBadge(sipX, sipY, ipText, 'ip-label-badge', true));
-                }
-
-                if (tgtIntf && tgtIntf.ip_address) {
-                    const ipText = `${tgtIntf.ip_address}/${tgtIntf.cidr || 24}`;
-                    const tipX = tgt.x - ux * offsetDist + px * ipSideOffset;
-                    const tipY = tgt.y - uy * offsetDist + py * ipSideOffset;
-                    lineGroup.appendChild(createSvgBadge(tipX, tipY, ipText, 'ip-label-badge', true));
-                }
-            }
-
-            lineGroup.addEventListener('click', (e) => {
-                e.stopPropagation();
-                openEdgeDiagnosticDrawer(link);
-            });
-
-            g.appendChild(lineGroup);
-        });
-
-        // 2. Draw Nodes
-        simulationNodes.forEach(node => {
-            const dev = node.device;
-            const nodeGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-            nodeGroup.classList.add('graph-node-group');
-            nodeGroup.style.cursor = 'grab';
-
-            const isPlaceholder = dev.is_placeholder || dev.display_name === '???';
-            const deviceType = dev.device_type || 'router';
-            const isL3Switch = deviceType === 'l3_switch';
-            const isSwitch = deviceType === 'switch' || isL3Switch;
-            const isHost = deviceType === 'host';
-            let nodeColor = '#3B82F6';
-            if (isPlaceholder) {
-                nodeColor = '#9CA3AF';
-            } else if (isSwitch) {
-                nodeColor = '#10B981';
-            } else if (isHost) {
-                nodeColor = '#8B5CF6';
-            }
-
-            const glowCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-            glowCircle.setAttribute('cx', node.x);
-            glowCircle.setAttribute('cy', node.y);
-            glowCircle.setAttribute('r', '26');
-            glowCircle.setAttribute('fill', isPlaceholder ? 'rgba(156, 163, 175, 0.15)' : (isSwitch ? 'rgba(16, 185, 129, 0.15)' : (isHost ? 'rgba(139, 92, 246, 0.15)' : 'rgba(59, 130, 246, 0.15)')));
-            nodeGroup.appendChild(glowCircle);
-
-            if (highlightedDevices.has(dev.hostname)) {
-                const ring = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-                ring.setAttribute('cx', node.x);
-                ring.setAttribute('cy', node.y);
-                ring.setAttribute('r', '31');
-                ring.classList.add('node-mistake-ring');
-                nodeGroup.appendChild(ring);
-            }
-
-            nodeGroup.appendChild(createDeviceIcon(node.x, node.y, nodeColor, {
-                isPlaceholder, isSwitch, isHost, isL3Switch
-            }));
-
-            const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            label.setAttribute('x', node.x);
-            label.setAttribute('y', node.y + 36);
-            label.setAttribute('text-anchor', 'middle');
-            label.classList.add('node-hostname-label');
-            label.textContent = isPlaceholder ? '???' : (dev.display_name || dev.hostname);
-            nodeGroup.appendChild(label);
-
-            nodeGroup.addEventListener('click', (e) => {
-                e.stopPropagation();
-                openNodeDiagnosticDrawer(dev);
-            });
-
-            nodeGroup.addEventListener('mousedown', (e) => {
-                e.stopPropagation();
-                isDraggingNode = true;
-                draggedNode = node;
-                nodeGroup.style.cursor = 'grabbing';
-            });
-
-            g.appendChild(nodeGroup);
-        });
-    }
-
-    // --- Interactive Mouse Zoom & Pan ---
-    svg.addEventListener('wheel', (e) => {
-        if (!currentTopology) return;
-        e.preventDefault();
-
-        const rect = svg.getBoundingClientRect();
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
-
-        const zoomFactor = e.deltaY < 0 ? 1.12 : 0.89;
-        const newScale = Math.max(0.2, Math.min(viewTransform.k * zoomFactor, 3.5));
-
-        viewTransform.x = mouseX - (mouseX - viewTransform.x) * (newScale / viewTransform.k);
-        viewTransform.y = mouseY - (mouseY - viewTransform.y) * (newScale / viewTransform.k);
-        viewTransform.k = newScale;
-
-        const g = document.getElementById('graph-root');
-        if (g) {
-            g.setAttribute('transform', `translate(${viewTransform.x}, ${viewTransform.y}) scale(${viewTransform.k})`);
-        }
-    }, { passive: false });
-
-    svg.addEventListener('mousedown', (e) => {
-        if (e.target === svg || e.target.id === 'graph-root' || e.target.tagName === 'svg') {
-            isPanning = true;
-            panStartX = e.clientX - viewTransform.x;
-            panStartY = e.clientY - viewTransform.y;
-            svg.style.cursor = 'grabbing';
-        }
-    });
-
-    window.addEventListener('mousemove', (e) => {
-        if (isDraggingNode && draggedNode) {
-            const rect = svg.getBoundingClientRect();
-            draggedNode.x = (e.clientX - rect.left - viewTransform.x) / viewTransform.k;
-            draggedNode.y = (e.clientY - rect.top - viewTransform.y) / viewTransform.k;
-            drawSvgGraph();
-        } else if (isPanning) {
-            viewTransform.x = e.clientX - panStartX;
-            viewTransform.y = e.clientY - panStartY;
-            const g = document.getElementById('graph-root');
-            if (g) {
-                g.setAttribute('transform', `translate(${viewTransform.x}, ${viewTransform.y}) scale(${viewTransform.k})`);
-            }
-        }
-    });
-
-    window.addEventListener('mouseup', () => {
-        if (isDraggingNode) {
-            isDraggingNode = false;
-            draggedNode = null;
-        }
-        if (isPanning) {
-            isPanning = false;
-            svg.style.cursor = 'grab';
-        }
-    });
 
     // --- Diagnostic Drawer Content ---
     function openEdgeDiagnosticDrawer(link) {
@@ -2241,4 +1731,4 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-});
+}

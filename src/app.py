@@ -5,7 +5,7 @@ import ipaddress
 import os
 import zipfile
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -182,13 +182,14 @@ def _asset_version() -> str:
     """
     newest = 0.0
     for folder in (os.path.join(STATIC_DIR, "css"), os.path.join(STATIC_DIR, "js")):
-        if not os.path.isdir(folder):
-            continue
-        for name in os.listdir(folder):
-            try:
-                newest = max(newest, os.path.getmtime(os.path.join(folder, name)))
-            except OSError:
-                continue
+        # Recursive: modules live in subfolders (core/, map/, legacy/), and a
+        # change to any of them must change the version.
+        for root, _dirs, files in os.walk(folder):
+            for name in files:
+                try:
+                    newest = max(newest, os.path.getmtime(os.path.join(root, name)))
+                except OSError:
+                    continue
     return str(int(newest))
 
 
@@ -238,7 +239,7 @@ def require_instructor(request: Request) -> None:
 async def index_page(request: Request):
     return templates.TemplateResponse(
         request=request,
-        name="index.html",
+        name="base.html",
         context={
             "asset_version": _asset_version(),
             # Decides whether the Instructor Studio tab is rendered at all.
@@ -248,6 +249,43 @@ async def index_page(request: Request):
     )
 
 
+JS_DIR = os.path.realpath(os.path.join(STATIC_DIR, "js"))
+
+
+@app.get("/assets/{version}/js/{path:path}")
+def versioned_module(version: str, path: str):
+    """
+    Serve a JavaScript module under a versioned URL.
+
+    The page loads /assets/<version>/js/main.js, and every relative import
+    inside it resolves under the same versioned prefix, so a new deploy
+    changes every module URL at once. The version itself is not checked:
+    an old page asking for an old version gets the current file, which is
+    what a refresh would do anyway.
+    """
+    # Validate the string before any os.path call that can touch the disk:
+    # realpath on a UNC path (//host/share) makes Windows open an SMB
+    # connection, and os.path.join discards JS_DIR for absolute paths.
+    if (
+        "\\" in path or ":" in path or "\x00" in path
+        or path.startswith("/") or not path.endswith(".js")
+    ):
+        raise HTTPException(status_code=404)
+    segments = path.split("/")
+    if any(seg in ("", ".", "..") for seg in segments):
+        raise HTTPException(status_code=404)
+    candidate = os.path.realpath(os.path.join(JS_DIR, *segments))
+    try:
+        inside = os.path.commonpath([candidate, JS_DIR]) == JS_DIR
+    except ValueError:   # different drive on Windows
+        inside = False
+    if not inside or not candidate.endswith(".js") or not os.path.isfile(candidate):
+        raise HTTPException(status_code=404)
+    return FileResponse(
+        candidate,
+        media_type="text/javascript",
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
 
 
 @app.post("/api/analyze", response_model=TopologyResult)

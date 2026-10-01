@@ -1,0 +1,50 @@
+            <!-- Center/Right: Interactive Topology Visualizer & Diagnostic Drawer -->
+            <section class="visualizer-container" id="visualizer-container">
+                <div class="visualizer-header">
+                    <div class="canvas-controls">
+                        <span class="canvas-title" id="canvas-main-title">Topology Map</span>
+                        <div class="graph-legend">
+                            <span class="legend-item"><span class="legend-dot green"></span> Verified</span>
+                            <span class="legend-item"><span class="legend-dot amber"></span> Inferred</span>
+                            <span class="legend-item"><span class="legend-dot red"></span> Error</span>
+                        </div>
+                    </div>
+                    <div class="canvas-actions">
+                        <div class="toggle-group">
+                            <button id="toggle-ports-btn" class="btn btn-sm toggle-btn active" title="Toggle Port Labels (Fa0/0, Gi0/1)">
+                                <span class="toggle-icon">🏷️</span>
+                                <span>Ports</span>
+                            </button>
+                            <button id="toggle-ips-btn" class="btn btn-sm toggle-btn" title="Toggle IP Address Labels">
+                                <span class="toggle-icon">🌐</span>
+                                <span>IP Addresses</span>
+                            </button>
+                        </div>
+                        <button id="zoom-fit-btn" class="btn btn-sm btn-outline">Fit View</button>
+                    </div>
+                </div>
+
+                <!-- Graph Canvas Area -->
+                <div class="canvas-viewport" id="canvas-viewport">
+                    <div id="empty-state" class="empty-state">
+                        <div class="empty-icon">🌐</div>
+                        <h3 id="empty-state-title">No Network Loaded</h3>
+                        <p id="empty-state-desc">Upload a Packet Tracer file or Cisco configuration bundle on the left{% if is_instructor %}, or switch to Instructor Studio to author a new lab assignment{% endif %}.</p>
+                    </div>
+                    <svg id="topology-svg" class="topology-svg" width="100%" height="100%"></svg>
+                </div>
+
+                <!-- Diagnostic & Evidence Drawer -->
+                <aside id="diagnostic-drawer" class="diagnostic-drawer" style="display: none;">
+                    <div class="drawer-header">
+                        <div class="drawer-title-group">
+                            <span class="drawer-badge" id="drawer-entity-type">EDGE INSPECTOR</span>
+                            <h4 id="drawer-title">Select an edge or device to inspect</h4>
+                        </div>
+                        <button id="close-drawer-btn" class="drawer-close-btn">&times;</button>
+                    </div>
+                    <div class="drawer-body" id="drawer-body">
+                        <!-- Populated dynamically by JS -->
+                    </div>
+                </aside>
+            </section>

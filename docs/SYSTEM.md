@@ -74,6 +74,13 @@ Upload (.pkt / .pka / .xml / .zip / .txt)
 | `src/llm.py` | Optional local Ollama client. Never raises, never blocks, never sees a score. |
 | `src/narrative.py` | The only place a model is used. Student summary, class briefing. |
 | `src/app.py` | FastAPI application and nine endpoints. |
+| `static/js/main.js` | Browser entry point, loaded as an ES module from `/assets/<version>/js/`. Relative imports inherit the version. |
+| `static/js/core/` | Shared helpers. `dom.js` is the only new module allowed to build markup from strings; `legacy/app.js` still does and is being retired. |
+| `static/js/map/` | The topology map (`createTopologyMap`) and its SVG shapes. |
+| `static/js/legacy/app.js` | The pre-refresh screens, shrinking as each is rewritten (spec `docs/superpowers/specs/2026-10-01-ui-refresh-design.md`). |
+| `static/js/unsupported.js` | Classic script loaded with `nomodule`; shows the old-browser notice. |
+| `templates/base.html` | Page shell; one partial per screen under `templates/partials/`. |
+| `static/css/tokens.css` | Design tokens. Component styles read these. |
 | `validation/` | SOP #3 measurement instrument. Imported by nothing in `src/`. |
 
 ---
@@ -415,6 +422,7 @@ worse than no instrument.
 | Method | Route | Purpose |
 |---|---|---|
 | GET | `/` | The application. |
+| GET | `/assets/{version}/js/{path}` | A JavaScript module, cached long-term under its version. |
 | POST | `/api/analyze` | Upload → `TopologyResult`. |
 | POST | `/api/criteria/generate` | Reference + policies → `instructions.txt`. **Instructor only.** |
 | POST | `/api/criteria/parse` | `instructions.txt` → `EvaluationCriteria`. |
@@ -440,8 +448,9 @@ passwords are needed. `is_instructor()` in `src/app.py` accepts:
 
 Two layers use it:
 
-1. **Rendering.** `index.html` wraps the Instructor Studio tab and panel in
-   `{% if is_instructor %}`, so lab computers never receive that markup. This
+1. **Rendering.** The Instructor Studio tab (`templates/partials/navbar.html`) and
+   the `partials/panel_instructor.html` include in `templates/base.html` are
+   each wrapped in `{% if is_instructor %}`, so lab computers never receive that markup. This
    is only cosmetic.
 2. **Enforcement.** The instructor-only routes above depend on
    `require_instructor`, which returns `403` to any other client. This is the
@@ -474,7 +483,8 @@ login added on top.
 
 ```bash
 python -m pip install --user -r requirements-dev.txt
-python -m pytest -q          # 231 tests
+python -m pytest -q          # 281 tests
+node --test tests/js/*.test.mjs   # JavaScript unit tests (developer machines; pytest also runs them)
 python -m validation         # SOP #3 metrics; exit 1 on any incorrect behaviour
 ```
 
