@@ -172,3 +172,11 @@ def test_legacy_notice_css_works_in_old_browsers():
             assert any(
                 e.split(":", 1)[0].strip() == prop and "var(" not in e for e in decls[:i]
             ), f"{prop} lacks a literal fallback"
+
+
+def test_display_settings_apply_before_any_stylesheet():
+    html = client.get("/").text
+    head = html[:html.index("</head>")]
+    boot = head.index("/static/js/display-boot.js")
+    first_css = head.index('rel="stylesheet"')
+    assert boot < first_css
