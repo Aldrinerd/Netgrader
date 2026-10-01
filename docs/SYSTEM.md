@@ -74,6 +74,12 @@ Upload (.pkt / .pka / .xml / .zip / .txt)
 | `src/llm.py` | Optional local Ollama client. Never raises, never blocks, never sees a score. |
 | `src/narrative.py` | The only place a model is used. Student summary, class briefing. |
 | `src/app.py` | FastAPI application and nine endpoints. |
+| `static/js/main.js` | Browser entry point, loaded as an ES module from `/assets/<version>/js/`. Relative imports inherit the version. |
+| `static/js/core/` | Shared helpers. `dom.js` is the only module allowed to build markup from strings. |
+| `static/js/map/` | The topology map (`createTopologyMap`) and its SVG shapes. |
+| `static/js/legacy/app.js` | The pre-refresh screens, shrinking as each is rewritten (spec 2026-10-01). |
+| `templates/base.html` | Page shell; one partial per screen under `templates/partials/`. |
+| `static/css/tokens.css` | Design tokens. Component styles read these. |
 | `validation/` | SOP #3 measurement instrument. Imported by nothing in `src/`. |
 
 ---
@@ -415,6 +421,7 @@ worse than no instrument.
 | Method | Route | Purpose |
 |---|---|---|
 | GET | `/` | The application. |
+| GET | `/assets/{version}/js/{path}` | A JavaScript module, cached long-term under its version. |
 | POST | `/api/analyze` | Upload → `TopologyResult`. |
 | POST | `/api/criteria/generate` | Reference + policies → `instructions.txt`. **Instructor only.** |
 | POST | `/api/criteria/parse` | `instructions.txt` → `EvaluationCriteria`. |
@@ -474,7 +481,8 @@ login added on top.
 
 ```bash
 python -m pip install --user -r requirements-dev.txt
-python -m pytest -q          # 231 tests
+python -m pytest -q          # 281 tests
+node --test tests/js/*.test.mjs   # JavaScript unit tests (developer machines; pytest also runs them)
 python -m validation         # SOP #3 metrics; exit 1 on any incorrect behaviour
 ```
 
