@@ -22,7 +22,8 @@ def _requested_ids():
     for path in glob.glob(os.path.join(ROOT, "templates", "**", "*.html"), recursive=True):
         found |= set(re.findall(r"sprite\.svg[^#\"']*#([a-z-]+)", _read(path)))
     for path in glob.glob(os.path.join(ROOT, "static", "js", "**", "*.js"), recursive=True):
-        found |= set(re.findall(r"\bicon(?:Markup)?\(\s*['\"]([a-z-]+)['\"]", _read(path)))
+        for call in re.findall(r"\bicon(?:Markup)?\(([^()]*)\)", _read(path)):
+            found |= set(re.findall(r"['\"]([a-z-]+)['\"]", call))
     return found
 
 

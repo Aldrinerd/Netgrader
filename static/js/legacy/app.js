@@ -5,6 +5,7 @@ import { escapeHtml } from '../core/dom.js';
 import { iconMarkup } from '../core/icons.js';
 import { describeFailure } from '../core/api.js';
 import { showToast as showToastIn } from '../core/toast.js';
+import { readStored, writeStored } from '../core/storage.js';
 import { createTopologyMap } from '../map/topology.js';
 
 export function initLegacyApp() {
@@ -172,6 +173,7 @@ export function initLegacyApp() {
 
     if (resetBtn) {
         resetBtn.addEventListener('click', () => {
+            if (!window.confirm('Clear all uploaded files, the rubric and results from this page?')) return;
             selectedFiles = [];
             teacherSelectedFiles = [];
             studentSubmissionFiles = [];
@@ -198,7 +200,7 @@ export function initLegacyApp() {
             if (emptyState) emptyState.style.display = 'block';
             if (diagnosticDrawer) diagnosticDrawer.style.display = 'none';
             if (conflictCard) conflictCard.style.display = 'none';
-            showToast("View reset successfully.");
+            showToast("Workspace cleared.");
         });
     }
 
@@ -214,8 +216,8 @@ export function initLegacyApp() {
     const workspaceGrid = document.getElementById('workspace-grid');
 
     if (sidebarResizer && controlPanel && workspaceGrid) {
-        // Restore saved width from localStorage
-        const savedWidth = localStorage.getItem('network_eval_sidebar_width');
+        // Restore saved width
+        const savedWidth = readStored('network_eval_sidebar_width');
         if (savedWidth) {
             const widthVal = parseInt(savedWidth, 10);
             if (!isNaN(widthVal) && widthVal >= 320 && widthVal <= 800) {
@@ -244,7 +246,7 @@ export function initLegacyApp() {
             newWidth = Math.max(320, Math.min(newWidth, maxWidth));
 
             document.documentElement.style.setProperty('--sidebar-width', `${newWidth}px`);
-            localStorage.setItem('network_eval_sidebar_width', `${newWidth}`);
+            writeStored('network_eval_sidebar_width', `${newWidth}`);
 
             if (map.getTopology()) {
                 clearTimeout(window._resizerTimer);
@@ -275,7 +277,7 @@ export function initLegacyApp() {
         // Double click to reset to default 440px
         sidebarResizer.addEventListener('dblclick', () => {
             document.documentElement.style.setProperty('--sidebar-width', '440px');
-            localStorage.setItem('network_eval_sidebar_width', '440px');
+            writeStored('network_eval_sidebar_width', '440px');
             if (map.getTopology()) {
                 map.fit();
             }
@@ -612,13 +614,13 @@ export function initLegacyApp() {
             if (criteriaRulesTag) criteriaRulesTag.textContent = `${crit.rules.length} Checkpoints`;
 
             if (studentInstStatus) {
-                studentInstStatus.textContent = 'Verified';
+                studentInstStatus.innerHTML = `${iconMarkup('check')} Verified`;
                 studentInstStatus.className = 'badge badge-green';
             }
             showToast("Instructions rubric verified.");
         } catch (err) {
             if (studentInstStatus) {
-                studentInstStatus.textContent = 'Error';
+                studentInstStatus.innerHTML = `${iconMarkup('x')} Error`;
                 studentInstStatus.className = 'badge badge-red';
             }
             alert(`Error reading instructions file: ${err.message}`);
@@ -717,8 +719,9 @@ export function initLegacyApp() {
             else reportProgressFill.className = 'score-progress-fill';
         }
 
-        if (reportPassedTag) reportPassedTag.textContent = `${report.passed_count} Passed`;
-        if (reportFailedTag) reportFailedTag.textContent = `${report.failed_count} Failed`;
+        // Server integers plus a fixed icon literal; nothing from a file reaches this.
+        if (reportPassedTag) reportPassedTag.innerHTML = `${iconMarkup('check')} ${Number(report.passed_count)} Passed`;
+        if (reportFailedTag) reportFailedTag.innerHTML = `${iconMarkup('x')} ${Number(report.failed_count)} Failed`;
 
         if (filterCountAll) filterCountAll.textContent = report.results.length;
         if (filterCountFailed) filterCountFailed.textContent = report.failed_count;

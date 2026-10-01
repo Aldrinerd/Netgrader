@@ -133,3 +133,20 @@ def test_every_non_instructor_element_exists_for_students():
     missing = sorted(i for i in _ids_looked_up_by_js() - teacher_only if not _has_id(html, i))
     assert not missing, f"JS looks up ids the student page lacks: {missing}"
     assert not any(_has_id(html, i) for i in teacher_only), "instructor markup leaked to a student"
+
+
+def _strip_comments(text):
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+    return re.sub(r"(?<![:'\"])//[^\n]*", "", text)
+
+
+@pytest.mark.parametrize("name", sorted(CLASSIC_SCRIPTS))
+def test_classic_scripts_are_es5(name):
+    code = _strip_comments(_read(os.path.join(JS_ROOT, name)))
+    for pattern in (r"=>", r"`", r"\?\.", r"\.\.\.", r"\bconst\b", r"\blet\b", r"\bclass\b"):
+        assert not re.search(pattern, code), f"{name} uses non-ES5 syntax: {pattern}"
+
+
+def test_local_storage_is_only_touched_by_the_guarded_helpers():
+    users = sorted(rel for rel, path in js_files() if "localStorage" in _read(path))
+    assert users == ["core/storage.js", "display-boot.js"], users

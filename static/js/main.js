@@ -7,5 +7,6 @@ import { initDisplayMenu } from './shell/display-menu.js';
 // Read by boot-check.js. Runs only if every import above parsed and loaded.
 window.__netgraderBooted = true;
 
-initLegacyApp();
+// Display menu first, so a legacy failure cannot take it down.
 initDisplayMenu(document.getElementById('display-menu-btn'), document.getElementById('display-menu'));
+initLegacyApp();

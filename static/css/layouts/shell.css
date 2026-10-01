@@ -48,7 +48,7 @@
 .rail-item:hover { background: var(--tint-neutral-mid); color: var(--text); }
 .rail-item.active { background: var(--surface-raised); color: var(--text); box-shadow: inset 2px 0 0 var(--accent); }
 .rail-item:focus-visible, .display-menu input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-:root[data-contrast="high"] .rail-item:focus-visible { outline-width: 3px; }
+:root[data-contrast="high"] .rail-item:focus-visible, :root[data-contrast="high"] .display-menu input:focus-visible { outline-width: 3px; }
 .rail-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .context-bar {

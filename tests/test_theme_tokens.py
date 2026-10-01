@@ -82,10 +82,40 @@ def test_text_contrast(themes, theme):
 def test_focus_and_map_strokes_are_visible(themes, theme):
     t = themes[theme]
     graphic = ("focus-ring", "map-router", "map-switch", "map-host", "map-link-ok",
-               "map-link-inferred", "map-link-bad", "map-label")
-    fails = [f"{g} = {_ratio(t[g], t['surface-base']):.2f}" for g in graphic
-             if _ratio(t[g], t["surface-base"]) < 3.0]
-    assert not fails, f"{theme} graphics below 3:1 on the page background: {fails}"
+               "map-link-inferred", "map-link-unverified", "map-link-bad", "map-unknown", "map-label")
+    fails = [f"{g} on {bg} = {_ratio(t[g], t[bg]):.2f}" for g in graphic
+             for bg in ("surface-base", "surface-sunken") if _ratio(t[g], t[bg]) < 3.0]
+    assert not fails, f"{theme} graphics below 3:1: {fails}"
+
+
+@pytest.mark.parametrize("theme", list(BLOCKS))
+def test_map_text_contrast(themes, theme):
+    t = themes[theme]
+    need = 7.0 if theme.endswith("high") else 4.5
+    texts = ("map-port", "map-ip", "map-label", "map-link-ok", "map-link-inferred",
+             "map-link-unverified", "map-link-bad", "map-unknown")
+    fails = [f"{g} on {bg} = {_ratio(t[g], t[bg]):.2f}" for g in texts
+             for bg in ("map-badge-bg", "surface-sunken") if _ratio(t[g], t[bg]) < need]
+    assert not fails, f"{theme} map text below {need}:1: {fails}"
+
+
+def _blend(rgba: str, base: str) -> str:
+    r, g, b, a = [float(x) for x in re.findall(r"[\d.]+", rgba)]
+    h = base.strip().lstrip("#")
+    bc = [int(h[i:i + 2], 16) for i in (0, 2, 4)]
+    return "#" + "".join(f"{round(c * a + k * (1 - a)):02X}" for c, k in zip((r, g, b), bc))
+
+
+@pytest.mark.parametrize("theme", ["dark-high", "light-high"])
+def test_badge_text_on_its_tint_in_high_contrast(themes, theme):
+    t = themes[theme]
+    pairs = (("status-ok", "ok"), ("status-bad", "bad"), ("status-warn", "warn"), ("accent", "accent"))
+    fails = []
+    for fg, tint in pairs:
+        bg = _blend(t[f"tint-{tint}-mid"], t["surface"])
+        if _ratio(t[fg], bg) < 7.0:
+            fails.append(f"{fg} on tint-{tint}-mid = {_ratio(t[fg], bg):.2f}")
+    assert not fails, f"{theme} badge text below 7:1: {fails}"
 
 
 def test_legacy_aliases_point_at_semantic_tokens():

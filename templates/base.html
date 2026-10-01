@@ -13,7 +13,7 @@
     <link rel="stylesheet" href="/static/css/layouts/shell.css?v={{ asset_version }}">
     <link rel="stylesheet" href="/static/css/legacy.css?v={{ asset_version }}">
 </head>
-<body class="dark-theme">
+<body>
     <div class="app-layout">
         {% include "partials/rail.html" %}
         <div class="app-main">
@@ -48,8 +48,7 @@
     <div id="toast-container" class="toast-container"></div>
 
     <div id="unsupported-browser" class="unsupported-browser" hidden>
-        This browser is too old to run Netgrader. Please use a current version of
-        Chrome, Edge or Firefox.
+        Netgrader could not start. Refresh the page, or use a current version of Chrome, Edge or Firefox.
     </div>
     <script src="/static/js/boot-check.js?v={{ asset_version }}"></script>
     <script type="module" src="/assets/{{ asset_version }}/js/main.js"></script>

@@ -129,6 +129,10 @@ def test_tokens_file_holds_the_custom_properties():
     "%2E%2E%20/x.js",      # ".. " -- Windows strips the trailing space
     "a./x.js",             # "a."  -- Windows strips the trailing dot
     "core/dom.js.",        # ends in "." after ".js": not a .js path
+    "CON.js",              # Windows reserved device names, any case or extension
+    "com1.js",
+    "core/aux.js",
+    "lpt9.min.js",
 ])
 def test_hostile_paths_never_touch_the_filesystem(path):
     # os.path.realpath on a UNC path opens it, which makes an SMB connection.

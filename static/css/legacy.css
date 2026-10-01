@@ -1855,7 +1855,7 @@ html, body {
 .batch-sort[data-dir="asc"]::after { content: " \25B2"; font-size: 0.75rem; }
 .batch-sort[data-dir="desc"]::after { content: " \25BC"; font-size: 0.75rem; }
 
-/* Shown only by unsupported.js, in browsers without ES module support. */
+/* Shown by boot-check.js when the app could not start. */
 .unsupported-browser {
     position: fixed;
     left: 16px;
