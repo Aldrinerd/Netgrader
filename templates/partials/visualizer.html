@@ -12,11 +12,11 @@
                     <div class="canvas-actions">
                         <div class="toggle-group">
                             <button id="toggle-ports-btn" class="btn btn-sm toggle-btn active" title="Toggle Port Labels (Fa0/0, Gi0/1)">
-                                <span class="toggle-icon">🏷️</span>
+                                <span class="toggle-icon"><svg class="icon" aria-hidden="true"><use href="/static/icons/sprite.svg?v={{ asset_version }}#tag"></use></svg></span>
                                 <span>Ports</span>
                             </button>
                             <button id="toggle-ips-btn" class="btn btn-sm toggle-btn" title="Toggle IP Address Labels">
-                                <span class="toggle-icon">🌐</span>
+                                <span class="toggle-icon"><svg class="icon" aria-hidden="true"><use href="/static/icons/sprite.svg?v={{ asset_version }}#network"></use></svg></span>
                                 <span>IP Addresses</span>
                             </button>
                         </div>
@@ -28,7 +28,7 @@
                 <!-- Graph Canvas Area -->
                 <div class="canvas-viewport" id="canvas-viewport">
                     <div id="empty-state" class="empty-state">
-                        <div class="empty-icon">🌐</div>
+                        <div class="empty-icon"><svg class="icon" aria-hidden="true"><use href="/static/icons/sprite.svg?v={{ asset_version }}#topology"></use></svg></div>
                         <h3 id="empty-state-title">No Network Loaded</h3>
                         <p id="empty-state-desc">Upload a Packet Tracer file or Cisco configuration bundle on the left{% if is_instructor %}, or switch to Instructor Studio to author a new lab assignment{% endif %}.</p>
                     </div>

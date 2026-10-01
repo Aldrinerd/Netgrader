@@ -2,6 +2,7 @@
 // The pre-refresh UI, moved here unchanged and started by main.js. Pieces
 // leave this file as the UI refresh rewrites each screen (spec 2026-10-01).
 import { escapeHtml } from '../core/dom.js';
+import { iconMarkup } from '../core/icons.js';
 import { describeFailure } from '../core/api.js';
 import { showToast as showToastIn } from '../core/toast.js';
 import { createTopologyMap } from '../map/topology.js';
@@ -443,7 +444,7 @@ export function initLegacyApp() {
                 renderTopology(data);
                 showToast("Topology discovery completed.");
             } catch (err) {
-                showPanelMessage(`<div class="empty-icon">⚠️</div><h3>Analysis Failed</h3>`
+                showPanelMessage(`<div class="empty-icon">${iconMarkup('alert')}</div><h3>Analysis Failed</h3>`
                     + `<p class="empty-error">${escapeHtml(err.message)}</p>`);
                 alert(`Analysis error: ${err.message}`);
             } finally {
@@ -536,7 +537,7 @@ export function initLegacyApp() {
                 }
                 showToast("Lab instructions & rubric generated!");
             } catch (err) {
-                showPanelMessage(`<div class="empty-icon">⚠️</div><h3>Could Not Generate Rubric</h3>`
+                showPanelMessage(`<div class="empty-icon">${iconMarkup('alert')}</div><h3>Could Not Generate Rubric</h3>`
                     + `<p class="empty-error">${escapeHtml(err.message)}</p>`);
                 alert(`Generation Error: ${err.message}`);
             } finally {
@@ -611,13 +612,13 @@ export function initLegacyApp() {
             if (criteriaRulesTag) criteriaRulesTag.textContent = `${crit.rules.length} Checkpoints`;
 
             if (studentInstStatus) {
-                studentInstStatus.textContent = '✅ Verified';
+                studentInstStatus.textContent = 'Verified';
                 studentInstStatus.className = 'badge badge-green';
             }
             showToast("Instructions rubric verified.");
         } catch (err) {
             if (studentInstStatus) {
-                studentInstStatus.textContent = '❌ Error';
+                studentInstStatus.textContent = 'Error';
                 studentInstStatus.className = 'badge badge-red';
             }
             alert(`Error reading instructions file: ${err.message}`);
@@ -691,7 +692,7 @@ export function initLegacyApp() {
                 renderEvaluationReport(report);
                 showToast(`Grading Complete: Score ${report.percentage}% (${report.grade_letter})`);
             } catch (err) {
-                showPanelMessage(`<div class="empty-icon">⚠️</div><h3>Grading Failed</h3>`
+                showPanelMessage(`<div class="empty-icon">${iconMarkup('alert')}</div><h3>Grading Failed</h3>`
                     + `<p class="empty-error">${escapeHtml(err.message)}</p>`);
                 alert(`Evaluation Error: ${err.message}`);
             } finally {
@@ -716,8 +717,8 @@ export function initLegacyApp() {
             else reportProgressFill.className = 'score-progress-fill';
         }
 
-        if (reportPassedTag) reportPassedTag.textContent = `✅ ${report.passed_count} Passed`;
-        if (reportFailedTag) reportFailedTag.textContent = `❌ ${report.failed_count} Failed`;
+        if (reportPassedTag) reportPassedTag.textContent = `${report.passed_count} Passed`;
+        if (reportFailedTag) reportFailedTag.textContent = `${report.failed_count} Failed`;
 
         if (filterCountAll) filterCountAll.textContent = report.results.length;
         if (filterCountFailed) filterCountFailed.textContent = report.failed_count;
@@ -1022,7 +1023,7 @@ export function initLegacyApp() {
         card.className = `rule-result-card ${res.passed ? 'passed' : 'failed'}`;
         card.innerHTML = `
             <div class="rule-res-top">
-                <span class="rule-res-desc">${res.passed ? '✅' : '❌'} ${escapeHtml(res.description)}</span>
+                <span class="rule-res-desc">${iconMarkup(res.passed ? 'check' : 'x')} ${escapeHtml(res.description)}</span>
                 <span class="rule-res-pts">${res.points_earned.toFixed(1)} / ${res.points_possible.toFixed(1)} pts</span>
             </div>
             <div class="rule-res-feedback">${escapeHtml(res.feedback)}</div>
@@ -1173,7 +1174,7 @@ export function initLegacyApp() {
         }
         if (Object.keys(data.devices || {}).length === 0) {
             map.reset();
-            showPanelMessage(`<div class="empty-icon">⚠️</div><h3>No Devices Found</h3>`
+            showPanelMessage(`<div class="empty-icon">${iconMarkup('alert')}</div><h3>No Devices Found</h3>`
                 + `<p>The file was read, but no device configurations could be extracted from it.</p>`
                 + `<p class="empty-hint">If this is a Packet Tracer file, it may have been saved by a newer version than this tool supports. `
                 + `Try <strong>File &gt; Save As</strong> in Packet Tracer, or upload a .zip of each device's <code>show running-config</code> output instead.</p>`);
@@ -1217,7 +1218,7 @@ export function initLegacyApp() {
                         <div>
                             <div class="signal-type">${escapeHtml(sig.signal_type)}</div>
                             <div style="font-size: 0.75rem;color:var(--text-muted);margin-top:2px;">${escapeHtml(sig.description)}</div>
-                            ${sig.evidence ? sig.evidence.map(e => `<span class="evidence-tag">📍 ${escapeHtml(e)}</span>`).join('') : ''}
+                            ${sig.evidence ? sig.evidence.map(e => `<span class="evidence-tag">${iconMarkup('pin')} ${escapeHtml(e)}</span>`).join('') : ''}
                         </div>
                         <div class="signal-weight">+${(sig.weight * 100).toFixed(0)}%</div>
                     </div>
@@ -1362,7 +1363,7 @@ export function initLegacyApp() {
                 `;
                 if (c.evidence_citations && c.evidence_citations.length > 0) {
                     c.evidence_citations.forEach(cit => {
-                        html += `<span class="evidence-tag">📍 ${escapeHtml(cit)}</span>`;
+                        html += `<span class="evidence-tag">${iconMarkup('pin')} ${escapeHtml(cit)}</span>`;
                     });
                 }
                 card.innerHTML = html;
@@ -1472,7 +1473,7 @@ export function initLegacyApp() {
                 const btn = document.createElement('button');
                 btn.type = 'button';
                 btn.className = 'btn btn-outline btn-sm batch-review-btn';
-                btn.textContent = row.failed_count > 0 ? `🔍 Review (${row.failed_count})` : '✅ Review';
+                btn.textContent = row.failed_count > 0 ? `Review (${row.failed_count})` : 'Review';
                 btn.addEventListener('click', () => toggleStudentReview(tr, row));
                 batchRowData.set(tr, row);
                 tr.querySelector('.batch-review-cell').appendChild(btn);
@@ -1579,18 +1580,18 @@ export function initLegacyApp() {
         const head = document.createElement('div');
         head.className = 'batch-review-head';
         head.innerHTML = missed.length
-            ? `<span class="batch-review-title">❌ ${missed.length} checkpoint${missed.length === 1 ? '' : 's'} missed · −${pointsLost.toFixed(1)} pts</span>`
-            : `<span class="batch-review-title ok">✅ Every checkpoint passed</span>`;
+            ? `<span class="batch-review-title">${iconMarkup('x')} ${missed.length} checkpoint${missed.length === 1 ? '' : 's'} missed · −${pointsLost.toFixed(1)} pts</span>`
+            : `<span class="batch-review-title ok">${iconMarkup('check')} Every checkpoint passed</span>`;
 
         const actions = document.createElement('div');
         actions.className = 'batch-review-actions';
-        const mapBtn = makeReviewButton('🗺️ Show on map', () => showStudentOnMap(row, missed));
+        const mapBtn = makeReviewButton('Show on map', () => showStudentOnMap(row, missed));
         const passedBtn = makeReviewButton('Show passed too', () => {
             showingPassed = !showingPassed;
             passedBtn.textContent = showingPassed ? 'Mistakes only' : 'Show passed too';
             fillList();
         });
-        const dlBtn = makeReviewButton('📥 Report', () => {
+        const dlBtn = makeReviewButton('Download report', () => {
             const safe = row.student.replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '').toLowerCase() || 'student';
             downloadText(buildReportText(report, row.student), `grade_report_${safe}.txt`);
         });

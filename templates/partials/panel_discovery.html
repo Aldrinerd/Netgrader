@@ -3,7 +3,7 @@
                     <!-- Custom Upload Area -->
                     <div class="panel-card upload-card">
                         <div class="card-header">
-                            <span class="card-icon">📂</span>
+                            <span class="card-icon"><svg class="icon" aria-hidden="true"><use href="/static/icons/sprite.svg?v={{ asset_version }}#folder"></use></svg></span>
                             <h3>Custom Lab Bundle Ingest</h3>
                         </div>
                         <p class="card-desc">Upload student <code>.txt</code> command outputs, <code>.pkt</code> / <code>.pka</code> / <code>.xml</code> Packet Tracer files, or <code>.zip</code> archives:</p>
@@ -11,9 +11,10 @@
                         <div id="drop-zone" class="dropzone">
                             <input type="file" id="file-input" multiple accept=".pkt,.pka,.xml,.zip,.txt,.log" style="display:none;">
                             <div class="dropzone-content">
-                                <div class="upload-icon">📥</div>
+                                <div class="upload-icon"><svg class="icon" aria-hidden="true"><use href="/static/icons/sprite.svg?v={{ asset_version }}#upload"></use></svg></div>
                                 <p class="dropzone-text"><strong>Drag & Drop</strong> .pkt, .pka, .xml, or .zip files here</p>
                                 <span class="dropzone-hint">or <button id="browse-btn" class="link-btn" type="button">browse files</button> from device</span>
+                                <span class="dropzone-accepts">Accepts .pkt, .pka, .xml, .zip, .txt or .log</span>
                             </div>
                         </div>
 
@@ -32,7 +33,7 @@
                     <!-- Conflict Summary Counter -->
                     <div class="panel-card conflict-summary-card" id="conflict-summary-card" style="display: none;">
                         <div class="card-header">
-                            <span class="card-icon">⚠️</span>
+                            <span class="card-icon"><svg class="icon" aria-hidden="true"><use href="/static/icons/sprite.svg?v={{ asset_version }}#alert"></use></svg></span>
                             <h3>Relational Audit Findings</h3>
                             <span id="conflict-badge-count" class="badge badge-red">0 Issues</span>
                         </div>

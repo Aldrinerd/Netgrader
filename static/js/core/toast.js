@@ -1,15 +1,14 @@
 // static/js/core/toast.js
+import { icon } from './icons.js';
 
 // Text only: some messages carry a student's filename.
 export function showToast(container, msg, duration = 3000) {
     if (!container) return;
     const toast = document.createElement('div');
     toast.className = 'toast';
-    const icon = document.createElement('span');
-    icon.textContent = '✨';
     const text = document.createElement('span');
     text.textContent = msg;
-    toast.append(icon, text);
+    toast.append(icon('info'), text);
     container.appendChild(toast);
     setTimeout(() => {
         toast.style.opacity = '0';
