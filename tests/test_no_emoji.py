@@ -22,8 +22,14 @@ def test_no_emoji_in_templates_or_scripts():
     assert not hits, "\n".join(hits)
 
 
+def _read(name):
+    with open(os.path.join(ROOT, "templates", "partials", name), encoding="utf-8") as f:
+        return f.read()
+
+
 def test_upload_boxes_say_what_they_accept():
-    with open(os.path.join(ROOT, "templates", "partials", "panel_grading.html"), encoding="utf-8") as f:
-        grading = f.read()
-    assert "Accepts .txt or .json" in grading
+    assert "Accepts .pkt, .pka, .xml, .zip, .txt or .log" in _read("panel_discovery.html")
+    assert "Accepts .pkt, .pka, .xml, .zip or .txt" in _read("panel_instructor.html")
+    grading = _read("panel_grading.html")
+    assert "Accepts .txt or .json (the rubric file from your instructor)" in grading
     assert "Accepts .pkt, .pka, .xml, .zip or .txt" in grading
