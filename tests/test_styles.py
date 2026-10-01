@@ -9,6 +9,7 @@ import os
 import re
 
 ROOT = os.path.dirname(os.path.dirname(__file__))
+# Named colours (e.g. the literal fallbacks in .unsupported-browser, which must work in browsers without var()) are intentionally not matched.
 COLOUR_RE = re.compile(r"#[0-9A-Fa-f]{3,8}\b|rgba?\(")
 PX_FONT_RE = re.compile(r"font-size\s*:\s*[0-9.]+px")
 REM_FONT_RE = re.compile(r"font-size\s*:\s*([0-9.]+)rem")
