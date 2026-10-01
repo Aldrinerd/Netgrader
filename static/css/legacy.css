@@ -679,6 +679,35 @@ html, body {
 .legend-dot.amber { background-color: var(--accent-amber); }
 .legend-dot.red { background-color: var(--accent-red); }
 
+/* Cable key floats over the map; shown only once a drawn link has a known cable. */
+.cable-legend {
+    position: absolute;
+    left: 12px;
+    bottom: 12px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    padding: 6px 10px;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    background: var(--surface-raised);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    pointer-events: none;
+}
+
+.topology-svg:not([data-cables]) ~ .cable-legend { display: none; }
+
+/* Cable swatches mirror how topology.js strokes each cable kind. */
+.legend-line {
+    width: 18px;
+    height: 0;
+    border-top: 2.5px solid var(--map-link-ok);
+}
+
+.legend-line.crossover { border-top-style: dashed; }
+.legend-line.console { border-top-color: var(--map-link-console); }
+
 /* Canvas Actions & Toggles (strictly flex row, no wrap) */
 .canvas-actions {
     display: flex;

@@ -5,6 +5,24 @@ import { createSvgBadge, createDeviceIcon, shortInterfaceName, paint } from './s
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
+// Packet Tracer cable TYPE values (eStraightThrough, eCrossOver, eConsole, ...)
+// reduced to the three kinds the map draws differently. null when unknown,
+// e.g. links inferred from configs, which carry no cable at all.
+export function cableKind(cableType) {
+    const t = String(cableType || '').toLowerCase();
+    if (!t) return null;
+    if (t.includes('console') || t.includes('rollover')) return 'console';
+    if (t.includes('cross')) return 'crossover';
+    if (t.includes('straight')) return 'straight';
+    return null;
+}
+
+export const CABLE_LABELS = {
+    straight: 'Straight-through',
+    crossover: 'Crossover',
+    console: 'Console',
+};
+
 export function createTopologyMap(svg, { onNodeSelect = () => {}, onLinkSelect = () => {} } = {}) {
     let topology = null;
     let nodes = [];
@@ -102,6 +120,8 @@ export function createTopologyMap(svg, { onNodeSelect = () => {}, onLinkSelect =
 
     function draw() {
         svg.textContent = '';
+        // Lets the cable key beside the map hide itself for config-only topologies.
+        svg.toggleAttribute('data-cables', links.some(l => cableKind(l.data.cable_type)));
         const defs = document.createElementNS(SVG_NS, 'defs');
         svg.appendChild(defs);
 
@@ -121,17 +141,28 @@ export function createTopologyMap(svg, { onNodeSelect = () => {}, onLinkSelect =
             lineGroup.style.cursor = 'pointer';
 
             const hasConflict = link.conflicts && link.conflicts.length > 0;
+            const cable = cableKind(link.cable_type);
             let strokeColor = 'var(--map-link-ok)';
             let strokeDash = 'none';
 
             if (hasConflict) {
                 strokeColor = 'var(--map-link-bad)';
+            } else if (cable === 'console') {
+                strokeColor = 'var(--map-link-console)';
             } else if (link.classification === 'inferred') {
                 strokeColor = 'var(--map-link-inferred)';
-                strokeDash = '6,4';
             } else if (link.classification === 'unverified') {
                 strokeColor = 'var(--map-link-unverified)';
-                strokeDash = '3,3';
+            }
+
+            // The dash pattern shows the cable when it is known: broken for
+            // crossover, solid for straight-through and console. Without a
+            // cable, it falls back to showing how sure the inference is.
+            if (cable === 'crossover') {
+                strokeDash = '8,5';
+            } else if (cable === null) {
+                if (link.classification === 'inferred') strokeDash = '6,4';
+                else if (link.classification === 'unverified') strokeDash = '3,3';
             }
 
             const line = document.createElementNS(SVG_NS, 'line');
@@ -144,6 +175,12 @@ export function createTopologyMap(svg, { onNodeSelect = () => {}, onLinkSelect =
             line.setAttribute('stroke-dasharray', strokeDash);
             line.setAttribute('stroke-linecap', 'round');
             lineGroup.appendChild(line);
+
+            if (cable) {
+                const tip = document.createElementNS(SVG_NS, 'title');
+                tip.textContent = `${CABLE_LABELS[cable]} cable`;
+                lineGroup.appendChild(tip);
+            }
 
             const dx = tgt.x - src.x;
             const dy = tgt.y - src.y;
@@ -301,6 +338,7 @@ export function createTopologyMap(svg, { onNodeSelect = () => {}, onLinkSelect =
         highlighted = new Set();
         view = { x: 0, y: 0, k: 1 };
         svg.textContent = '';
+        svg.removeAttribute('data-cables');
     }
 
     function setLabels(next) {

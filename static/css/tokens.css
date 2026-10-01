@@ -52,6 +52,7 @@
     --map-link-inferred: #E3B341;
     --map-link-unverified: #7D8898;
     --map-link-bad: #F2725C;
+    --map-link-console: #4DA3FF;
     --map-badge-bg: #0F1318;
     --map-port: #8CC4FF;
     --map-ip: #7EE2B8;
@@ -109,6 +110,7 @@
     --map-link-inferred: #8A5A00;
     --map-link-unverified: #5F6A7A;
     --map-link-bad: #B42318;
+    --map-link-console: #1565C0;
     --map-badge-bg: #FFFFFF;
     --map-port: #1D5FA8;
     --map-ip: #1B7350;
@@ -143,6 +145,7 @@
     --map-link-ok: #5FE0B0;
     --map-link-inferred: #FFD166;
     --map-link-bad: #FF9B8A;
+    --map-link-console: #8CC4FF;
     --map-label: #F5F7FA;
     --map-unknown: #C9D1DC;
     --map-port: #B8DAFF;
@@ -170,6 +173,7 @@
     --map-link-ok: #0E5A3C;
     --map-link-inferred: #5C3B00;
     --map-link-bad: #8F1A10;
+    --map-link-console: #0B4A8C;
     --map-label: #0B0F14;
     --map-unknown: #2E3846;
     --map-port: #0B4A8C;

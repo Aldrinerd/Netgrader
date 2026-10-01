@@ -6,7 +6,7 @@ import { iconMarkup } from '../core/icons.js';
 import { describeFailure } from '../core/api.js';
 import { showToast as showToastIn } from '../core/toast.js';
 import { readStored, writeStored } from '../core/storage.js';
-import { createTopologyMap } from '../map/topology.js';
+import { createTopologyMap, cableKind, CABLE_LABELS } from '../map/topology.js';
 
 export function initLegacyApp() {
     // --- Mode Navigation Elements ---
@@ -1209,6 +1209,22 @@ export function initLegacyApp() {
                     <span style="font-size: 0.75rem;color:var(--text-muted);">Fused Signal Probability</span>
                 </div>
             </div>
+        `;
+
+        const cable = cableKind(link.cable_type);
+        if (cable) {
+            html += `
+            <div class="diag-section">
+                <div class="diag-section-title">Cable</div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span class="legend-line ${cable}"></span>
+                    <span>${escapeHtml(CABLE_LABELS[cable])}</span>
+                </div>
+            </div>
+            `;
+        }
+
+        html += `
 
             <div class="diag-section">
                 <div class="diag-section-title">Contributing Evidence Signals (${link.signals ? link.signals.length : 0})</div>
