@@ -16,11 +16,16 @@ from fastapi.testclient import TestClient
 
 ROOT = os.path.dirname(os.path.dirname(__file__))
 JS_ROOT = os.path.join(ROOT, "static", "js")
-CLASSIC_SCRIPTS = {"unsupported.js"}      # loaded with nomodule, not as a module
+CLASSIC_SCRIPTS = {"boot-check.js", "display-boot.js"}      # classic scripts, not modules
 INNERHTML_ALLOWED = ("legacy/", "core/dom.js")
 
-IMPORT_RE = re.compile(r"import\s*\{([^}]*)\}\s*from\s*['\"](\.{1,2}/[^'\"]+)['\"]")
-EXPORT_RE = re.compile(r"export\s+(?:async\s+)?(?:function|const|let|class)\s+([A-Za-z_$][\w$]*)")
+# import { a, b as c } from './x.js'   |   import x from './x.js'   |   import * as x from './x.js'
+IMPORT_RE = re.compile(r"import\s*(?:\{([^}]*)\}|[\w$]+|\*\s+as\s+[\w$]+)\s*from\s*['\"](\.{1,2}/[^'\"]+)['\"]")
+SIDE_EFFECT_IMPORT_RE = re.compile(r"import\s*['\"](\.{1,2}/[^'\"]+)['\"]")
+# export function a / export const a / export class a / export { a, b as c }
+EXPORT_RE = re.compile(r"export\s+(?:async\s+)?(?:function\*?|const|let|class)\s+([A-Za-z_$][\w$]*)")
+EXPORT_LIST_RE = re.compile(r"export\s*\{([^}]*)\}")
+HTML_SINK_RE = re.compile(r"\.(?:innerHTML|outerHTML)\s*[+]?=(?!=)|\.insertAdjacentHTML\s*\(|document\.write(?:ln)?\s*\(")
 
 
 def js_files():
@@ -49,25 +54,43 @@ def test_module_parses(rel, path):
     assert result.returncode == 0, f"{rel}: {result.stderr}"
 
 
+def _exports_of(path):
+    text = _read(path)
+    exported = set(EXPORT_RE.findall(text))
+    for items in EXPORT_LIST_RE.findall(text):
+        for item in items.split(","):
+            item = item.strip()
+            if item:
+                exported.add(item.split(" as ")[-1].strip())
+    return exported
+
+
 def test_relative_imports_resolve_to_real_exports():
     problems = []
     for rel, path in js_files():
-        for names, target in IMPORT_RE.findall(_read(path)):
+        text = _read(path)
+        for target in SIDE_EFFECT_IMPORT_RE.findall(text):
+            target_path = os.path.normpath(os.path.join(os.path.dirname(path), target))
+            if not os.path.isfile(target_path):
+                problems.append(f"{rel}: imports missing file {target}")
+        for names, target in IMPORT_RE.findall(text):
             target_path = os.path.normpath(os.path.join(os.path.dirname(path), target))
             if not os.path.isfile(target_path):
                 problems.append(f"{rel}: imports missing file {target}")
                 continue
-            exported = set(EXPORT_RE.findall(_read(target_path)))
-            for name in (n.strip().split(" as ")[0] for n in names.split(",")):
+            if not names:
+                continue
+            exported = _exports_of(target_path)
+            for name in (n.strip().split(" as ")[0].strip() for n in names.split(",")):
                 if name and name not in exported:
                     problems.append(f"{rel}: '{name}' is not exported by {target}")
-    assert not problems, "\n".join(problems)
+    assert not problems, chr(10).join(problems)
 
 
 def test_innerhtml_only_in_legacy_and_dom_helper():
     offenders = [
         rel for rel, path in js_files()
-        if not rel.startswith(INNERHTML_ALLOWED) and re.search(r"\.innerHTML\s*[+]?=", _read(path))
+        if not rel.startswith(INNERHTML_ALLOWED) and HTML_SINK_RE.search(_read(path))
     ]
     assert not offenders, f"innerHTML assigned outside legacy/ and core/dom.js: {offenders}"
 
@@ -80,6 +103,10 @@ def render_page(instructor: bool) -> str:
 
 GET_BY_ID_RE = re.compile(r"getElementById\(\s*['\"]([\w-]+)['\"]\s*\)")
 TEMPLATES = os.path.join(ROOT, "templates")
+
+
+def _has_id(html: str, element_id: str) -> bool:
+    return re.search(r'(?<![\w-])id="%s"' % re.escape(element_id), html) is not None
 
 
 def _ids_in(path):
@@ -95,14 +122,14 @@ def _ids_looked_up_by_js():
 
 def test_every_element_the_js_looks_up_exists_for_the_instructor():
     html = render_page(instructor=True)
-    missing = sorted(i for i in _ids_looked_up_by_js() if f'id="{i}"' not in html)
+    missing = sorted(i for i in _ids_looked_up_by_js() if not _has_id(html, i))
     assert not missing, f"JS looks up ids the instructor page lacks: {missing}"
 
 
 def test_every_non_instructor_element_exists_for_students():
-    """Review focus 1: a lab PC gets no instructor markup; everything else must exist."""
+    """A lab PC gets no instructor markup; every other id the JS looks up must exist."""
     teacher_only = _ids_in(os.path.join(TEMPLATES, "partials", "panel_instructor.html")) | {"nav-mode-teacher"}
     html = render_page(instructor=False)
-    missing = sorted(i for i in _ids_looked_up_by_js() - teacher_only if f'id="{i}"' not in html)
+    missing = sorted(i for i in _ids_looked_up_by_js() - teacher_only if not _has_id(html, i))
     assert not missing, f"JS looks up ids the student page lacks: {missing}"
-    assert not any(f'id="{i}"' in html for i in teacher_only), "instructor markup leaked to a student"
+    assert not any(_has_id(html, i) for i in teacher_only), "instructor markup leaked to a student"

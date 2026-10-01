@@ -3,4 +3,7 @@
 // relative import below is versioned too.
 import { initLegacyApp } from './legacy/app.js';
 
+// Read by boot-check.js. Runs only if every import above parsed and loaded.
+window.__netgraderBooted = true;
+
 initLegacyApp();

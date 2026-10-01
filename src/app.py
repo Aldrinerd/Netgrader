@@ -272,7 +272,7 @@ def versioned_module(version: str, path: str):
     ):
         raise HTTPException(status_code=404)
     segments = path.split("/")
-    if any(seg in ("", ".", "..") for seg in segments):
+    if any(not s or s in (".", "..") or s.endswith((".", " ")) for s in segments):
         raise HTTPException(status_code=404)
     candidate = os.path.realpath(os.path.join(JS_DIR, *segments))
     try:
