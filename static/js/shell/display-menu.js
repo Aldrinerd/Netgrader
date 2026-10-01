@@ -34,6 +34,10 @@ export function initDisplayMenu(button, panel, display = window.NetgraderDisplay
     panel.addEventListener('keydown', (event) => {
         if (event.key === 'Escape') { event.stopPropagation(); close(); }
     });
+    panel.addEventListener('focusout', (event) => {
+        const next = event.relatedTarget;
+        if (!panel.hidden && next && !panel.contains(next) && !button.contains(next)) close(false);
+    });
     document.addEventListener('click', (event) => {
         if (!panel.hidden && !panel.contains(event.target) && !button.contains(event.target)) close(false);
     });

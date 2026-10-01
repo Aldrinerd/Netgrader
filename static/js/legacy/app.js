@@ -761,15 +761,15 @@ export function initLegacyApp() {
         let state, label, title;
         if (status.available) {
             state = 'ready';
-            label = `AI: ${status.model}`;
+            label = 'AI on';
             title = `Local AI model ${status.model} is running on the server. Summaries, briefings and follow-up answers are written by it. Grades never are.`;
         } else if (status.enabled === false) {
             state = 'off';
-            label = 'AI: off';
+            label = 'AI off';
             title = 'The local AI layer is switched off (NCA_LLM_ENABLED=0). Summaries use built-in text; follow-up chat is unavailable.';
         } else {
             state = 'missing';
-            label = /not pulled/.test(status.detail || '') ? 'AI: model missing' : 'AI: not installed';
+            label = 'AI off';
             title = `Local AI unavailable: ${status.detail}. Summaries use built-in text; follow-up chat is unavailable. Click to check again.`;
         }
         aiStatusBtn.dataset.state = state;
@@ -779,7 +779,7 @@ export function initLegacyApp() {
 
     if (aiStatusBtn) {
         aiStatusBtn.addEventListener('click', async () => {
-            if (aiStatusLabel) aiStatusLabel.textContent = 'AI: checking';
+            if (aiStatusLabel) aiStatusLabel.textContent = 'AI ...';
             aiStatusBtn.dataset.state = 'checking';
             const status = await refreshAiStatus();
             showToast(status.available ? `Local AI ready (${status.model})` : `Local AI unavailable: ${status.detail}`);
