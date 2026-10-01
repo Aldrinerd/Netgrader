@@ -91,3 +91,20 @@ def test_entry_module_is_served():
     res = client.get(f"/assets/{version}/js/main.js")
     assert res.status_code == 200
     assert "initLegacyApp" in res.text
+
+
+def test_tokens_load_before_the_component_styles():
+    html = client.get("/").text
+    tokens = html.index("/static/css/tokens.css")
+    legacy = html.index("/static/css/legacy.css")
+    assert tokens < legacy
+    assert "/static/css/style.css" not in html
+
+
+def test_tokens_file_holds_the_custom_properties():
+    with open(os.path.join(app_module.STATIC_DIR, "css", "tokens.css"), encoding="utf-8") as f:
+        tokens = f.read()
+    with open(os.path.join(app_module.STATIC_DIR, "css", "legacy.css"), encoding="utf-8") as f:
+        legacy = f.read()
+    assert ":root" in tokens and "--accent-blue" in tokens
+    assert ":root {" not in legacy
