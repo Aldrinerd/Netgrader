@@ -1,0 +1,35 @@
+<nav class="rail" aria-label="Main">
+    <div class="rail-brand">
+        <span class="rail-mark" aria-hidden="true">NG</span>
+        <span class="rail-brand-name">Netgrader</span>
+    </div>
+    <div class="rail-items">
+        <button type="button" id="nav-mode-visualizer" class="rail-item mode-tab-btn active" data-mode="visualizer" aria-current="page">
+            <svg class="icon" aria-hidden="true"><use href="/static/icons/sprite.svg?v={{ asset_version }}#topology"></use></svg>
+            <span class="rail-label">Discovery</span>
+        </button>
+        {% if is_instructor %}
+        <!-- Rendered only for the computer running the server (see is_instructor in src/app.py). -->
+        <button type="button" id="nav-mode-teacher" class="rail-item mode-tab-btn" data-mode="teacher" aria-current="false">
+            <svg class="icon" aria-hidden="true"><use href="/static/icons/sprite.svg?v={{ asset_version }}#instructor"></use></svg>
+            <span class="rail-label">Instructor</span>
+        </button>
+        {% endif %}
+        <button type="button" id="nav-mode-student" class="rail-item mode-tab-btn" data-mode="student" aria-current="false">
+            <svg class="icon" aria-hidden="true"><use href="/static/icons/sprite.svg?v={{ asset_version }}#grading"></use></svg>
+            <span class="rail-label">Grading</span>
+        </button>
+    </div>
+    <div class="rail-footer">
+        <button type="button" id="display-menu-btn" class="rail-item" aria-haspopup="dialog" aria-controls="display-menu" aria-expanded="false">
+            <svg class="icon" aria-hidden="true"><use href="/static/icons/sprite.svg?v={{ asset_version }}#display"></use></svg>
+            <span class="rail-label">Display</span>
+        </button>
+        <!-- Whether the local AI model is reachable. Filled by legacy/app.js from /api/llm/status. -->
+        <button type="button" id="ai-status" class="rail-item ai-status-indicator" data-state="checking" title="Checking the local AI model...">
+            <span class="ai-status-dot" aria-hidden="true"></span>
+            <span class="rail-label" id="ai-status-label">AI: checking</span>
+        </button>
+    </div>
+    {% include "partials/display_menu.html" %}
+</nav>

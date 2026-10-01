@@ -10,11 +10,14 @@
     <!-- Fonts are served locally so the tool works with no internet access. -->
     <link rel="stylesheet" href="/static/css/fonts.css?v={{ asset_version }}">
     <link rel="stylesheet" href="/static/css/tokens.css?v={{ asset_version }}">
+    <link rel="stylesheet" href="/static/css/layouts/shell.css?v={{ asset_version }}">
     <link rel="stylesheet" href="/static/css/legacy.css?v={{ asset_version }}">
 </head>
 <body class="dark-theme">
     <div class="app-layout">
-        {% include "partials/navbar.html" %}
+        {% include "partials/rail.html" %}
+        <div class="app-main">
+            {% include "partials/context_bar.html" %}
 
         <!-- Main Workspace -->
         <main class="workspace-grid" id="workspace-grid">
@@ -38,6 +41,7 @@
 
         {% include "partials/visualizer.html" %}
         </main>
+        </div>
     </div>
 
     <!-- Toast Notification Overlay -->

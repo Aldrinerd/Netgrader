@@ -10,7 +10,7 @@ client = TestClient(app, client=("127.0.0.1", 50000))
 def test_index_page():
     response = client.get("/")
     assert response.status_code == 200
-    assert "Network Configuration Evaluation" in response.text
+    assert "Netgrader" in response.text
     assert "Topology Discovery" in response.text
 
 def test_api_analyze_reference_bundle():

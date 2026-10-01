@@ -23,7 +23,7 @@ export function initLegacyApp() {
     const emptyStateTitle = document.getElementById('empty-state-title');
     const emptyStateDesc = document.getElementById('empty-state-desc');
     const canvasMainTitle = document.getElementById('canvas-main-title');
-    const engineStatusLabel = document.getElementById('engine-status-label');
+    const contextTitle = document.getElementById('context-title');
     const diagnosticDrawer = document.getElementById('diagnostic-drawer');
     const closeDrawerBtn = document.getElementById('close-drawer-btn');
     const drawerTitle = document.getElementById('drawer-title');
@@ -122,6 +122,9 @@ export function initLegacyApp() {
     function switchMode(mode) {
         currentMode = mode;
         modeTabs.forEach(t => t.classList.toggle('active', t.getAttribute('data-mode') === mode));
+        modeTabs.forEach(t => t.setAttribute('aria-current', t.getAttribute('data-mode') === mode ? 'page' : 'false'));
+        const titles = { visualizer: 'Topology Discovery', teacher: 'Instructor Studio', student: 'Student Grading' };
+        if (contextTitle) contextTitle.textContent = titles[mode] || '';
         
         Object.entries(modePanels).forEach(([mKey, panel]) => {
             if (panel) panel.classList.toggle('active', mKey === mode);
@@ -129,13 +132,10 @@ export function initLegacyApp() {
 
         if (mode === 'visualizer') {
             if (canvasMainTitle) canvasMainTitle.textContent = 'Topology Discovery';
-            if (engineStatusLabel) engineStatusLabel.textContent = 'Inference Engine: Active';
         } else if (mode === 'teacher') {
             if (canvasMainTitle) canvasMainTitle.textContent = 'Reference Topology Studio';
-            if (engineStatusLabel) engineStatusLabel.textContent = 'Teacher Studio: Ready';
         } else if (mode === 'student') {
             if (canvasMainTitle) canvasMainTitle.textContent = 'Student Evaluation View';
-            if (engineStatusLabel) engineStatusLabel.textContent = 'Evaluation Engine: Ready';
         }
         if (pendingOperations === 0) applyEmptyStateText(mode);
     }
@@ -1108,7 +1108,7 @@ export function initLegacyApp() {
         pendingOperations++;
         emptyState.dataset.panelState = 'loading';
         emptyState.style.display = 'block';
-        emptyState.innerHTML = `<div class="status-dot pulsing" style="width:24px;height:24px;margin:0 auto 12px;"></div><p>${escapeHtml(msg)}</p>`;
+        emptyState.innerHTML = `<div class="loading-spinner" aria-hidden="true"></div><p>${escapeHtml(msg)}</p>`;
     }
 
     // Lets a handler put its own message in the panel and keep it: hideLoading()
