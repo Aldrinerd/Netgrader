@@ -1006,7 +1006,7 @@ export function initLegacyApp() {
         });
 
         if (results.length === 0) {
-            reportResultsList.innerHTML = `<div style="text-align:center;color:#9CA3AF;font-size:11.5px;padding:12px;">No items match filter.</div>`;
+            reportResultsList.innerHTML = `<div style="text-align:center;color:var(--text-muted);font-size: 0.75rem;padding:12px;">No items match filter.</div>`;
             return;
         }
 
@@ -1196,13 +1196,13 @@ export function initLegacyApp() {
             <div class="diag-section">
                 <div class="diag-section-title">Inference Confidence Score</div>
                 <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
-                    <span style="font-size:22px;font-weight:700;color:${link.confidence >= 0.8 ? '#10B981' : '#F59E0B'};font-family:JetBrains Mono;">
+                    <span style="font-size: 1.375rem;font-weight:700;color:${link.confidence >= 0.8 ? 'var(--status-ok)' : 'var(--status-warn)'};font-family:JetBrains Mono;">
                         ${(link.confidence * 100).toFixed(1)}%
                     </span>
                     <span class="badge ${link.classification === 'verified' ? 'badge-green' : 'badge-amber'}">
                         ${escapeHtml(String(link.classification).toUpperCase())} LINK
                     </span>
-                    <span style="font-size:10.5px;color:#9CA3AF;">Fused Signal Probability</span>
+                    <span style="font-size: 0.75rem;color:var(--text-muted);">Fused Signal Probability</span>
                 </div>
             </div>
 
@@ -1216,7 +1216,7 @@ export function initLegacyApp() {
                     <div class="signal-row">
                         <div>
                             <div class="signal-type">${escapeHtml(sig.signal_type)}</div>
-                            <div style="font-size:10.5px;color:#9CA3AF;margin-top:2px;">${escapeHtml(sig.description)}</div>
+                            <div style="font-size: 0.75rem;color:var(--text-muted);margin-top:2px;">${escapeHtml(sig.description)}</div>
                             ${sig.evidence ? sig.evidence.map(e => `<span class="evidence-tag">📍 ${escapeHtml(e)}</span>`).join('') : ''}
                         </div>
                         <div class="signal-weight">+${(sig.weight * 100).toFixed(0)}%</div>
@@ -1229,7 +1229,7 @@ export function initLegacyApp() {
         if (link.conflicts && link.conflicts.length > 0) {
             html += `
                 <div class="diag-section">
-                    <div class="diag-section-title" style="color:#EF4444;">Associated Conflicts / Errors</div>
+                    <div class="diag-section-title" style="color:var(--status-bad);">Associated Conflicts / Errors</div>
                     ${link.conflicts.map(c => `
                         <div class="conflict-item-card" style="margin-bottom:5px;">
                             <div class="conflict-item-title">${escapeHtml(c)}</div>
@@ -1257,7 +1257,7 @@ export function initLegacyApp() {
             let html = `
                 <div class="diag-section">
                     <div class="diag-section-title">Connection Overview</div>
-                    <div style="font-size:12px;color:#E5E7EB;margin-bottom:10px;line-height:1.45;">
+                    <div style="font-size: 0.75rem;color:var(--text);margin-bottom:10px;line-height:1.45;">
                         This node represents an active physical or logical connection where the remote peer configuration was not uploaded or is an external/unmanaged device.
                     </div>
             `;
@@ -1265,9 +1265,9 @@ export function initLegacyApp() {
                 html += `
                     <div class="signal-row">
                         <div>
-                            <div style="font-size:9.5px;color:#9CA3AF;text-transform:uppercase;letter-spacing:0.5px;">Discovered Peer ID</div>
-                            <div style="font-size:13px;font-weight:700;color:#F59E0B;font-family:JetBrains Mono;margin-top:2px;">${escapeHtml(dev.placeholder_for_device)}</div>
-                            <div style="font-size:10.5px;color:#9CA3AF;margin-top:2px;">Identified via discovery protocols (CDP/LLDP). Configuration file was not submitted.</div>
+                            <div style="font-size: 0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Discovered Peer ID</div>
+                            <div style="font-size: 0.8125rem;font-weight:700;color:var(--status-warn);font-family:JetBrains Mono;margin-top:2px;">${escapeHtml(dev.placeholder_for_device)}</div>
+                            <div style="font-size: 0.75rem;color:var(--text-muted);margin-top:2px;">Identified via discovery protocols (CDP/LLDP). Configuration file was not submitted.</div>
                         </div>
                     </div>
                 `;
@@ -1276,9 +1276,9 @@ export function initLegacyApp() {
                 html += `
                     <div class="signal-row">
                         <div>
-                            <div style="font-size:9.5px;color:#9CA3AF;text-transform:uppercase;letter-spacing:0.5px;">Local Connected Port</div>
-                            <div style="font-size:13px;font-weight:700;color:#60A5FA;font-family:JetBrains Mono;margin-top:2px;">${escapeHtml(dev.placeholder_for_interface)}</div>
-                            <div style="font-size:10.5px;color:#9CA3AF;margin-top:2px;">Port has active carrier status (up/up).</div>
+                            <div style="font-size: 0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Local Connected Port</div>
+                            <div style="font-size: 0.8125rem;font-weight:700;color:var(--accent);font-family:JetBrains Mono;margin-top:2px;">${escapeHtml(dev.placeholder_for_interface)}</div>
+                            <div style="font-size: 0.75rem;color:var(--text-muted);margin-top:2px;">Port has active carrier status (up/up).</div>
                         </div>
                     </div>
                 `;
@@ -1308,11 +1308,11 @@ export function initLegacyApp() {
                             <strong style="font-family:JetBrains Mono;">${escapeHtml(intf.name)}</strong>
                             <span class="badge ${isDown ? 'badge-red' : 'badge-green'}">${escapeHtml(intf.admin_status)}/${escapeHtml(intf.line_status)}</span>
                         </div>
-                        <div style="font-size:10.5px;color:#9CA3AF;margin-top:3px;">
+                        <div style="font-size: 0.75rem;color:var(--text-muted);margin-top:3px;">
                             ${intf.ip_address ? `IP: <strong>${escapeHtml(intf.ip_address)}/${escapeHtml(intf.cidr)}</strong> (${escapeHtml(intf.network_address)})` : 'IP: (Unassigned)'}
                             ${intf.switchport_mode ? ` | Switchport: <strong>${escapeHtml(intf.switchport_mode)}</strong> (VLAN ${escapeHtml(intf.access_vlan || intf.trunk_native_vlan)})` : ''}
                         </div>
-                        ${intf.description ? `<div style="font-size:10.5px;color:#60A5FA;">desc: ${escapeHtml(intf.description)}</div>` : ''}
+                        ${intf.description ? `<div style="font-size: 0.75rem;color:var(--accent);">desc: ${escapeHtml(intf.description)}</div>` : ''}
                     </div>
                 `;
             });
@@ -1329,7 +1329,7 @@ export function initLegacyApp() {
                     <div class="signal-row">
                         <div>
                             <strong>${escapeHtml(cdp.device_id)}</strong> on <code>${escapeHtml(cdp.local_interface)}</code> ⟷ <code>${escapeHtml(cdp.remote_interface)}</code>
-                            <div style="font-size:9.5px;color:#9CA3AF;">Platform: ${escapeHtml(cdp.platform || 'Cisco')} | Remote IP: ${escapeHtml(cdp.remote_ip || 'N/A')}</div>
+                            <div style="font-size: 0.75rem;color:var(--text-muted);">Platform: ${escapeHtml(cdp.platform || 'Cisco')} | Remote IP: ${escapeHtml(cdp.remote_ip || 'N/A')}</div>
                         </div>
                     </div>
                 `;
