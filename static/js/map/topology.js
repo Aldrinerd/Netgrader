@@ -1,7 +1,7 @@
 // static/js/map/topology.js
 // The interactive topology map: layout, drawing, zoom, pan and node drag.
 // Owns all map state; the rest of the UI talks to it through the returned API.
-import { createSvgBadge, createDeviceIcon, shortInterfaceName } from './svg-shapes.js';
+import { createSvgBadge, createDeviceIcon, shortInterfaceName, paint } from './svg-shapes.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -121,16 +121,16 @@ export function createTopologyMap(svg, { onNodeSelect = () => {}, onLinkSelect =
             lineGroup.style.cursor = 'pointer';
 
             const hasConflict = link.conflicts && link.conflicts.length > 0;
-            let strokeColor = '#10B981';
+            let strokeColor = 'var(--map-link-ok)';
             let strokeDash = 'none';
 
             if (hasConflict) {
-                strokeColor = '#EF4444';
+                strokeColor = 'var(--map-link-bad)';
             } else if (link.classification === 'inferred') {
-                strokeColor = '#F59E0B';
+                strokeColor = 'var(--map-link-inferred)';
                 strokeDash = '6,4';
             } else if (link.classification === 'unverified') {
-                strokeColor = '#6B7280';
+                strokeColor = 'var(--map-link-unverified)';
                 strokeDash = '3,3';
             }
 
@@ -139,7 +139,7 @@ export function createTopologyMap(svg, { onNodeSelect = () => {}, onLinkSelect =
             line.setAttribute('y1', src.y);
             line.setAttribute('x2', tgt.x);
             line.setAttribute('y2', tgt.y);
-            line.setAttribute('stroke', strokeColor);
+            paint(line, { stroke: strokeColor });
             line.setAttribute('stroke-width', hasConflict ? '3.5' : '2.5');
             line.setAttribute('stroke-dasharray', strokeDash);
             line.setAttribute('stroke-linecap', 'round');
@@ -163,8 +163,7 @@ export function createTopologyMap(svg, { onNodeSelect = () => {}, onLinkSelect =
             badgeBg.setAttribute('width', '36');
             badgeBg.setAttribute('height', '18');
             badgeBg.setAttribute('rx', '9');
-            badgeBg.setAttribute('fill', '#111827');
-            badgeBg.setAttribute('stroke', strokeColor);
+            paint(badgeBg, { fill: 'var(--map-badge-bg)', stroke: strokeColor });
             badgeBg.setAttribute('stroke-width', '1');
             lineGroup.appendChild(badgeBg);
 
@@ -172,7 +171,7 @@ export function createTopologyMap(svg, { onNodeSelect = () => {}, onLinkSelect =
             badgeLabel.setAttribute('x', midX);
             badgeLabel.setAttribute('y', midY + 3.5);
             badgeLabel.setAttribute('text-anchor', 'middle');
-            badgeLabel.setAttribute('fill', strokeColor);
+            paint(badgeLabel, { fill: strokeColor });
             badgeLabel.setAttribute('font-size', '9.5px');
             badgeLabel.setAttribute('font-weight', 'bold');
             badgeLabel.setAttribute('font-family', 'JetBrains Mono, monospace');
@@ -243,20 +242,20 @@ export function createTopologyMap(svg, { onNodeSelect = () => {}, onLinkSelect =
             const isL3Switch = deviceType === 'l3_switch';
             const isSwitch = deviceType === 'switch' || isL3Switch;
             const isHost = deviceType === 'host';
-            let nodeColor = '#3B82F6';
+            let nodeColor = 'var(--map-router)';
             if (isPlaceholder) {
-                nodeColor = '#9CA3AF';
+                nodeColor = 'var(--map-unknown)';
             } else if (isSwitch) {
-                nodeColor = '#10B981';
+                nodeColor = 'var(--map-switch)';
             } else if (isHost) {
-                nodeColor = '#8B5CF6';
+                nodeColor = 'var(--map-host)';
             }
 
             const glowCircle = document.createElementNS(SVG_NS, 'circle');
             glowCircle.setAttribute('cx', node.x);
             glowCircle.setAttribute('cy', node.y);
             glowCircle.setAttribute('r', '26');
-            glowCircle.setAttribute('fill', isPlaceholder ? 'rgba(156, 163, 175, 0.15)' : (isSwitch ? 'rgba(16, 185, 129, 0.15)' : (isHost ? 'rgba(139, 92, 246, 0.15)' : 'rgba(59, 130, 246, 0.15)')));
+            paint(glowCircle, { fill: nodeColor, fillOpacity: '0.15' });
             nodeGroup.appendChild(glowCircle);
 
             if (highlighted.has(dev.hostname)) {

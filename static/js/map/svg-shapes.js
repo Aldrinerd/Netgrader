@@ -1,6 +1,15 @@
 // static/js/map/svg-shapes.js
 // SVG building blocks for the topology map. Pure functions: no module state.
 
+// Sets presentation values through the style property. SVG attributes such as
+// fill="..." do not resolve var(--token); inline style properties do.
+export function paint(el, props) {
+    for (const [name, value] of Object.entries(props)) {
+        el.style.setProperty(name.replace(/[A-Z]/g, c => '-' + c.toLowerCase()), value);
+    }
+    return el;
+}
+
 // Short interface names for map labels.
 export function shortInterfaceName(name) {
     if (!name || name === 'Unspecified') return '';
@@ -29,8 +38,7 @@ export function createSvgBadge(x, y, text, badgeClass = 'port-label-badge', isIp
     rectElem.setAttribute('height', height);
     rectElem.setAttribute('rx', '3');
     rectElem.setAttribute('ry', '3');
-    rectElem.setAttribute('fill', isIp ? '#064E3B' : '#0F172A');
-    rectElem.setAttribute('stroke', isIp ? '#10B981' : '#3B82F6');
+    paint(rectElem, { fill: 'var(--map-badge-bg)', stroke: isIp ? 'var(--map-ip)' : 'var(--map-port)' });
     rectElem.setAttribute('stroke-width', '1');
 
     const textElem = document.createElementNS('http://www.w3.org/2000/svg', 'text');
@@ -40,7 +48,7 @@ export function createSvgBadge(x, y, text, badgeClass = 'port-label-badge', isIp
     textElem.setAttribute('font-family', 'JetBrains Mono, monospace');
     textElem.setAttribute('font-size', isIp ? '9px' : '9.5px');
     textElem.setAttribute('font-weight', '600');
-    textElem.setAttribute('fill', isIp ? '#6EE7B7' : '#93C5FD');
+    paint(textElem, { fill: isIp ? 'var(--map-ip)' : 'var(--map-port)' });
     textElem.textContent = text;
 
     group.appendChild(rectElem);
@@ -61,8 +69,12 @@ export function createDeviceIcon(x, y, color, kind) {
 
     const shape = (name, attrs) => {
         const el = document.createElementNS(NS, name);
-        const merged = Object.assign({ fill: '#1F2937', stroke: color, 'stroke-width': 2 }, attrs);
-        for (const [key, value] of Object.entries(merged)) el.setAttribute(key, value);
+        const merged = Object.assign({ fill: 'var(--map-device-fill)', stroke: color, 'stroke-width': 2 }, attrs);
+        const paintKeys = ['fill', 'stroke', 'fill-opacity'];
+        for (const [key, value] of Object.entries(merged)) {
+            if (paintKeys.includes(key)) paint(el, { [key]: String(value) });
+            else el.setAttribute(key, value);
+        }
         // A device we only inferred is outlined, never solid.
         if (kind.isPlaceholder) el.setAttribute('stroke-dasharray', '4,3');
         group.appendChild(el);
@@ -74,7 +86,7 @@ export function createDeviceIcon(x, y, color, kind) {
         el.setAttribute('x', x);
         el.setAttribute('y', y + dy);
         el.setAttribute('text-anchor', 'middle');
-        el.setAttribute('fill', color);
+        paint(el, { fill: color });
         el.setAttribute('font-size', size + 'px');
         el.setAttribute('font-weight', 'bold');
         el.setAttribute('font-family', 'Outfit, sans-serif');

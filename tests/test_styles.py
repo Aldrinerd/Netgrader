@@ -53,3 +53,12 @@ def test_font_sizes_are_rem_and_at_least_12px():
                 if float(value) < 0.75:
                     hits.append(f"{os.path.relpath(path, ROOT)}:{lineno}: {value}rem is below 12px")
     assert not hits, "\n".join(hits)
+
+
+def test_map_has_no_hard_coded_colours():
+    hits = []
+    for path in glob.glob(os.path.join(ROOT, "static", "js", "map", "*.js")):
+        for lineno, line in enumerate(_read(path).splitlines(), 1):
+            if COLOUR_RE.search(line):
+                hits.append(f"{os.path.relpath(path, ROOT)}:{lineno}: {line.strip()[:90]}")
+    assert not hits, "Map colours must be var(--map-...) tokens:\n" + "\n".join(hits)
