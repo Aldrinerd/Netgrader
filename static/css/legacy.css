@@ -1980,10 +1980,15 @@ html, body {
 /* Shown only by unsupported.js, in browsers without ES module support. */
 .unsupported-browser {
     position: fixed;
-    inset: auto 16px 16px 16px;
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
     padding: 12px 16px;
+    border-radius: 10px;
     border-radius: var(--radius-md);
+    background: #EF4444;
     background: var(--accent-red);
+    color: #F9FAFB;
     color: var(--text-primary);
     font-size: 1rem;
     z-index: 1000;

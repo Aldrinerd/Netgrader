@@ -75,9 +75,10 @@ Upload (.pkt / .pka / .xml / .zip / .txt)
 | `src/narrative.py` | The only place a model is used. Student summary, class briefing. |
 | `src/app.py` | FastAPI application and nine endpoints. |
 | `static/js/main.js` | Browser entry point, loaded as an ES module from `/assets/<version>/js/`. Relative imports inherit the version. |
-| `static/js/core/` | Shared helpers. `dom.js` is the only module allowed to build markup from strings. |
+| `static/js/core/` | Shared helpers. `dom.js` is the only new module allowed to build markup from strings; `legacy/app.js` still does and is being retired. |
 | `static/js/map/` | The topology map (`createTopologyMap`) and its SVG shapes. |
-| `static/js/legacy/app.js` | The pre-refresh screens, shrinking as each is rewritten (spec 2026-10-01). |
+| `static/js/legacy/app.js` | The pre-refresh screens, shrinking as each is rewritten (spec `docs/superpowers/specs/2026-10-01-ui-refresh-design.md`). |
+| `static/js/unsupported.js` | Classic script loaded with `nomodule`; shows the old-browser notice. |
 | `templates/base.html` | Page shell; one partial per screen under `templates/partials/`. |
 | `static/css/tokens.css` | Design tokens. Component styles read these. |
 | `validation/` | SOP #3 measurement instrument. Imported by nothing in `src/`. |
@@ -447,8 +448,9 @@ passwords are needed. `is_instructor()` in `src/app.py` accepts:
 
 Two layers use it:
 
-1. **Rendering.** `index.html` wraps the Instructor Studio tab and panel in
-   `{% if is_instructor %}`, so lab computers never receive that markup. This
+1. **Rendering.** The Instructor Studio tab (`templates/partials/navbar.html`) and
+   the `partials/panel_instructor.html` include in `templates/base.html` are
+   each wrapped in `{% if is_instructor %}`, so lab computers never receive that markup. This
    is only cosmetic.
 2. **Enforcement.** The instructor-only routes above depend on
    `require_instructor`, which returns `403` to any other client. This is the

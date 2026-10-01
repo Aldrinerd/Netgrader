@@ -25,7 +25,8 @@ export function createTopologyMap(svg, { onNodeSelect = () => {}, onLinkSelect =
     function render(data, { highlightDevices = [] } = {}) {
         topology = data;
         highlighted = new Set(highlightDevices);
-        svg.replaceChildren();
+        // textContent, not replaceChildren(): the latter needs Chrome 86 / Firefox 78 / Safari 14.
+        svg.textContent = '';
 
         const devEntries = Object.entries(data.devices || {});
         const hasCoordinates = devEntries.some(([_, d]) => d.x_coord !== null && d.y_coord !== null);
@@ -100,7 +101,7 @@ export function createTopologyMap(svg, { onNodeSelect = () => {}, onLinkSelect =
     }
 
     function draw() {
-        svg.replaceChildren();
+        svg.textContent = '';
         const defs = document.createElementNS(SVG_NS, 'defs');
         svg.appendChild(defs);
 
@@ -300,7 +301,7 @@ export function createTopologyMap(svg, { onNodeSelect = () => {}, onLinkSelect =
         links = [];
         highlighted = new Set();
         view = { x: 0, y: 0, k: 1 };
-        svg.replaceChildren();
+        svg.textContent = '';
     }
 
     function setLabels(next) {

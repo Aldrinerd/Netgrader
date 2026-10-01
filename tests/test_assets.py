@@ -5,7 +5,9 @@ them inherit the version, so a deployed fix reaches every browser. These tests
 pin the route's safety and the version's sensitivity to nested files.
 """
 import os
+import re
 import time
+from unittest import mock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -84,6 +86,7 @@ def test_old_browsers_get_a_notice_instead_of_a_dead_page():
     html = client.get("/").text
     assert '<script nomodule src="/static/js/unsupported.js' in html
     assert 'id="unsupported-browser"' in html
+    assert re.search(r'<div id="unsupported-browser"[^>]*\bhidden\b', html)
 
 
 def test_entry_module_is_served():
@@ -108,3 +111,53 @@ def test_tokens_file_holds_the_custom_properties():
         legacy = f.read()
     assert ":root" in tokens and "--accent-blue" in tokens
     assert ":root {" not in legacy
+
+
+@pytest.mark.parametrize("path", [
+    "//attacker-host/share/x.js",
+    "%5C%5Cattacker-host%5Cshare%5Cx.js",
+    "C:/x.js",
+    "../x.js",
+    "a/../../x.js",
+    "a//b.js",
+    "%2E/main.js",   # the client would normalise a literal ./
+])
+def test_hostile_paths_never_touch_the_filesystem(path):
+    # os.path.realpath on a UNC path opens it, which makes an SMB connection.
+    with mock.patch("src.app.os.path.realpath", side_effect=AssertionError("touched disk")) as rp,             mock.patch("src.app.os.path.isfile", side_effect=AssertionError("touched disk")) as isf:
+        res = client.get(f"/assets/1/js/{path}")
+    assert res.status_code == 404
+    rp.assert_not_called()
+    isf.assert_not_called()
+
+
+@pytest.fixture
+def outside_js():
+    path = os.path.join(app_module.STATIC_DIR, "zz_outside_probe.js")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("export const outside = 1;\n")
+    yield path
+    os.remove(path)
+
+
+def test_js_outside_the_js_folder_is_not_served(outside_js):
+    assert client.get("/assets/1/js/../zz_outside_probe.js").status_code == 404
+
+
+def test_legitimate_nested_modules_are_served():
+    for p in ("legacy/app.js", "core/dom.js", "map/topology.js", "main.js"):
+        assert client.get(f"/assets/1/js/{p}").status_code == 200, p
+
+
+def test_legacy_notice_css_works_in_old_browsers():
+    with open(os.path.join(app_module.STATIC_DIR, "css", "legacy.css"), encoding="utf-8") as f:
+        css = f.read()
+    block = re.search(r"\.unsupported-browser\s*\{(.*?)\}", css, re.S).group(1)
+    assert "inset" not in block
+    decls = [d.strip() for d in block.split(";") if d.strip()]
+    for i, d in enumerate(decls):
+        if "var(" in d:
+            prop = d.split(":", 1)[0].strip()
+            assert any(
+                e.split(":", 1)[0].strip() == prop and "var(" not in e for e in decls[:i]
+            ), f"{prop} lacks a literal fallback"

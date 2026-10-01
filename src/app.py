@@ -263,7 +263,18 @@ def versioned_module(version: str, path: str):
     an old page asking for an old version gets the current file, which is
     what a refresh would do anyway.
     """
-    candidate = os.path.realpath(os.path.join(JS_DIR, path))
+    # Validate the string before any os.path call that can touch the disk:
+    # realpath on a UNC path (//host/share) makes Windows open an SMB
+    # connection, and os.path.join discards JS_DIR for absolute paths.
+    if (
+        "\\" in path or ":" in path or "\x00" in path
+        or path.startswith("/") or not path.endswith(".js")
+    ):
+        raise HTTPException(status_code=404)
+    segments = path.split("/")
+    if any(seg in ("", ".", "..") for seg in segments):
+        raise HTTPException(status_code=404)
+    candidate = os.path.realpath(os.path.join(JS_DIR, *segments))
     try:
         inside = os.path.commonpath([candidate, JS_DIR]) == JS_DIR
     except ValueError:   # different drive on Windows
