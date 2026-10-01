@@ -1,0 +1,43 @@
+                <!-- MODE 1: LIVE TOPOLOGY DISCOVERY -->
+                <div id="panel-mode-visualizer" class="mode-panel active">
+                    <!-- Custom Upload Area -->
+                    <div class="panel-card upload-card">
+                        <div class="card-header">
+                            <span class="card-icon">📂</span>
+                            <h3>Custom Lab Bundle Ingest</h3>
+                        </div>
+                        <p class="card-desc">Upload student <code>.txt</code> command outputs, <code>.pkt</code> / <code>.pka</code> / <code>.xml</code> Packet Tracer files, or <code>.zip</code> archives:</p>
+                        
+                        <div id="drop-zone" class="dropzone">
+                            <input type="file" id="file-input" multiple accept=".pkt,.pka,.xml,.zip,.txt,.log" style="display:none;">
+                            <div class="dropzone-content">
+                                <div class="upload-icon">📥</div>
+                                <p class="dropzone-text"><strong>Drag & Drop</strong> .pkt, .pka, .xml, or .zip files here</p>
+                                <span class="dropzone-hint">or <button id="browse-btn" class="link-btn" type="button">browse files</button> from device</span>
+                            </div>
+                        </div>
+
+                        <div id="file-preview-list" class="file-preview-list" style="display: none;">
+                            <div class="preview-header">
+                                <span id="file-count">0 files selected</span>
+                                <button id="clear-files-btn" class="btn-text">Clear</button>
+                            </div>
+                            <ul id="selected-files-ul"></ul>
+                            <button id="analyze-btn" class="btn btn-primary btn-block">
+                                <span>Analyze Topology & Relational Rules</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Conflict Summary Counter -->
+                    <div class="panel-card conflict-summary-card" id="conflict-summary-card" style="display: none;">
+                        <div class="card-header">
+                            <span class="card-icon">⚠️</span>
+                            <h3>Relational Audit Findings</h3>
+                            <span id="conflict-badge-count" class="badge badge-red">0 Issues</span>
+                        </div>
+                        <div id="conflict-items-list" class="conflict-items-list">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </div>

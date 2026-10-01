@@ -239,7 +239,7 @@ def require_instructor(request: Request) -> None:
 async def index_page(request: Request):
     return templates.TemplateResponse(
         request=request,
-        name="index.html",
+        name="base.html",
         context={
             "asset_version": _asset_version(),
             # Decides whether the Instructor Studio tab is rendered at all.

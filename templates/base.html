@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Topology Discovery & Automated Evaluation Engine</title>
+    <!-- Fonts are served locally so the tool works with no internet access. -->
+    <link rel="stylesheet" href="/static/css/fonts.css?v={{ asset_version }}">
+    <link rel="stylesheet" href="/static/css/style.css?v={{ asset_version }}">
+</head>
+<body class="dark-theme">
+    <div class="app-layout">
+        {% include "partials/navbar.html" %}
+
+        <!-- Main Workspace -->
+        <main class="workspace-grid" id="workspace-grid">
+            <!-- Left Side: Dynamic Control Panels according to Mode -->
+            <section class="control-panel" id="control-panel">
+                
+                {% include "partials/panel_discovery.html" %}
+
+                {% if is_instructor %}
+                {% include "partials/panel_instructor.html" %}
+                {% endif %}
+
+                {% include "partials/panel_grading.html" %}
+
+            </section>
+
+            <!-- Draggable Sidebar Resizer Handle -->
+            <div class="sidebar-resizer" id="sidebar-resizer" title="Drag to adjust sidebar width (Double-click to reset)">
+                <div class="resizer-handle"></div>
+            </div>
+
+        {% include "partials/visualizer.html" %}
+        </main>
+    </div>
+
+    <!-- Toast Notification Overlay -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <div id="unsupported-browser" class="unsupported-browser" hidden>
+        This browser is too old to run Netgrader. Please use a current version of
+        Chrome, Edge or Firefox.
+    </div>
+    <script nomodule src="/static/js/unsupported.js?v={{ asset_version }}"></script>
+    <script type="module" src="/assets/{{ asset_version }}/js/main.js"></script>
+</body>
+</html>

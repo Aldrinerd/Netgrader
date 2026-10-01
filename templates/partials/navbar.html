@@ -1,0 +1,39 @@
+        <!-- Top Navigation Bar -->
+        <header class="navbar">
+            <div class="brand-section">
+                <div class="brand-badge">FCPC CAPSTONE</div>
+                <h1 class="app-title">Network Configuration Evaluation & Topology Discovery Tool</h1>
+            </div>
+
+            <!-- Main Mode Navigation Switcher -->
+            <nav class="main-mode-switcher" aria-label="Application Modes">
+                <button id="nav-mode-visualizer" class="mode-tab-btn active" data-mode="visualizer">
+                    <span class="mode-icon">⚡</span>
+                    <span class="mode-text">Topology Discovery</span>
+                </button>
+                {% if is_instructor %}
+                <!-- Rendered only for the computer running the server (see is_instructor in src/app.py). -->
+                <button id="nav-mode-teacher" class="mode-tab-btn" data-mode="teacher">
+                    <span class="mode-icon">👨‍🏫</span>
+                    <span class="mode-text">Instructor Studio</span>
+                </button>
+                {% endif %}
+                <button id="nav-mode-student" class="mode-tab-btn" data-mode="student">
+                    <span class="mode-icon">👨‍🎓</span>
+                    <span class="mode-text">Student Grading</span>
+                </button>
+            </nav>
+
+            <div class="nav-controls">
+                <div class="system-status-indicator">
+                    <span class="status-dot pulsing"></span>
+                    <span class="status-label" id="engine-status-label">Inference Engine: Active</span>
+                </div>
+                <!-- Whether the local AI model is reachable. Filled by app.js from /api/llm/status. -->
+                <button type="button" id="ai-status" class="ai-status-indicator" data-state="checking" title="Checking the local AI model...">
+                    <span class="ai-status-dot"></span>
+                    <span class="ai-status-label" id="ai-status-label">AI: checking</span>
+                </button>
+                <button id="reset-btn" class="btn btn-outline btn-sm" title="Clear current workspace">Reset View</button>
+            </div>
+        </header>

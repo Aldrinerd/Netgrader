@@ -12,6 +12,7 @@ import shutil
 import subprocess
 
 import pytest
+from fastapi.testclient import TestClient
 
 ROOT = os.path.dirname(os.path.dirname(__file__))
 JS_ROOT = os.path.join(ROOT, "static", "js")
@@ -69,3 +70,39 @@ def test_innerhtml_only_in_legacy_and_dom_helper():
         if not rel.startswith(INNERHTML_ALLOWED) and re.search(r"\.innerHTML\s*[+]?=", _read(path))
     ]
     assert not offenders, f"innerHTML assigned outside legacy/ and core/dom.js: {offenders}"
+
+
+def render_page(instructor: bool) -> str:
+    from src.app import app
+    client = TestClient(app, client=("127.0.0.1", 50000) if instructor else ("10.20.30.40", 50000))
+    return client.get("/").text
+
+
+GET_BY_ID_RE = re.compile(r"getElementById\(\s*['\"]([\w-]+)['\"]\s*\)")
+TEMPLATES = os.path.join(ROOT, "templates")
+
+
+def _ids_in(path):
+    return set(re.findall(r'id="([\w-]+)"', _read(path)))
+
+
+def _ids_looked_up_by_js():
+    found = set()
+    for _rel, path in js_files():
+        found |= set(GET_BY_ID_RE.findall(_read(path)))
+    return found
+
+
+def test_every_element_the_js_looks_up_exists_for_the_instructor():
+    html = render_page(instructor=True)
+    missing = sorted(i for i in _ids_looked_up_by_js() if f'id="{i}"' not in html)
+    assert not missing, f"JS looks up ids the instructor page lacks: {missing}"
+
+
+def test_every_non_instructor_element_exists_for_students():
+    """Review focus 1: a lab PC gets no instructor markup; everything else must exist."""
+    teacher_only = _ids_in(os.path.join(TEMPLATES, "partials", "panel_instructor.html")) | {"nav-mode-teacher"}
+    html = render_page(instructor=False)
+    missing = sorted(i for i in _ids_looked_up_by_js() - teacher_only if f'id="{i}"' not in html)
+    assert not missing, f"JS looks up ids the student page lacks: {missing}"
+    assert not any(f'id="{i}"' in html for i in teacher_only), "instructor markup leaked to a student"
