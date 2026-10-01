@@ -63,7 +63,6 @@ def test_relative_imports_resolve_to_real_exports():
     assert not problems, "\n".join(problems)
 
 
-@pytest.mark.xfail(strict=True, reason="fixed by moving app.js into legacy/ in Task 3")
 def test_innerhtml_only_in_legacy_and_dom_helper():
     offenders = [
         rel for rel, path in js_files()

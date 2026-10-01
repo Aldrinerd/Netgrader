@@ -71,3 +71,23 @@ def test_asset_version_sees_nested_files(nested_module):
     future = time.time() + 120
     os.utime(nested_module, (future, future))
     assert app_module._asset_version() != before
+
+
+def test_page_loads_the_versioned_module_entry():
+    html = client.get("/").text
+    version = app_module._asset_version()
+    assert f'<script type="module" src="/assets/{version}/js/main.js"></script>' in html
+    assert "/static/js/app.js" not in html
+
+
+def test_old_browsers_get_a_notice_instead_of_a_dead_page():
+    html = client.get("/").text
+    assert '<script nomodule src="/static/js/unsupported.js' in html
+    assert 'id="unsupported-browser"' in html
+
+
+def test_entry_module_is_served():
+    version = app_module._asset_version()
+    res = client.get(f"/assets/{version}/js/main.js")
+    assert res.status_code == 200
+    assert "initLegacyApp" in res.text

@@ -2009,3 +2009,15 @@ html, body {
 .batch-sort.active { color: var(--accent-blue, #4da3ff); }
 .batch-sort[data-dir="asc"]::after { content: " \25B2"; font-size: 0.6rem; }
 .batch-sort[data-dir="desc"]::after { content: " \25BC"; font-size: 0.6rem; }
+
+/* Shown only by unsupported.js, in browsers without ES module support. */
+.unsupported-browser {
+    position: fixed;
+    inset: auto 16px 16px 16px;
+    padding: 12px 16px;
+    border-radius: var(--radius-md);
+    background: var(--accent-red);
+    color: var(--text-primary);
+    font-size: 1rem;
+    z-index: 1000;
+}

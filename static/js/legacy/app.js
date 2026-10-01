@@ -1,5 +1,7 @@
-// static/js/app.js
-document.addEventListener('DOMContentLoaded', () => {
+// static/js/legacy/app.js
+// The pre-refresh UI, moved here unchanged and started by main.js. Pieces
+// leave this file as the UI refresh rewrites each screen (spec 2026-10-01).
+export function initLegacyApp() {
     // --- Mode Navigation Elements ---
     const modeTabs = document.querySelectorAll('.mode-tab-btn');
     const modePanels = {
@@ -2241,4 +2243,4 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-});
+}
