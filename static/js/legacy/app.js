@@ -1,6 +1,10 @@
 // static/js/legacy/app.js
 // The pre-refresh UI, moved here unchanged and started by main.js. Pieces
 // leave this file as the UI refresh rewrites each screen (spec 2026-10-01).
+import { escapeHtml } from '../core/dom.js';
+import { describeFailure } from '../core/api.js';
+import { showToast as showToastIn } from '../core/toast.js';
+
 export function initLegacyApp() {
     // --- Mode Navigation Elements ---
     const modeTabs = document.querySelectorAll('.mode-tab-btn');
@@ -119,22 +123,7 @@ export function initLegacyApp() {
 
     // Helper: Toast Notifications
     function showToast(msg, duration = 3000) {
-        if (!toastContainer) return;
-        const toast = document.createElement('div');
-        toast.className = 'toast';
-        // Text only: some messages carry a student's filename.
-        const icon = document.createElement('span');
-        icon.textContent = '✨';
-        const text = document.createElement('span');
-        text.textContent = msg;
-        toast.append(icon, text);
-        toastContainer.appendChild(toast);
-        setTimeout(() => {
-            toast.style.opacity = '0';
-            toast.style.transform = 'translateY(-10px)';
-            toast.style.transition = 'all 0.25s ease';
-            setTimeout(() => toast.remove(), 250);
-        }, duration);
+        showToastIn(toastContainer, msg, duration);
     }
 
     // Helper: Short interface names
@@ -1141,18 +1130,6 @@ export function initLegacyApp() {
     const emptyStateDefaultHTML = emptyState ? emptyState.innerHTML : '';
     let pendingOperations = 0;
 
-    // Escapes for both element content and quoted attribute values. Anything
-    // taken from an uploaded file (device names, descriptions, config lines)
-    // or a filename must pass through this before reaching innerHTML.
-    function escapeHtml(text) {
-        return (text == null ? '' : String(text))
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
-    }
-
     function showLoading(msg) {
         if (!emptyState) return;
         pendingOperations++;
@@ -1206,17 +1183,6 @@ export function initLegacyApp() {
             titleEl.textContent = 'No Network Loaded';
             descEl.textContent = 'Upload a Packet Tracer file or Cisco .txt configuration bundle to run multi-signal topology discovery.';
         }
-    }
-
-    // Reads an error body that may not be JSON (a proxy or crash can return HTML).
-    async function describeFailure(res, fallback) {
-        try {
-            const body = await res.json();
-            if (body && body.detail) {
-                return typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail);
-            }
-        } catch (e) { /* response was not JSON */ }
-        return fallback || `Server error ${res.status} ${res.statusText}`;
     }
 
     // Devices to ring in red on the map. Set only when an instructor opens a
