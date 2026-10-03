@@ -142,3 +142,23 @@ export function createDeviceIcon(x, y, color, kind) {
     shape('ellipse', { cx: x, cy: y - half, rx: rx, ry: ry });
     return group;
 }
+
+// "N missed checkpoints on this device": a small circle with a number.
+// Colours come from report.css classes, so every theme applies.
+export function createCountBadge(x, y, count) {
+    const ns = 'http://www.w3.org/2000/svg';
+    const group = document.createElementNS(ns, 'g');
+    group.classList.add('node-miss-badge');
+    const circle = document.createElementNS(ns, 'circle');
+    circle.setAttribute('cx', x);
+    circle.setAttribute('cy', y);
+    circle.setAttribute('r', '9');
+    group.appendChild(circle);
+    const label = document.createElementNS(ns, 'text');
+    label.setAttribute('x', x);
+    label.setAttribute('y', y + 3.5);
+    label.setAttribute('text-anchor', 'middle');
+    label.textContent = count > 9 ? '9+' : String(count);
+    group.appendChild(label);
+    return group;
+}

@@ -1,7 +1,8 @@
 // static/js/map/topology.js
 // The interactive topology map: layout, drawing, zoom, pan and node drag.
 // Owns all map state; the rest of the UI talks to it through the returned API.
-import { createSvgBadge, createDeviceIcon, shortInterfaceName, paint } from './svg-shapes.js';
+import { createSvgBadge, createDeviceIcon, createCountBadge, shortInterfaceName, paint } from './svg-shapes.js';
+import { NO_FOCUS, nodeEmphasis, linkEmphasis, badgeCount } from './highlight.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -28,6 +29,7 @@ export function createTopologyMap(svg, { onNodeSelect = () => {}, onLinkSelect =
     let nodes = [];
     let links = [];
     let highlighted = new Set();
+    let focus = NO_FOCUS;
     let view = { x: 0, y: 0, k: 1 };
     let labels = { ports: true, ips: false };
     let draggedNode = null;
@@ -43,6 +45,7 @@ export function createTopologyMap(svg, { onNodeSelect = () => {}, onLinkSelect =
     function render(data, { highlightDevices = [] } = {}) {
         topology = data;
         highlighted = new Set(highlightDevices);
+        focus = NO_FOCUS;
         // textContent, not replaceChildren(): the latter needs Chrome 86 / Firefox 78 / Safari 14.
         svg.textContent = '';
 
@@ -139,6 +142,9 @@ export function createTopologyMap(svg, { onNodeSelect = () => {}, onLinkSelect =
             const lineGroup = document.createElementNS(SVG_NS, 'g');
             lineGroup.classList.add('graph-link-group');
             lineGroup.style.cursor = 'pointer';
+            const emphasis = linkEmphasis(link, focus);
+            if (emphasis === 'focus') lineGroup.classList.add('is-focus');
+            if (emphasis === 'dim') lineGroup.classList.add('is-dimmed');
 
             const hasConflict = link.conflicts && link.conflicts.length > 0;
             const cable = cableKind(link.cable_type);
@@ -171,7 +177,7 @@ export function createTopologyMap(svg, { onNodeSelect = () => {}, onLinkSelect =
             line.setAttribute('x2', tgt.x);
             line.setAttribute('y2', tgt.y);
             paint(line, { stroke: strokeColor });
-            line.setAttribute('stroke-width', hasConflict ? '3.5' : '2.5');
+            line.setAttribute('stroke-width', emphasis === 'focus' ? '4.5' : (hasConflict ? '3.5' : '2.5'));
             line.setAttribute('stroke-dasharray', strokeDash);
             line.setAttribute('stroke-linecap', 'round');
             lineGroup.appendChild(line);
@@ -273,6 +279,8 @@ export function createTopologyMap(svg, { onNodeSelect = () => {}, onLinkSelect =
             const nodeGroup = document.createElementNS(SVG_NS, 'g');
             nodeGroup.classList.add('graph-node-group');
             nodeGroup.style.cursor = 'grab';
+            const emphasis = nodeEmphasis(dev.hostname, focus);
+            if (emphasis === 'dim') nodeGroup.classList.add('is-dimmed');
 
             const isPlaceholder = dev.is_placeholder || dev.display_name === '???';
             const deviceType = dev.device_type || 'router';
@@ -304,6 +312,15 @@ export function createTopologyMap(svg, { onNodeSelect = () => {}, onLinkSelect =
                 nodeGroup.appendChild(ring);
             }
 
+            if (emphasis === 'focus') {
+                const ring = document.createElementNS(SVG_NS, 'circle');
+                ring.setAttribute('cx', node.x);
+                ring.setAttribute('cy', node.y);
+                ring.setAttribute('r', '33');
+                ring.classList.add('node-focus-ring');
+                nodeGroup.appendChild(ring);
+            }
+
             nodeGroup.appendChild(createDeviceIcon(node.x, node.y, nodeColor, {
                 isPlaceholder, isSwitch, isHost, isL3Switch
             }));
@@ -315,6 +332,9 @@ export function createTopologyMap(svg, { onNodeSelect = () => {}, onLinkSelect =
             label.classList.add('node-hostname-label');
             label.textContent = isPlaceholder ? '???' : (dev.display_name || dev.hostname);
             nodeGroup.appendChild(label);
+
+            const misses = badgeCount(dev.hostname, focus);
+            if (misses) nodeGroup.appendChild(createCountBadge(node.x + 22, node.y - 22, misses));
 
             nodeGroup.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -336,6 +356,7 @@ export function createTopologyMap(svg, { onNodeSelect = () => {}, onLinkSelect =
         nodes = [];
         links = [];
         highlighted = new Set();
+        focus = NO_FOCUS;
         view = { x: 0, y: 0, k: 1 };
         svg.textContent = '';
         svg.removeAttribute('data-cables');
@@ -343,6 +364,12 @@ export function createTopologyMap(svg, { onNodeSelect = () => {}, onLinkSelect =
 
     function setLabels(next) {
         labels = { ...labels, ...next };
+        draw();
+    }
+
+    // The linked report's emphasis (map/highlight.js). Cleared by render/reset.
+    function setFocus(next) {
+        focus = { ...NO_FOCUS, ...next };
         draw();
     }
 
@@ -403,6 +430,7 @@ export function createTopologyMap(svg, { onNodeSelect = () => {}, onLinkSelect =
         redraw: draw,
         reset,
         setLabels,
+        setFocus,
         getLabels: () => ({ ...labels }),
         getTopology: () => topology,
         isInteracting: () => draggedNode !== null || isPanning,

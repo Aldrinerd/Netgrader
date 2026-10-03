@@ -1,0 +1,22 @@
+/* static/css/components/report.css
+   The linked report (spec section 5): list column, detail panel, and the
+   map's emphasis for the selected checkpoint. Tokens only. */
+
+/* --- Map focus --- */
+.graph-link-group, .graph-node-group { transition: opacity 0.15s ease; }
+.graph-link-group.is-dimmed, .graph-node-group.is-dimmed { opacity: 0.25; }
+
+.node-focus-ring {
+    fill: none;
+    stroke: var(--focus-ring);
+    stroke-width: 3;
+}
+:root[data-contrast="high"] .node-focus-ring { stroke-width: 4; }
+
+.node-miss-badge circle { fill: var(--status-bad); }
+.node-miss-badge text {
+    fill: var(--surface-base);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 700;
+}

@@ -27,6 +27,7 @@ def _css_without_comments(text):
 def _styled_files():
     files = [os.path.join(ROOT, "static", "css", "legacy.css")]
     files += glob.glob(os.path.join(ROOT, "static", "css", "layouts", "*.css"))
+    files += glob.glob(os.path.join(ROOT, "static", "css", "components", "*.css"))
     files += glob.glob(os.path.join(ROOT, "templates", "**", "*.html"), recursive=True)
     files += [os.path.join(ROOT, "static", "js", "legacy", "app.js")]
     return files
