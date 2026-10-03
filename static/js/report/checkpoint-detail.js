@@ -56,7 +56,13 @@ export function createCheckpointDetail(host, { onAsk, onBack }) {
     return {
         show(result) { current = result; render(); },
         clear() { current = null; render(); },
-        setAskAvailable(available) { askAvailable = !!available; render(); },
+        // The AI status is re-checked every minute; rebuilding the panel when
+        // nothing changed would throw keyboard focus out of it.
+        setAskAvailable(available) {
+            if (askAvailable === !!available) return;
+            askAvailable = !!available;
+            render();
+        },
         focus() { if (!host.hidden) host.focus(); },
     };
 }

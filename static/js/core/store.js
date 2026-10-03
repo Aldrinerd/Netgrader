@@ -7,11 +7,14 @@ const PREFIX = 'netgrader:';
 const SCREENS = ['discovery', 'instructor', 'grading'];
 
 // Returns false when the value could not be kept (unavailable or too large).
+// An older value under the same key is removed then, so a refresh never
+// brings back something the caller has since replaced.
 export function saveSession(key, value) {
     try {
         sessionStorage.setItem(PREFIX + key, JSON.stringify(value));
         return true;
     } catch (e) {
+        clearSession(key);
         return false;
     }
 }

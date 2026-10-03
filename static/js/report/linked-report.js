@@ -62,7 +62,14 @@ export function createLinkedReport({ listHost, detailHost, map, onSelectionChang
         const toggle = el('div', { className: 'lr-group-toggle', role: 'group', 'aria-label': 'Group missed checkpoints by' });
         [['device', 'Device'], ['topic', 'Topic']].forEach(([key, label]) => {
             const b = el('button', { type: 'button', className: 'btn btn-sm toggle-btn', 'aria-pressed': String(groupBy === key), text: label });
-            b.addEventListener('click', () => { groupBy = key; renderList(); select(selectedId); });
+            b.addEventListener('click', () => {
+                groupBy = key;
+                renderList();
+                select(selectedId);
+                // The toolbar was rebuilt; keep keyboard focus on the pressed button.
+                const pressed = listHost.querySelector('.lr-group-toggle [aria-pressed="true"]');
+                if (pressed) pressed.focus();
+            });
             toggle.appendChild(b);
         });
         bar.appendChild(toggle);

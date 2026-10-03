@@ -42,6 +42,17 @@ test('no sessionStorage, a throwing getter, or a full quota never throws', () =>
     assert.equal(saveSession('k', { big: 'x' }), false);
 });
 
+test('a save that fails leaves no older value behind', () => {
+    // Otherwise a refresh would bring back the previous report, not the one
+    // just graded.
+    globalThis.sessionStorage = memoryStorage();
+    saveSession('grading', { report: 'old' });
+    const storage = globalThis.sessionStorage;
+    storage.setItem = () => { throw new DOMException('full', 'QuotaExceededError'); };
+    assert.equal(saveSession('grading', { report: 'new' }), false);
+    assert.equal(loadSession('grading'), null);
+});
+
 test('a stored value that is not JSON reads as nothing', () => {
     globalThis.sessionStorage = memoryStorage();
     globalThis.sessionStorage.setItem('netgrader:k', '{not json');
