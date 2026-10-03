@@ -58,49 +58,14 @@
                         </button>
                     </div>
 
-                    <!-- Evaluation Scorecard Report -->
+                    <!-- Linked report: list column (spec 5.1). Filled by report/linked-report.js. -->
                     <div class="panel-card student-report-card" id="student-report-card" style="display: none;">
-                        <div class="card-header">
-                            <span class="card-icon"><svg class="icon" aria-hidden="true"><use href="/static/icons/sprite.svg?v={{ asset_version }}#report"></use></svg></span>
-                            <h3>Automated Evaluation Scorecard</h3>
-                        </div>
+                        <div id="linked-report-list" class="linked-report-list"></div>
 
-                        <!-- Hero Score Banner -->
-                        <div class="score-hero">
-                            <div class="score-grade-badge" id="report-grade-letter">A</div>
-                            <div class="score-details">
-                                <div class="score-points">
-                                    <span id="report-earned-score">90.0</span> / <span id="report-max-score">100.0</span> <span class="score-unit">pts</span>
-                                </div>
-                                <div class="score-progress-bar">
-                                    <div id="report-progress-fill" class="score-progress-fill" style="width: 90%;"></div>
-                                </div>
-                                <div class="score-meta-counts">
-                                    <span class="badge badge-green" id="report-passed-tag"><svg class="icon" aria-hidden="true"><use href="/static/icons/sprite.svg?v={{ asset_version }}#check"></use></svg> 10 Passed</span>
-                                    <span class="badge badge-red" id="report-failed-tag"><svg class="icon" aria-hidden="true"><use href="/static/icons/sprite.svg?v={{ asset_version }}#x"></use></svg> 2 Failed</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Rule Filter Tabs -->
-                        <div class="report-filters-row">
-                            <button class="filter-chip active" data-filter="all">All (<span id="filter-count-all">0</span>)</button>
-                            <button class="filter-chip" data-filter="failed">Failed (<span id="filter-count-failed">0</span>)</button>
-                            <button class="filter-chip" data-filter="passed">Passed (<span id="filter-count-passed">0</span>)</button>
-                        </div>
-
-                        <!-- Itemized Checklist -->
                         <div id="report-narrative" class="report-narrative" style="display:none;"></div>
-
-                        <!-- Concepts to revisit, ranked by points lost -->
-                        <div id="report-study-topics" class="report-study-topics" style="display:none;"></div>
 
                         <!-- Follow-up questions about this report, answered by the local model -->
                         <div id="report-chat" class="ai-chat" style="display:none;"></div>
-
-                        <div id="report-results-list" class="report-results-list">
-                            <!-- Populated by JS -->
-                        </div>
 
                         <button id="student-download-report-btn" class="btn btn-outline btn-block" style="margin-top: 12px;">
                             <span><svg class="icon" aria-hidden="true"><use href="/static/icons/sprite.svg?v={{ asset_version }}#download"></use></svg> Download Grade Report (.txt)</span>

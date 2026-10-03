@@ -7,6 +7,12 @@ import { describeFailure } from '../core/api.js';
 import { showToast as showToastIn } from '../core/toast.js';
 import { readStored, writeStored } from '../core/storage.js';
 import { createTopologyMap, cableKind, CABLE_LABELS } from '../map/topology.js';
+import { createLinkedReport } from '../report/linked-report.js';
+import { saveSession, loadSession, clearSession, parseHash, formatHash } from '../core/store.js';
+
+// Hash and storage names for each legacy mode (spec 8.2).
+const SCREEN_OF_MODE = { visualizer: 'discovery', teacher: 'instructor', student: 'grading' };
+const MODE_OF_SCREEN = { discovery: 'visualizer', instructor: 'teacher', grading: 'student' };
 
 export function initLegacyApp() {
     // --- Mode Navigation Elements ---
@@ -34,9 +40,25 @@ export function initLegacyApp() {
     const toastContainer = document.getElementById('toast-container');
 
     // Function declarations below are hoisted, so the drawers exist already.
+    // On the Grading screen a device with missed checkpoints opens them in the
+    // linked report; anything else opens the inspector as before.
     const map = createTopologyMap(svg, {
-        onNodeSelect: dev => openNodeDiagnosticDrawer(dev),
+        onNodeSelect: dev => {
+            if (currentMode === 'student' && linkedReport.showDevice(dev.hostname)) return;
+            openNodeDiagnosticDrawer(dev);
+        },
         onLinkSelect: link => openEdgeDiagnosticDrawer(link),
+    });
+
+    const linkedReport = createLinkedReport({
+        listHost: document.getElementById('linked-report-list'),
+        detailHost: document.getElementById('checkpoint-detail'),
+        map,
+        onSelectionChange: (id, { push }) => {
+            saveSession('selection', id);
+            if (currentMode === 'student') writeHistory(push ? 'push' : 'replace');
+        },
+        onAsk: result => askAboutCheckpoint(result),
     });
 
     const togglePortsBtn = document.getElementById('toggle-ports-btn');
@@ -94,18 +116,12 @@ export function initLegacyApp() {
     const studentEvaluateBtn = document.getElementById('student-evaluate-btn');
 
     const studentReportCard = document.getElementById('student-report-card');
-    const reportGradeLetter = document.getElementById('report-grade-letter');
-    const reportEarnedScore = document.getElementById('report-earned-score');
-    const reportMaxScore = document.getElementById('report-max-score');
-    const reportProgressFill = document.getElementById('report-progress-fill');
-    const reportPassedTag = document.getElementById('report-passed-tag');
-    const reportFailedTag = document.getElementById('report-failed-tag');
-    const filterCountAll = document.getElementById('filter-count-all');
-    const filterCountFailed = document.getElementById('filter-count-failed');
-    const filterCountPassed = document.getElementById('filter-count-passed');
-    const reportResultsList = document.getElementById('report-results-list');
-    const filterChips = document.querySelectorAll('.filter-chip');
     const studentDownloadReportBtn = document.getElementById('student-download-report-btn');
+    const gradingSteps = document.querySelectorAll('#panel-mode-student .student-step-card');
+    const contextActions = document.getElementById('context-actions');
+    const contextFileChips = document.getElementById('context-file-chips');
+    const gradeAgainBtn = document.getElementById('grade-again-btn');
+    const clearReportBtn = document.getElementById('clear-report-btn');
 
     // State Variables
     let selectedFiles = [];
@@ -114,6 +130,10 @@ export function initLegacyApp() {
     let studentInstructionsFile = null;
     let studentSubmissionFiles = [];
     let latestEvaluationReport = null;
+    let gradingReport = null;          // the report on the Grading screen
+    let gradingFiles = { rubric: '', files: [] };
+    let gradingInProgress = false;
+    let reportChatBox = null;
 
     // Helper: Toast Notifications
     function showToast(msg, duration = 3000) {
@@ -121,13 +141,15 @@ export function initLegacyApp() {
     }
 
     // --- Mode Switching ---
-    function switchMode(mode) {
+    // history: 'push' (a user's navigation), 'replace' (restoring), 'none' (Back/Forward).
+    function switchMode(mode, { history: historyMode = 'push' } = {}) {
+        if (!modePanels[mode]) return;      // e.g. #instructor on a lab PC
         currentMode = mode;
         modeTabs.forEach(t => t.classList.toggle('active', t.getAttribute('data-mode') === mode));
         modeTabs.forEach(t => t.setAttribute('aria-current', t.getAttribute('data-mode') === mode ? 'page' : 'false'));
         const titles = { visualizer: 'Topology Discovery', teacher: 'Instructor Studio', student: 'Student Grading' };
         if (contextTitle) contextTitle.textContent = titles[mode] || '';
-        
+
         Object.entries(modePanels).forEach(([mKey, panel]) => {
             if (panel) panel.classList.toggle('active', mKey === mode);
         });
@@ -140,6 +162,30 @@ export function initLegacyApp() {
             if (canvasMainTitle) canvasMainTitle.textContent = 'Student Evaluation View';
         }
         if (pendingOperations === 0) applyEmptyStateText(mode);
+
+        document.documentElement.dataset.screen = SCREEN_OF_MODE[mode];
+        saveSession('screen', SCREEN_OF_MODE[mode]);
+        // Other screens draw their own topology on the shared map; bring the
+        // student's back, with its highlight.
+        if (mode === 'student' && gradingReport && map.getTopology() !== gradingReport.topology) {
+            renderTopology(gradingReport.topology);
+            linkedReport.applyFocus();
+        }
+        syncContextActions();
+        writeHistory(historyMode);
+    }
+
+    function writeHistory(kind) {
+        if (kind === 'none') return;
+        const selection = currentMode === 'student' ? linkedReport.getSelectedId() : null;
+        const hash = formatHash(SCREEN_OF_MODE[currentMode], selection);
+        if (location.hash === hash) return;
+        try {
+            if (kind === 'push') history.pushState(null, '', hash);
+            else history.replaceState(null, '', hash);
+        } catch (e) {
+            // A sandboxed frame can refuse; the hash is a convenience.
+        }
     }
 
     modeTabs.forEach(tab => {
@@ -178,7 +224,6 @@ export function initLegacyApp() {
             teacherSelectedFiles = [];
             studentSubmissionFiles = [];
             studentInstructionsFile = null;
-            latestEvaluationReport = null;
 
             if (fileInput) fileInput.value = '';
             if (teacherFileInput) teacherFileInput.value = '';
@@ -190,7 +235,7 @@ export function initLegacyApp() {
             if (teacherResultCard) teacherResultCard.style.display = 'none';
             if (studentInstInfo) studentInstInfo.style.display = 'none';
             if (studentSubPreview) studentSubPreview.style.display = 'none';
-            if (studentReportCard) studentReportCard.style.display = 'none';
+            clearGradingReport();
             if (studentInstStatus) {
                 studentInstStatus.textContent = 'Required';
                 studentInstStatus.className = 'badge badge-amber';
@@ -596,6 +641,7 @@ export function initLegacyApp() {
 
     async function handleStudentInstFile(file) {
         studentInstructionsFile = file;
+        syncContextActions();
         const formData = new FormData();
         formData.append('instructions_file', file);
 
@@ -646,6 +692,7 @@ export function initLegacyApp() {
 
     function handleStudentSubFiles(files) {
         studentSubmissionFiles = Array.from(files);
+        syncContextActions();
         if (studentSubmissionFiles.length === 0) return;
 
         if (studentSubPreview) studentSubPreview.style.display = 'block';
@@ -665,78 +712,123 @@ export function initLegacyApp() {
             studentSubmissionFiles = [];
             if (studentSubInput) studentSubInput.value = '';
             if (studentSubPreview) studentSubPreview.style.display = 'none';
+            syncContextActions();
         });
     }
 
-    if (studentEvaluateBtn) {
-        studentEvaluateBtn.addEventListener('click', async () => {
-            if (!studentInstructionsFile) {
-                alert("Step 1: Please upload the instructor's instructions.txt first.");
-                return;
-            }
-            if (studentSubmissionFiles.length === 0) {
-                alert("Step 2: Please upload your student submission (.pkt, .xml, or config files).");
-                return;
-            }
+    async function gradeSubmission() {
+        if (!studentInstructionsFile) {
+            alert("Step 1: Please upload the instructor's instructions.txt first.");
+            return;
+        }
+        if (studentSubmissionFiles.length === 0) {
+            alert("Step 2: Please upload your student submission (.pkt, .xml, or config files).");
+            return;
+        }
 
-            const formData = new FormData();
-            formData.append('instructions_file', studentInstructionsFile);
-            studentSubmissionFiles.forEach(f => formData.append('student_files', f));
+        const formData = new FormData();
+        formData.append('instructions_file', studentInstructionsFile);
+        studentSubmissionFiles.forEach(f => formData.append('student_files', f));
 
-            try {
-                showLoading("Grading submission and evaluating relational topology rules...");
-                const res = await fetch('/api/evaluate', { method: 'POST', body: formData });
-                if (!res.ok) {
-                    throw new Error(await describeFailure(res, `Evaluation failed with status ${res.status}`));
-                }
-                const report = await res.json();
-                latestEvaluationReport = report;
-                renderEvaluationReport(report);
-                showToast(`Grading Complete: Score ${report.percentage}% (${report.grade_letter})`);
-            } catch (err) {
-                showPanelMessage(`<div class="empty-icon">${iconMarkup('alert')}</div><h3>Grading Failed</h3>`
-                    + `<p class="empty-error">${escapeHtml(err.message)}</p>`);
-                alert(`Evaluation Error: ${err.message}`);
-            } finally {
-                hideLoading();
+        gradingInProgress = true;
+        try {
+            showLoading("Grading submission and evaluating relational topology rules...");
+            const res = await fetch('/api/evaluate', { method: 'POST', body: formData });
+            if (!res.ok) {
+                throw new Error(await describeFailure(res, `Evaluation failed with status ${res.status}`));
             }
-        });
+            const report = await res.json();
+            showGradingReport(report, {
+                rubricName: studentInstructionsFile.name,
+                fileNames: studentSubmissionFiles.map(f => f.name),
+                selectedId: linkedReport.getSelectedId(),
+            });
+            showToast(`Grading Complete: Score ${report.percentage}% (${report.grade_letter})`);
+        } catch (err) {
+            showPanelMessage(`<div class="empty-icon">${iconMarkup('alert')}</div><h3>Grading Failed</h3>`
+                + `<p class="empty-error">${escapeHtml(err.message)}</p>`);
+            alert(`Evaluation Error: ${err.message}`);
+        } finally {
+            gradingInProgress = false;
+            hideLoading();
+        }
     }
 
-    function renderEvaluationReport(report) {
+    if (studentEvaluateBtn) studentEvaluateBtn.addEventListener('click', gradeSubmission);
+    if (gradeAgainBtn) gradeAgainBtn.addEventListener('click', gradeSubmission);
+
+    // Shows a report on the Grading screen: the linked report in the list
+    // column, the topology on the map, file chips in the context bar. The
+    // upload steps collapse; Clear brings them back.
+    function showGradingReport(report, { rubricName = '', fileNames = [], selectedId = null, persist = true } = {}) {
+        gradingReport = report;
+        latestEvaluationReport = report;
+        gradingFiles = { rubric: rubricName, files: fileNames };
         if (studentReportCard) studentReportCard.style.display = 'block';
-
-        if (reportGradeLetter) {
-            reportGradeLetter.textContent = report.grade_letter;
-            reportGradeLetter.className = `score-grade-badge grade-${report.grade_letter.toLowerCase().charAt(0)}`;
-        }
-        if (reportEarnedScore) reportEarnedScore.textContent = report.total_score.toFixed(1);
-        if (reportMaxScore) reportMaxScore.textContent = report.max_score.toFixed(1);
-        if (reportProgressFill) {
-            reportProgressFill.style.width = `${Math.min(100, Math.max(0, report.percentage))}%`;
-            if (report.percentage < 60) reportProgressFill.className = 'score-progress-fill fill-red';
-            else if (report.percentage < 80) reportProgressFill.className = 'score-progress-fill fill-amber';
-            else reportProgressFill.className = 'score-progress-fill';
-        }
-
-        // Server integers plus a fixed icon literal; nothing from a file reaches this.
-        if (reportPassedTag) reportPassedTag.innerHTML = `${iconMarkup('check')} ${Number(report.passed_count)} Passed`;
-        if (reportFailedTag) reportFailedTag.innerHTML = `${iconMarkup('x')} ${Number(report.failed_count)} Failed`;
-
-        if (filterCountAll) filterCountAll.textContent = report.results.length;
-        if (filterCountFailed) filterCountFailed.textContent = report.failed_count;
-        if (filterCountPassed) filterCountPassed.textContent = report.passed_count;
-
-        renderFilteredResults('all');
-
-        if (report.topology) {
-            renderTopology(report.topology);
-        }
-        renderStudyTopics(report);
+        gradingSteps.forEach(card => { card.style.display = 'none'; });
+        if (report.topology) renderTopology(report.topology);
+        linkedReport.show(report, { selectedId });
+        renderFileChips();
+        syncContextActions();
         // Fired only after the score is rendered. If it never returns, the
         // student still has a complete, final grade on screen.
         requestNarrative(report);
-        openReportChat(report);
+        reportChatBox = openReportChat(report);
+        if (persist && !saveSession('grading', { report, rubricName, fileNames })) {
+            showToast('This report is too large to keep after a refresh. Download it to keep a copy.', 5000);
+        }
+    }
+
+    function clearGradingReport() {
+        gradingReport = null;
+        latestEvaluationReport = null;
+        reportChatBox = null;
+        gradingFiles = { rubric: '', files: [] };
+        clearSession('grading');
+        clearSession('selection');
+        linkedReport.clear();
+        if (studentReportCard) studentReportCard.style.display = 'none';
+        gradingSteps.forEach(card => { card.style.display = ''; });
+        renderFileChips();
+        syncContextActions();
+        if (currentMode === 'student') writeHistory('replace');
+    }
+
+    function renderFileChips() {
+        if (!contextFileChips) return;
+        contextFileChips.textContent = '';
+        [gradingFiles.rubric].concat(gradingFiles.files).filter(Boolean).forEach(fileName => {
+            const li = document.createElement('li');
+            li.className = 'file-chip';
+            li.textContent = fileName;
+            li.title = fileName;
+            contextFileChips.appendChild(li);
+        });
+    }
+
+    // Grade again needs the uploaded files, which a refresh does not keep.
+    function syncContextActions() {
+        if (contextActions) contextActions.hidden = !(currentMode === 'student' && gradingReport);
+        if (gradeAgainBtn) gradeAgainBtn.hidden = !(studentInstructionsFile && studentSubmissionFiles.length);
+    }
+
+    if (clearReportBtn) {
+        clearReportBtn.addEventListener('click', () => {
+            clearGradingReport();
+            map.reset();
+            if (emptyState) emptyState.style.display = 'block';
+            showToast('Report cleared.');
+        });
+    }
+
+    // The question goes to the chat as plain text; the chat log sets
+    // textContent, so a device name in the description stays text.
+    function askAboutCheckpoint(result) {
+        if (!reportChatBox || !reportChatBox.available) return;
+        const host = document.getElementById('report-chat');
+        if (host && host.scrollIntoView) host.scrollIntoView({ block: 'nearest' });
+        reportChatBox.ask('Explain this checkpoint I missed: "' + result.description + '". What was found: '
+            + (result.actual_value || 'nothing') + '.');
     }
 
     // --- Local AI status (header indicator) ---
@@ -797,7 +889,7 @@ export function initLegacyApp() {
     // One reusable box: under a student's report, and under the class briefing.
     // It never shows a prewritten answer. If the model is unavailable the box
     // says so and disables itself.
-    function createChatBox(host, { title, suggestions, endpoint, buildPayload, readyNote }) {
+    function createChatBox(host, { title, suggestions, endpoint, buildPayload, readyNote, onAvailability }) {
         host.style.display = 'block';
         host.innerHTML = `
             <div class="ai-chat-head">
@@ -902,7 +994,10 @@ export function initLegacyApp() {
                     note.className = 'ai-chat-note ai-chat-note-off';
                 }
                 syncControls();
-            }
+                if (onAvailability) onAvailability(available);
+            },
+            ask,
+            get available() { return available; },
         };
         chatBoxes.set(host, box);
         box.setAvailability({ available: false, detail: 'checking' });
@@ -912,10 +1007,11 @@ export function initLegacyApp() {
 
     function openReportChat(report) {
         const host = document.getElementById('report-chat');
-        if (!host) return;
+        if (!host) return null;
         // Only the checkpoint findings are used, so the topology is not sent.
         const findings = { ...report, topology: {} };
-        createChatBox(host, {
+        return createChatBox(host, {
+            onAvailability: available => linkedReport.setAskAvailable(available),
             title: 'Ask about your results',
             suggestions: report.failed_count > 0
                 ? ['Why did I lose the most points?', 'Explain my first mistake in simple terms', 'Which show commands should I use to check my work?']
@@ -977,46 +1073,6 @@ export function initLegacyApp() {
         }
     }
 
-    function renderStudyTopics(report) {
-        const host = document.getElementById('report-study-topics');
-        if (!host) return;
-        const topics = report.study_topics || [];
-        if (topics.length === 0) {
-            host.style.display = 'none';
-            host.innerHTML = '';
-            return;
-        }
-        host.style.display = 'block';
-        host.innerHTML = '<div class="study-header">What to study next</div>'
-            + topics.map(t => `
-                <div class="study-topic">
-                    <div class="study-topic-top">
-                        <span class="study-topic-name">${escapeHtml(t.topic)}</span>
-                        <span class="study-topic-cost">-${t.points_lost} pts</span>
-                    </div>
-                    <div class="study-topic-why">${escapeHtml(t.why_it_matters)}</div>
-                    <div class="study-topic-count">${t.checkpoints_failed} checkpoint${t.checkpoints_failed === 1 ? '' : 's'} affected</div>
-                </div>`).join('');
-    }
-
-    function renderFilteredResults(filter = 'all') {
-        if (!latestEvaluationReport || !reportResultsList) return;
-        reportResultsList.innerHTML = '';
-
-        const results = latestEvaluationReport.results.filter(r => {
-            if (filter === 'passed') return r.passed;
-            if (filter === 'failed') return !r.passed;
-            return true;
-        });
-
-        if (results.length === 0) {
-            reportResultsList.innerHTML = `<div style="text-align:center;color:var(--text-muted);font-size: 0.75rem;padding:12px;">No items match filter.</div>`;
-            return;
-        }
-
-        results.forEach(res => reportResultsList.appendChild(buildRuleResultCard(res)));
-    }
-
     // One checkpoint as a card. Shared by the Student Grading report and the
     // instructor's per-student review in Batch Grading, so both show the same
     // detail. Every field is escaped: descriptions and "Found:" values can carry
@@ -1035,15 +1091,6 @@ export function initLegacyApp() {
         `;
         return card;
     }
-
-    filterChips.forEach(chip => {
-        chip.addEventListener('click', () => {
-            filterChips.forEach(c => c.classList.remove('active'));
-            chip.classList.add('active');
-            const filter = chip.getAttribute('data-filter');
-            renderFilteredResults(filter);
-        });
-    });
 
     if (studentDownloadReportBtn) {
         studentDownloadReportBtn.addEventListener('click', () => {
@@ -1751,4 +1798,34 @@ export function initLegacyApp() {
         });
     }
 
+
+    // --- Keeping results across a refresh (issue #29, spec 8.2) ---
+    document.documentElement.dataset.screen = SCREEN_OF_MODE[currentMode];
+    const hashState = parseHash(location.hash);
+    const stored = loadSession('grading');
+    if (stored && stored.report && Array.isArray(stored.report.results)) {
+        showGradingReport(stored.report, {
+            rubricName: stored.rubricName || '',
+            fileNames: Array.isArray(stored.fileNames) ? stored.fileNames : [],
+            selectedId: hashState.selection || loadSession('selection'),
+            persist: false,
+        });
+    }
+    const startScreen = hashState.screen || loadSession('screen');
+    if (startScreen && MODE_OF_SCREEN[startScreen]) {
+        switchMode(MODE_OF_SCREEN[startScreen], { history: 'replace' });
+    }
+
+    window.addEventListener('popstate', () => {
+        const state = parseHash(location.hash);
+        if (state.screen && MODE_OF_SCREEN[state.screen]) switchMode(MODE_OF_SCREEN[state.screen], { history: 'none' });
+        if (state.screen === 'grading' && gradingReport) linkedReport.select(state.selection, { notify: false });
+    });
+
+    // Only while a grade is being computed: leaving then loses the request.
+    window.addEventListener('beforeunload', (e) => {
+        if (!gradingInProgress) return;
+        e.preventDefault();
+        e.returnValue = '';
+    });
 }
