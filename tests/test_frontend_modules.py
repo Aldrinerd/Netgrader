@@ -150,3 +150,8 @@ def test_classic_scripts_are_es5(name):
 def test_local_storage_is_only_touched_by_the_guarded_helpers():
     users = sorted(rel for rel, path in js_files() if "localStorage" in _read(path))
     assert users == ["core/storage.js", "display-boot.js"], users
+
+
+def test_session_storage_is_only_touched_by_the_store():
+    users = sorted(rel for rel, path in js_files() if "sessionStorage" in _read(path))
+    assert users == ["core/store.js"], users
