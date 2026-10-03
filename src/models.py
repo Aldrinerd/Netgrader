@@ -192,6 +192,15 @@ class RuleResult(BaseModel):
     # Why the requirement exists and how to satisfy it. Populated for failed
     # checkpoints only. Deterministic: see src/feedback.py.
     guidance: str | None = None
+    # Presentational fields for the linked report (spec 5.5). Filled after the
+    # score is decided, from what the evaluator already resolved; none of them
+    # is read by scoring. Defaults keep reports from older builds valid.
+    expected_text: str | None = None          # the rubric's expectation, in words
+    matched_device: str | None = None         # the student's device this is about; None when missing
+    peer_device: str | None = None            # other end of a link-scoped check, after mapping
+    peer_interface: str | None = None
+    verify_commands: list[str] = Field(default_factory=list)
+    topic: str | None = None                  # study topic label, as in study_topics
 
 
 class ClassChatStudent(BaseModel):

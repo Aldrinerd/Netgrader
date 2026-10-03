@@ -71,6 +71,7 @@ Upload (.pkt / .pka / .xml / .zip / .txt)
 | `src/criteria_generator.py` | Reference topology → `EvaluationCriteria`; renders and re-parses `instructions.txt`. |
 | `src/evaluator.py` | Student topology + criteria → `EvaluationReport`. **The score is decided here and is final.** |
 | `src/feedback.py` | Deterministic per-checkpoint guidance and ranked study topics. |
+| `src/report_fields.py` | `expected_text(rule, policies)`: the rubric's expectation in words, for the linked report. |
 | `src/llm.py` | Optional local Ollama client. Never raises, never blocks, never sees a score. |
 | `src/narrative.py` | The only place a model is used. Student summary, class briefing. |
 | `src/app.py` | FastAPI application and nine endpoints. |
@@ -78,7 +79,13 @@ Upload (.pkt / .pka / .xml / .zip / .txt)
 | `static/js/core/` | Shared helpers. `dom.js` is the only new module allowed to build markup from strings; `legacy/app.js` still does and is being retired. |
 | `static/js/map/` | The topology map (`createTopologyMap`) and its SVG shapes. |
 | `static/js/legacy/app.js` | The pre-refresh screens, shrinking as each is rewritten (spec `docs/superpowers/specs/2026-10-01-ui-refresh-design.md`). |
-| `static/js/unsupported.js` | Classic script loaded with `nomodule`; shows the old-browser notice. |
+| `static/js/display-boot.js` | Classic script in `<head>`: applies saved display settings before first paint; `window.NetgraderDisplay`. |
+| `static/js/boot-check.js` | Classic script: shows the old-browser notice if the app never started. |
+| `static/js/shell/` | The rail's Display menu. |
+| `static/js/core/icons.js` | Icons from the vendored Tabler sprite. |
+| `static/js/core/store.js` | The only module touching `sessionStorage`: the kept report, selection and screen, and the URL hash format. Never throws. |
+| `static/js/map/highlight.js` | Pure focus rules for the map: badges, focused devices and link, dimming. |
+| `static/js/report/` | The linked report: `checkpoints.js` (pure data rules), `loss-bar.js`, `checkpoint-list.js`, `checkpoint-detail.js`, and `linked-report.js`, which ties list, detail and map focus together. |
 | `templates/base.html` | Page shell; one partial per screen under `templates/partials/`. |
 | `static/css/tokens.css` | Design tokens. Component styles read these. |
 | `validation/` | SOP #3 measurement instrument. Imported by nothing in `src/`. |
@@ -259,6 +266,8 @@ rule category. Coverage is total by construction: a test fails if a category
 exists without guidance. A ranked "what to study next" list is derived from
 which topics cost the most points.
 
+Each checkpoint also carries presentational fields for the linked report, filled after scoring: `expected_text` (the rubric's expectation in words, from `src/report_fields.py`), `matched_device` (the student's device the rubric name resolved to), `peer_device` and `peer_interface` (the other end of a cabling, link-agreement or relational-subnet check), `verify_commands` (the `show` commands from `feedback.py`, as data) and `topic` (the study-topic label). None of them is read by scoring; `python -m validation` is unchanged.
+
 **Narrative layer** (`src/narrative.py`) — optional. One short paragraph per
 student report, and a class briefing for the instructor.
 
@@ -406,6 +415,8 @@ worse than no instrument.
 
 ### Screens
 
+Navigation is a left rail: **Discovery**, **Instructor** (instructor's machine only) and **Grading**, with **Display** and **AI status** at the bottom. The **Display** menu sets text size (Small to Extra large), theme (Dark, Light, Follow system), contrast (Standard, High) and motion (Follow system, Reduce). Settings are saved per browser and applied before the page draws (`static/js/display-boot.js`). Colours come only from `static/css/tokens.css`, whose contrast is tested in `tests/test_theme_tokens.py`. Icons are Tabler (MIT), vendored as `static/icons/sprite.svg` and rebuilt with `scripts/build_icon_sprite.py`.
+
 - **Topology Discovery** — visualise any upload as a map with confidence-rated
   links and an evidence drawer citing exact config lines. Routers draw as a
   short cylinder, switches as a port-marked box, PCs as a monitor.
@@ -414,8 +425,7 @@ worse than no instrument.
   **Review** button that shows that student's missed checkpoints grouped by
   device, and can draw their topology with the faulty devices ringed in red.
   Rendered only for the instructor (see *Instructor access* below).
-- **Student Grading** — upload `instructions.txt` plus an attempt, get a
-  scorecard with per-checkpoint guidance.
+- **Student Grading** — upload `instructions.txt` plus an attempt. Before grading, the list column holds the two upload steps. Afterwards they collapse: the context bar shows the graded files with **Grade again** and **Clear**, and the list column shows the score, points lost by topic, and the missed checkpoints, grouped by device or by topic. Passed checkpoints sit in a collapsed "N checkpoints passed". Selecting a missed checkpoint (click, arrow keys, or a device on the map) rings it on the map. A link-scoped check highlights the link and both ends, and everything else dims. Its detail appears under the map: Expected, Found, Points lost, Why it matters, the `show` commands to check with, and **Ask about this** when the local model is running. The report, the selected checkpoint and the screen are kept in `sessionStorage` and in the URL hash (`#grading/<rule id>`), so a refresh restores them and Back/Forward move between them. They are gone when the browser closes.
 
 ### API
 
@@ -483,7 +493,7 @@ login added on top.
 
 ```bash
 python -m pip install --user -r requirements-dev.txt
-python -m pytest -q          # 281 tests
+python -m pytest -q          # 329 tests
 node --test tests/js/*.test.mjs   # JavaScript unit tests (developer machines; pytest also runs them)
 python -m validation         # SOP #3 metrics; exit 1 on any incorrect behaviour
 ```

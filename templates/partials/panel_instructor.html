@@ -2,7 +2,7 @@
                 <div id="panel-mode-teacher" class="mode-panel">
                     <div class="panel-card teacher-authoring-card">
                         <div class="card-header">
-                            <span class="card-icon">👨‍🏫</span>
+                            <span class="card-icon"><svg class="icon" aria-hidden="true"><use href="/static/icons/sprite.svg?v={{ asset_version }}#instructor"></use></svg></span>
                             <h3>Author Lab Rubric & Instructions</h3>
                             <span class="badge badge-blue">Teacher Studio</span>
                         </div>
@@ -28,7 +28,7 @@
                             <div class="policy-control-panel">
                                 <div class="policy-panel-header">
                                     <div class="policy-title-wrap">
-                                        <span class="policy-header-title">🛡️ Instructor Grading Policies</span>
+                                        <span class="policy-header-title"><svg class="icon" aria-hidden="true"><use href="/static/icons/sprite.svg?v={{ asset_version }}#shield"></use></svg> Instructor Grading Policies</span>
                                         <span class="policy-badge-info">Deterministic & Offline</span>
                                     </div>
                                     <div class="policy-profile-quickbar">
@@ -42,7 +42,7 @@
                                     <!-- Group 1: IP & Subnetting -->
                                     <div class="policy-group-card">
                                         <div class="policy-group-header">
-                                            <span class="policy-group-title">🌐 1. IP & Subnetting Policies</span>
+                                            <span class="policy-group-title"><svg class="icon" aria-hidden="true"><use href="/static/icons/sprite.svg?v={{ asset_version }}#network"></use></svg> 1. IP & Subnetting Policies</span>
                                             <span class="policy-group-tag">Addressing</span>
                                         </div>
                                         <div class="policy-group-body">
@@ -82,7 +82,7 @@
                                     <!-- Group 2: Topology & Hardware -->
                                     <div class="policy-group-card">
                                         <div class="policy-group-header">
-                                            <span class="policy-group-title">🗺️ 2. Topology & Cabling Policies</span>
+                                            <span class="policy-group-title"><svg class="icon" aria-hidden="true"><use href="/static/icons/sprite.svg?v={{ asset_version }}#map"></use></svg> 2. Topology & Cabling Policies</span>
                                             <span class="policy-group-tag">Hardware</span>
                                         </div>
                                         <div class="policy-group-body">
@@ -122,7 +122,7 @@
                                     <!-- Group 3: Routing & Security -->
                                     <div class="policy-group-card">
                                         <div class="policy-group-header">
-                                            <span class="policy-group-title">⚙️ 3. Routing & Security Policies</span>
+                                            <span class="policy-group-title"><svg class="icon" aria-hidden="true"><use href="/static/icons/sprite.svg?v={{ asset_version }}#settings"></use></svg> 3. Routing & Security Policies</span>
                                             <span class="policy-group-tag">Protocols</span>
                                         </div>
                                         <div class="policy-group-body">
@@ -165,9 +165,10 @@
                             <div id="teacher-drop-zone" class="dropzone teacher-dropzone">
                                 <input type="file" id="teacher-file-input" multiple accept=".pkt,.pka,.xml,.zip,.txt" style="display:none;">
                                 <div class="dropzone-content">
-                                    <div class="upload-icon">📑</div>
+                                    <div class="upload-icon"><svg class="icon" aria-hidden="true"><use href="/static/icons/sprite.svg?v={{ asset_version }}#upload"></use></svg></div>
                                     <p class="dropzone-text"><strong>Upload Reference Packet Tracer / Config File</strong></p>
                                     <span class="dropzone-hint">or <button id="teacher-browse-btn" class="link-btn" type="button">browse files</button></span>
+                                    <span class="dropzone-accepts">Accepts .pkt, .pka, .xml, .zip or .txt</span>
                                 </div>
                             </div>
 
@@ -180,7 +181,7 @@
                             </div>
 
                             <button id="teacher-generate-btn" class="btn btn-primary btn-block" style="margin-top: 12px;">
-                                <span>⚡ Generate Rubric & instructions.txt</span>
+                                <span><svg class="icon" aria-hidden="true"><use href="/static/icons/sprite.svg?v={{ asset_version }}#generate"></use></svg> Generate Rubric & instructions.txt</span>
                             </button>
                         </form>
                     </div>
@@ -188,7 +189,7 @@
                     <!-- Teacher Output & Download Card -->
                     <div class="panel-card teacher-result-card" id="teacher-result-card" style="display: none;">
                         <div class="card-header">
-                            <span class="card-icon">✅</span>
+                            <span class="card-icon"><svg class="icon" aria-hidden="true"><use href="/static/icons/sprite.svg?v={{ asset_version }}#check"></use></svg></span>
                             <h3>Generated Instructions Sheet</h3>
                             <span id="teacher-rules-count-badge" class="badge badge-green">0 Rules</span>
                         </div>
@@ -200,10 +201,10 @@
 
                         <div class="card-actions-row">
                             <button id="teacher-download-btn" class="btn btn-primary btn-sm">
-                                <span>📥 Download instructions.txt</span>
+                                <span><svg class="icon" aria-hidden="true"><use href="/static/icons/sprite.svg?v={{ asset_version }}#download"></use></svg> Download instructions.txt</span>
                             </button>
                             <button id="teacher-copy-btn" class="btn btn-outline btn-sm">
-                                <span>📋 Copy to Clipboard</span>
+                                <span><svg class="icon" aria-hidden="true"><use href="/static/icons/sprite.svg?v={{ asset_version }}#copy"></use></svg> Copy to Clipboard</span>
                             </button>
                         </div>
                     </div>
@@ -211,7 +212,7 @@
                     <!-- Batch Grading: grade a whole class in one pass -->
                     <div class="panel-card batch-card">
                         <div class="card-header">
-                            <span class="card-icon">📊</span>
+                            <span class="card-icon"><svg class="icon" aria-hidden="true"><use href="/static/icons/sprite.svg?v={{ asset_version }}#chart"></use></svg></span>
                             <h3>Batch Grading &amp; Gradebook Export</h3>
                             <span class="badge badge-blue">Whole Class</span>
                         </div>
@@ -229,7 +230,7 @@
                         </div>
 
                         <button id="batch-grade-btn" class="btn btn-primary btn-block">
-                            <span>⚡ Grade All Submissions</span>
+                            <span><svg class="icon" aria-hidden="true"><use href="/static/icons/sprite.svg?v={{ asset_version }}#send"></use></svg> Grade All Submissions</span>
                         </button>
 
                         <div id="batch-results" class="batch-results" style="display:none;">
@@ -237,7 +238,7 @@
                             <div class="batch-review-toolbar">
                                 <span class="form-hint">Click <strong>Review</strong> on a student to see every checkpoint they missed.</span>
                                 <div class="batch-review-actions">
-                                    <button type="button" id="batch-review-all-btn" class="btn btn-outline btn-sm">🔍 Review all</button>
+                                    <button type="button" id="batch-review-all-btn" class="btn btn-outline btn-sm"><svg class="icon" aria-hidden="true"><use href="/static/icons/sprite.svg?v={{ asset_version }}#search"></use></svg> Review all</button>
                                     <button type="button" id="batch-collapse-all-btn" class="btn btn-outline btn-sm">Collapse all</button>
                                 </div>
                             </div>
@@ -260,7 +261,7 @@
                             <div id="batch-chat" class="ai-chat" style="display:none;"></div>
 
                             <button id="batch-csv-btn" class="btn btn-primary btn-block" style="margin-top:12px;">
-                                <span>📥 Download Gradebook CSV</span>
+                                <span><svg class="icon" aria-hidden="true"><use href="/static/icons/sprite.svg?v={{ asset_version }}#download"></use></svg> Download Gradebook CSV</span>
                             </button>
                         </div>
                     </div>

@@ -65,7 +65,7 @@ def test_index_page_renders(live_server):
     res = requests.get(live_server + "/", timeout=10)
     assert res.status_code == 200
     assert "Instructor Studio" in res.text
-    assert "Student Grading" in res.text
+    assert '<span class="rail-label">Grading</span>' in res.text
 
 
 def test_fonts_are_served_locally(live_server):

@@ -3,7 +3,7 @@
                     <!-- Step 1: Upload Instructions -->
                     <div class="panel-card student-step-card">
                         <div class="card-header">
-                            <span class="card-icon">1️⃣</span>
+                            <span class="card-icon"><span class="step-number">1</span></span>
                             <h3>Upload Teacher's Instructions</h3>
                             <span id="student-inst-status" class="badge badge-amber">Required</span>
                         </div>
@@ -12,9 +12,10 @@
                         <div id="student-inst-drop-zone" class="dropzone student-dropzone">
                             <input type="file" id="student-inst-input" accept=".txt,.json" style="display:none;">
                             <div class="dropzone-content">
-                                <div class="upload-icon">📄</div>
+                                <div class="upload-icon"><svg class="icon" aria-hidden="true"><use href="/static/icons/sprite.svg?v={{ asset_version }}#file"></use></svg></div>
                                 <p class="dropzone-text"><strong>Drag & Drop</strong> instructions.txt here</p>
                                 <span class="dropzone-hint">or <button id="student-inst-browse-btn" class="link-btn" type="button">browse file</button></span>
+                                <span class="dropzone-accepts">Accepts .txt or .json (the rubric file from your instructor)</span>
                             </div>
                         </div>
                         <div id="student-inst-info" class="criteria-info-box" style="display: none;">
@@ -29,7 +30,7 @@
                     <!-- Step 2: Upload Solution -->
                     <div class="panel-card student-step-card">
                         <div class="card-header">
-                            <span class="card-icon">2️⃣</span>
+                            <span class="card-icon"><span class="step-number">2</span></span>
                             <h3>Upload Your Solution</h3>
                         </div>
                         <p class="card-desc">Upload your completed Packet Tracer (<code>.pkt</code> / <code>.xml</code>) or Cisco config bundle (<code>.zip</code> / <code>.txt</code>):</p>
@@ -37,9 +38,10 @@
                         <div id="student-sub-drop-zone" class="dropzone student-dropzone">
                             <input type="file" id="student-sub-input" multiple accept=".pkt,.pka,.xml,.zip,.txt,.log" style="display:none;">
                             <div class="dropzone-content">
-                                <div class="upload-icon">📥</div>
+                                <div class="upload-icon"><svg class="icon" aria-hidden="true"><use href="/static/icons/sprite.svg?v={{ asset_version }}#upload"></use></svg></div>
                                 <p class="dropzone-text"><strong>Drag & Drop</strong> your completed lab files</p>
                                 <span class="dropzone-hint">or <button id="student-sub-browse-btn" class="link-btn" type="button">browse files</button></span>
+                                <span class="dropzone-accepts">Accepts .pkt, .pka, .xml, .zip or .txt</span>
                             </div>
                         </div>
 
@@ -52,56 +54,21 @@
                         </div>
 
                         <button id="student-evaluate-btn" class="btn btn-primary btn-block" style="margin-top: 12px;">
-                            <span>🚀 Submit & Evaluate Lab Assignment</span>
+                            <span><svg class="icon" aria-hidden="true"><use href="/static/icons/sprite.svg?v={{ asset_version }}#send"></use></svg> Submit & Evaluate Lab Assignment</span>
                         </button>
                     </div>
 
-                    <!-- Evaluation Scorecard Report -->
+                    <!-- Linked report: list column (spec 5.1). Filled by report/linked-report.js. -->
                     <div class="panel-card student-report-card" id="student-report-card" style="display: none;">
-                        <div class="card-header">
-                            <span class="card-icon">🏆</span>
-                            <h3>Automated Evaluation Scorecard</h3>
-                        </div>
+                        <div id="linked-report-list" class="linked-report-list"></div>
 
-                        <!-- Hero Score Banner -->
-                        <div class="score-hero">
-                            <div class="score-grade-badge" id="report-grade-letter">A</div>
-                            <div class="score-details">
-                                <div class="score-points">
-                                    <span id="report-earned-score">90.0</span> / <span id="report-max-score">100.0</span> <span class="score-unit">pts</span>
-                                </div>
-                                <div class="score-progress-bar">
-                                    <div id="report-progress-fill" class="score-progress-fill" style="width: 90%;"></div>
-                                </div>
-                                <div class="score-meta-counts">
-                                    <span class="badge badge-green" id="report-passed-tag">✅ 10 Passed</span>
-                                    <span class="badge badge-red" id="report-failed-tag">❌ 2 Failed</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Rule Filter Tabs -->
-                        <div class="report-filters-row">
-                            <button class="filter-chip active" data-filter="all">All (<span id="filter-count-all">0</span>)</button>
-                            <button class="filter-chip" data-filter="failed">Failed (<span id="filter-count-failed">0</span>)</button>
-                            <button class="filter-chip" data-filter="passed">Passed (<span id="filter-count-passed">0</span>)</button>
-                        </div>
-
-                        <!-- Itemized Checklist -->
                         <div id="report-narrative" class="report-narrative" style="display:none;"></div>
-
-                        <!-- Concepts to revisit, ranked by points lost -->
-                        <div id="report-study-topics" class="report-study-topics" style="display:none;"></div>
 
                         <!-- Follow-up questions about this report, answered by the local model -->
                         <div id="report-chat" class="ai-chat" style="display:none;"></div>
 
-                        <div id="report-results-list" class="report-results-list">
-                            <!-- Populated by JS -->
-                        </div>
-
                         <button id="student-download-report-btn" class="btn btn-outline btn-block" style="margin-top: 12px;">
-                            <span>📥 Download Grade Report (.txt)</span>
+                            <span><svg class="icon" aria-hidden="true"><use href="/static/icons/sprite.svg?v={{ asset_version }}#download"></use></svg> Download Grade Report (.txt)</span>
                         </button>
                     </div>
                 </div>

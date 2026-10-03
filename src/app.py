@@ -250,6 +250,11 @@ async def index_page(request: Request):
 
 
 JS_DIR = os.path.realpath(os.path.join(STATIC_DIR, "js"))
+_WINDOWS_DEVICE_NAMES = frozenset(
+    {"CON", "PRN", "AUX", "NUL"}
+    | {f"COM{i}" for i in range(1, 10)}
+    | {f"LPT{i}" for i in range(1, 10)}
+)
 
 
 @app.get("/assets/{version}/js/{path:path}")
@@ -272,7 +277,10 @@ def versioned_module(version: str, path: str):
     ):
         raise HTTPException(status_code=404)
     segments = path.split("/")
-    if any(seg in ("", ".", "..") for seg in segments):
+    if any(not s or s in (".", "..") or s.endswith((".", " ")) for s in segments):
+        raise HTTPException(status_code=404)
+    # Windows treats CON.js, aux.min.js, ... as device names, whatever the extension.
+    if any(s.split(".", 1)[0].upper() in _WINDOWS_DEVICE_NAMES for s in segments):
         raise HTTPException(status_code=404)
     candidate = os.path.realpath(os.path.join(JS_DIR, *segments))
     try:

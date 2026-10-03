@@ -17,6 +17,7 @@ from src.models import (
 from src.feedback import attach_guidance
 from src.link_attributes import LINK_ATTRIBUTES, compare as compare_link_attribute
 from src.parsers import canonical_device_name, normalize_interface_name
+from src.report_fields import expected_text
 
 
 def _build_device_mapping(criteria: EvaluationCriteria, student_topology: TopologyResult) -> dict[str, str]:
@@ -261,6 +262,26 @@ def host_iface_name(dev, iface_obj) -> str:
         if candidate is iface_obj:
             return name
     return getattr(iface_obj, "name", "")
+
+
+def _peer_endpoint(rule: EvaluationRule) -> tuple[str | None, str | None]:
+    """The other end of a link-scoped checkpoint, as the rubric names it."""
+    exp = rule.expected_value if isinstance(rule.expected_value, dict) else {}
+    if rule.category == "link_agreement":
+        return exp.get("peer_device") or None, exp.get("peer_interface") or None
+    if rule.category in ("cabling", "relational_subnet"):
+        return exp.get("target_device") or None, exp.get("target_interface") or None
+    return None, None
+
+
+def _student_hostname(devices: dict, name: str | None, device_mapping: dict[str, str]) -> str | None:
+    """The student's device a rubric name resolved to, or None when it is absent."""
+    if not name:
+        return None
+    dev = _find_student_device(devices, name, device_mapping)
+    if dev is None or dev.is_placeholder:
+        return None
+    return dev.hostname
 
 
 def _evaluate_relational_subnet(
@@ -820,6 +841,11 @@ def evaluate_student_submission(
 
         total_score += pts_earned
 
+        # Where in the student's network this checkpoint lives, for the
+        # linked report's map highlight. Read-only: computed after the score.
+        peer_name, peer_intf = _peer_endpoint(rule)
+        peer_device = _student_hostname(devices, peer_name, device_mapping)
+
         rule_results.append(RuleResult(
             rule_id=rule.rule_id,
             category=rule.category,
@@ -830,7 +856,11 @@ def evaluate_student_submission(
             actual_value=actual,
             feedback=feedback,
             target_device=rule.target_device,
-            target_interface=rule.target_interface
+            target_interface=rule.target_interface,
+            expected_text=expected_text(rule, policies),
+            matched_device=_student_hostname(devices, rule.target_device, device_mapping),
+            peer_device=peer_device,
+            peer_interface=peer_intf if peer_device else None,
         ))
 
     percentage = (total_score / max_score * 100.0) if max_score > 0 else 0.0

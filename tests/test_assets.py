@@ -84,9 +84,14 @@ def test_page_loads_the_versioned_module_entry():
 
 def test_old_browsers_get_a_notice_instead_of_a_dead_page():
     html = client.get("/").text
-    assert '<script nomodule src="/static/js/unsupported.js' in html
-    assert 'id="unsupported-browser"' in html
+    assert '<script src="/static/js/boot-check.js' in html
     assert re.search(r'<div id="unsupported-browser"[^>]*\bhidden\b', html)
+    assert "unsupported.js" not in html
+
+
+def test_entry_module_sets_the_booted_flag():
+    with open(os.path.join(app_module.STATIC_DIR, "js", "main.js"), encoding="utf-8") as f:
+        assert "window.__netgraderBooted = true" in f.read()
 
 
 def test_entry_module_is_served():
@@ -117,14 +122,22 @@ def test_tokens_file_holds_the_custom_properties():
     "//attacker-host/share/x.js",
     "%5C%5Cattacker-host%5Cshare%5Cx.js",
     "C:/x.js",
-    "../x.js",
-    "a/../../x.js",
+    "%2E%2E/x.js",
+    "a/%2E%2E/%2E%2E/x.js",
     "a//b.js",
     "%2E/main.js",   # the client would normalise a literal ./
+    "%2E%2E%20/x.js",      # ".. " -- Windows strips the trailing space
+    "a./x.js",             # "a."  -- Windows strips the trailing dot
+    "core/dom.js.",        # ends in "." after ".js": not a .js path
+    "CON.js",              # Windows reserved device names, any case or extension
+    "com1.js",
+    "core/aux.js",
+    "lpt9.min.js",
 ])
 def test_hostile_paths_never_touch_the_filesystem(path):
     # os.path.realpath on a UNC path opens it, which makes an SMB connection.
-    with mock.patch("src.app.os.path.realpath", side_effect=AssertionError("touched disk")) as rp,             mock.patch("src.app.os.path.isfile", side_effect=AssertionError("touched disk")) as isf:
+    with mock.patch("src.app.os.path.realpath", side_effect=AssertionError("touched disk")) as rp, \
+         mock.patch("src.app.os.path.isfile", side_effect=AssertionError("touched disk")) as isf:
         res = client.get(f"/assets/1/js/{path}")
     assert res.status_code == 404
     rp.assert_not_called()
@@ -141,7 +154,9 @@ def outside_js():
 
 
 def test_js_outside_the_js_folder_is_not_served(outside_js):
-    assert client.get("/assets/1/js/../zz_outside_probe.js").status_code == 404
+    # %2E%2E survives the client; a literal ../ would be normalised away and
+    # the test would pass on routing alone, proving nothing.
+    assert client.get("/assets/1/js/%2E%2E/zz_outside_probe.js").status_code == 404
 
 
 def test_legitimate_nested_modules_are_served():
@@ -161,3 +176,11 @@ def test_legacy_notice_css_works_in_old_browsers():
             assert any(
                 e.split(":", 1)[0].strip() == prop and "var(" not in e for e in decls[:i]
             ), f"{prop} lacks a literal fallback"
+
+
+def test_display_settings_apply_before_any_stylesheet():
+    html = client.get("/").text
+    head = html[:html.index("</head>")]
+    boot = head.index("/static/js/display-boot.js")
+    first_css = head.index('rel="stylesheet"')
+    assert boot < first_css
