@@ -74,6 +74,56 @@ _FALLBACK_TOPIC = (
     "This checkpoint is part of the instructor's specification for the lab.",
 )
 
+# Commands a student can run to check each category, as data for the report's
+# "Check with" chips. The guidance sentences below still name them in context;
+# tests/test_report_fields.py keeps the two in step.
+_VERIFY_COMMANDS: dict[str, list[str]] = {
+    "device": ["show running-config | include hostname"],
+    "interface_ip": ["show ip interface brief"],
+    "relational_subnet": ["show ip interface brief"],
+    "interface_status": ["show ip interface brief"],
+    "cabling": ["show cdp neighbors"],
+    "vlan_trunk": ["show interfaces trunk", "show vlan brief"],
+    "routing": ["show ip protocols", "show ip ospf neighbor", "show ip route ospf"],
+    "link_agreement": ["show running-config"],
+    "gateway": ["show running-config | include default-gateway", "ipconfig"],
+    "security": ["show running-config"],
+    "documentation": ["show interfaces description"],
+}
+
+# A link agreement check names one setting; the command that shows it depends
+# on which. Keyed like LINK_ATTRIBUTES.
+_LINK_AGREEMENT_COMMANDS: dict[str, list[str]] = {
+    "trunk_native_vlan": ["show interfaces trunk"],
+    "trunk_allowed_vlans": ["show interfaces trunk"],
+    "switchport_mode": ["show interfaces switchport"],
+    "ospf_hello_interval": ["show ip ospf interface"],
+    "ospf_dead_interval": ["show ip ospf interface"],
+    "ospf_area": ["show ip ospf interface"],
+    "ospf_network_type": ["show ip ospf interface"],
+    "ospf_authentication": ["show ip ospf interface"],
+    "mtu": ["show interfaces"],
+    "speed": ["show interfaces"],
+    "duplex": ["show interfaces"],
+    "channel_group_mode": ["show etherchannel summary"],
+    "encapsulation": ["show interfaces"],
+    "clock_rate": ["show controllers"],
+}
+
+
+def topic_for(category: str) -> str:
+    """The study-topic label for a rule category."""
+    return _TOPICS.get(category, _FALLBACK_TOPIC)[0]
+
+
+def verify_commands(result: RuleResult) -> list[str]:
+    """Commands to check this checkpoint with. A fresh list each call."""
+    if result.category == "link_agreement":
+        for key, commands in _LINK_AGREEMENT_COMMANDS.items():
+            if result.rule_id.startswith(f"linkagree_{key}_"):
+                return list(commands)
+    return list(_VERIFY_COMMANDS.get(result.category, []))
+
 
 def _lower(value: str | None) -> str:
     return (value or "").lower()
@@ -382,13 +432,15 @@ def study_topics(results: list[RuleResult]) -> list[StudyTopic]:
 
 def attach_guidance(report: EvaluationReport) -> EvaluationReport:
     """
-    Populate guidance and study topics on a finished report.
+    Populate guidance, topics, verify commands and study topics on a finished report.
 
     Runs strictly after scoring. It reads the report and adds explanation; it
     does not and must not alter any score field.
     """
     for result in report.results:
         result.guidance = explain(result)
+        result.topic = topic_for(result.category)
+        result.verify_commands = [] if result.passed else verify_commands(result)
     report.study_topics = study_topics(report.results)
     return report
 
