@@ -37,7 +37,7 @@
 - Consumes: Existing bundled assets in `cisco-pka-to-xml/`, `static/icons/`, and `static/fonts/`.
 - Produces: Legal files (`LICENSE`, `THIRD_PARTY_NOTICES.md`, `static/fonts/OFL.txt`) and documentation links.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/test_license_and_notices.py`:
 ```python
@@ -84,12 +84,12 @@ def test_readme_references_license():
     assert "[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)" in content
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_license_and_notices.py -v`  
 Expected: FAIL with `AssertionError: LICENSE file must exist at repo root`
 
-- [ ] **Step 3: Create LICENSE**
+- [x] **Step 3: Create LICENSE**
 
 Create `LICENSE`:
 ```
@@ -116,7 +116,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-- [ ] **Step 4: Create THIRD_PARTY_NOTICES.md**
+- [x] **Step 4: Create THIRD_PARTY_NOTICES.md**
 
 Create `THIRD_PARTY_NOTICES.md`:
 ```markdown
@@ -237,7 +237,7 @@ SOFTWARE.
 See `static/fonts/OFL.txt` for full SIL Open Font License 1.1 text.
 ```
 
-- [ ] **Step 5: Create static/fonts/OFL.txt**
+- [x] **Step 5: Create static/fonts/OFL.txt**
 
 Create `static/fonts/OFL.txt`:
 ```
@@ -327,7 +327,7 @@ FROM, OUT OF OR IN CONNECTION WITH THE USE OR INABILITY TO USE THE
 FONT SOFTWARE OR FROM OTHER DEALINGS IN THE FONT SOFTWARE.
 ```
 
-- [ ] **Step 6: Update README.md**
+- [x] **Step 6: Update README.md**
 
 Append to `README.md`:
 ```markdown
@@ -338,12 +338,12 @@ This project is licensed under the [MIT License](LICENSE).
 Third-party software, fonts, and icons included in this repository are subject to their respective licenses as detailed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 ```
 
-- [ ] **Step 7: Run test to verify it passes**
+- [x] **Step 7: Run test to verify it passes**
 
 Run: `python -m pytest tests/test_license_and_notices.py -v`  
 Expected: PASS (4 passed)
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add LICENSE THIRD_PARTY_NOTICES.md static/fonts/OFL.txt README.md tests/test_license_and_notices.py
@@ -362,7 +362,7 @@ git commit -m "feat(docs): add repository license, third-party notices, and font
 - Consumes: Test suite in `tests/`, validation harness in `validation/`, and `requirements-dev.txt`.
 - Produces: GitHub Actions CI workflow gating `push` and `pull_request` on `master`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/test_ci_workflow.py`:
 ```python
@@ -431,12 +431,12 @@ def test_ci_workflow_structure():
     assert upload_steps[0].get("if") == "always()"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_ci_workflow.py -v`  
 Expected: FAIL with `AssertionError: .github/workflows/ci.yml must exist`
 
-- [ ] **Step 3: Create .github/workflows/ci.yml**
+- [x] **Step 3: Create .github/workflows/ci.yml**
 
 Create `.github/workflows/ci.yml`:
 ```yaml
@@ -503,12 +503,12 @@ jobs:
           if-no-files-found: warn
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `python -m pytest tests/test_ci_workflow.py -v`  
 Expected: PASS (1 passed)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add .github/workflows/ci.yml tests/test_ci_workflow.py
@@ -522,26 +522,26 @@ git commit -m "feat(ci): add GitHub Actions workflow for pytest and validation h
 **Files:**
 - Execute local simulation of steps defined in `.github/workflows/ci.yml`.
 
-- [ ] **Step 1: Run full pytest suite with -rs**
+- [x] **Step 1: Run full pytest suite with -rs**
 
 Run: `python -m pytest -q -rs`  
 Expected: All tests pass, any skipped tests enumerated with reasons.
 
-- [ ] **Step 2: Run validation harness with bash redirect**
+- [x] **Step 2: Run validation harness with bash redirect**
 
 Run: `bash -c "python -m validation --json > validation-report.json"`  
 Expected: Exits with returncode 0.
 
-- [ ] **Step 3: Validate generated JSON artifact**
+- [x] **Step 3: Validate generated JSON artifact**
 
 Run: `python -c "import json, sys; d = json.load(open('validation-report.json')); sys.exit(0 if d['reference_clean'] and all(c['correct'] for c in d['cases']) else 1)"`  
 Expected: Returncode 0.
 
-- [ ] **Step 4: Clean up validation report artifact**
+- [x] **Step 4: Clean up validation report artifact**
 
 Run: `rm validation-report.json`
 
-- [ ] **Step 5: Verify clean git status and commit history**
+- [x] **Step 5: Verify clean git status and commit history**
 
 Run: `git status`  
 Expected: Clean working tree on branch `infra/ci-and-license`.
