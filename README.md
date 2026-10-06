@@ -296,3 +296,12 @@ support. `libtwofish.dll` ships prebuilt — no C compiler is required on Window
 
 If `.pkt` upload ever reports as unavailable, `.txt` / `.zip` config bundle
 upload continues to work.
+
+---
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
+
+Third-party software, fonts, and icons included in this repository are subject to their respective licenses as detailed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
