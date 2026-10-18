@@ -165,7 +165,8 @@ class EvaluationRule(BaseModel):
         "link_agreement",
         "gateway",
         "security",
-        "documentation"
+        "documentation",
+        "static_route",
     ]
     description: str
     points: float = 10.0

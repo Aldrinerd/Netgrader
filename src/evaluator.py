@@ -18,6 +18,7 @@ from src.feedback import attach_guidance
 from src.link_attributes import LINK_ATTRIBUTES, compare as compare_link_attribute
 from src.ospf import ospf_enablements, statement_covers
 from src.parsers import canonical_device_name, normalize_interface_name
+from src.topics import EvalContext
 
 
 def _build_device_mapping(criteria: EvaluationCriteria, student_topology: TopologyResult) -> dict[str, str]:
@@ -368,6 +369,22 @@ def _evaluate_relational_subnet(
         return True, rule.points, actual_str, feedback_str
 
 
+def make_eval_context(criteria: EvaluationCriteria, student_topology: TopologyResult) -> EvalContext:
+    """Everything a src/topics grader may consult about one submission."""
+    devices = student_topology.devices
+    policies = criteria.policies
+    mapping = _build_device_mapping(criteria, student_topology)
+    return EvalContext(
+        devices=devices,
+        links=student_topology.links,
+        policies=policies,
+        device_mapping=mapping,
+        find_device=lambda name: _find_student_device(devices, name, mapping),
+        find_interface=lambda dev, name: _find_student_interface(
+            dev.interfaces, name, policies.strict_port_matching),
+    )
+
+
 def evaluate_student_submission(
     criteria: EvaluationCriteria,
     student_topology: TopologyResult
@@ -385,7 +402,8 @@ def evaluate_student_submission(
     devices = student_topology.devices
     links = student_topology.links
     policies = criteria.policies
-    device_mapping = _build_device_mapping(criteria, student_topology)
+    ctx = make_eval_context(criteria, student_topology)
+    device_mapping = ctx.device_mapping
     used_subnets: dict[str, str] = {}
     segments = _compute_broadcast_domains(devices, links)
 

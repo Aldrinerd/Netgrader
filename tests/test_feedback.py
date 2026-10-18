@@ -20,7 +20,7 @@ from tests.fixtures import network_bundle
 ALL_CATEGORIES = [
     "device", "interface_ip", "interface_status", "cabling", "vlan_trunk",
     "routing", "relational_subnet", "link_agreement", "gateway", "security",
-    "documentation",
+    "documentation", "static_route",
 ]
 
 
@@ -193,3 +193,15 @@ def test_old_reports_without_guidance_still_deserialise():
     }
     report = EvaluationReport(**legacy)
     assert report.study_topics == []
+
+
+def test_static_route_failure_modes_are_distinguished():
+    missing = _failed("static_route", feedback="Static routing on R1: no static route to 192.168.2.0/24.")
+    wrong = _failed("static_route",
+                    feedback="Static routing on R1: route to 192.168.2.0/24 points at R3, it should go via R2.")
+    unreachable = _failed("static_route",
+                          feedback="Static routing on R1: next hop 10.0.99.9 is not on a network directly connected to R1.")
+    texts = {explain(missing), explain(wrong), explain(unreachable)}
+    assert len(texts) == 3, "distinct static-route failures produced identical guidance"
+    assert "wrong neighbour" in explain(wrong)
+    assert "directly" in explain(unreachable)

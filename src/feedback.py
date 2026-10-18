@@ -67,6 +67,10 @@ _TOPICS: dict[str, tuple[str, str]] = {
         "Interface documentation",
         "Undocumented interfaces are the leading cause of slow fault isolation in a real network.",
     ),
+    "static_route": (
+        "Static routing and next-hop selection",
+        "A static route only works if it names the right destination and hands traffic to a neighbour that can actually forward it.",
+    ),
 }
 
 _FALLBACK_TOPIC = (
@@ -316,6 +320,31 @@ def _explain_documentation(result: RuleResult) -> str:
     )
 
 
+def _explain_static_route(result: RuleResult) -> str:
+    fb = _lower(result.feedback)
+    if "should go via" in fb:
+        return (
+            f"A static route on {result.target_device} sends traffic to the wrong neighbour. "
+            "The next hop (or exit interface) decides which router receives the packets, and a "
+            "router with no path onward drops them or sends them back. Compare each route's next "
+            "hop with the neighbour the lab names, using 'show ip route static'. The next hop is the "
+            "neighbour's address on the link you share, not an address on a far-away network."
+        )
+    if "not on a network directly connected" in fb:
+        return (
+            f"A static route on {result.target_device} names a next hop it cannot reach directly. "
+            "A next-hop address must sit in a subnet configured on one of this router's own "
+            "interfaces, otherwise the route never becomes usable. Check the interface subnets with "
+            "'show ip interface brief' and use the neighbour's address on the link between you."
+        )
+    return (
+        f"One or more required static routes are missing on {result.target_device}. "
+        "A router only knows its directly connected networks until you add a route for each remote "
+        "one, so traffic to those networks is dropped. Add one 'ip route <network> <mask> <next hop>' "
+        "for each destination the lab lists, then confirm them with 'show ip route static'."
+    )
+
+
 _HANDLERS = {
     "device": _explain_device,
     "interface_ip": _explain_interface_ip,
@@ -328,6 +357,7 @@ _HANDLERS = {
     "gateway": _explain_gateway,
     "security": _explain_security,
     "documentation": _explain_documentation,
+    "static_route": _explain_static_route,
 }
 
 
