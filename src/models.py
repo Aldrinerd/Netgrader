@@ -88,6 +88,10 @@ class ParsedDevice(BaseModel):
     routes: list[RouteEntry] = Field(default_factory=list)
     mac_table: list[MACTableEntry] = Field(default_factory=list)
     vlans: dict[int, str] = Field(default_factory=dict)
+    # Every non-blank running-config line, stripped. Read by topic detection
+    # (src/topics/registry.py) and never serialized: raw configuration text
+    # must not reach API responses or the chat layers.
+    config_lines: list[str] = Field(default_factory=list, exclude=True)
 
 class ContributingSignal(BaseModel):
     signal_type: str

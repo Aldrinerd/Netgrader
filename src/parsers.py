@@ -58,7 +58,9 @@ def parse_running_config(content: str, start_line: int, device: ParsedDevice) ->
     for idx, line in enumerate(lines):
         line_no = start_line + idx
         stripped = line.strip()
-        
+        if stripped:
+            device.config_lines.append(stripped)
+
         # Hostname
         host_match = re.match(r"^hostname\s+([a-zA-Z0-9_\-\.]+)", stripped, re.IGNORECASE)
         if host_match:
