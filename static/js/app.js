@@ -116,6 +116,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // describes a form that has since changed, and is dropped.
     let teacherRequestSeq = 0;
     let teacherRequestsInFlight = 0;   // the spinner hides when this reaches 0
+    let rebalanceBase = null;          // weights when the current slider drag began
     let studentInstructionsFile = null;
     let studentSubmissionFiles = [];
     let latestEvaluationReport = null;
@@ -579,6 +580,22 @@ document.addEventListener('DOMContentLoaded', () => {
         teacherWeights = next;
     }
 
+    // Set one topic to `value` and rescale the others to share what is left,
+    // in proportion to their weights in `base`. A topic at 0% stays at 0%,
+    // unless every other topic is at 0%; then the rest is spread evenly.
+    function rebalanceWeights(base, key, value) {
+        const target = Math.round(Math.min(Math.max(value, 0), 100) * 10) / 10;
+        const others = Object.keys(base).filter(k => k !== key);
+        const live = others.filter(k => base[k] > 0);
+        const sharing = live.length ? live : others;
+        const units = largestRemainder(sharing.map(k => (live.length ? base[k] : 1)), Math.round((100 - target) * 10));
+        const next = {};
+        others.forEach(k => { next[k] = 0; });
+        sharing.forEach((k, i) => { next[k] = units[i] / 10; });
+        next[key] = target;
+        return next;
+    }
+
     function distributeWeightsEvenly() {
         const keys = Object.keys(teacherWeights);
         const units = largestRemainder(keys.map(() => 1), 1000);
@@ -797,21 +814,35 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (teacherWeightsRows) {
-        // The slider and the number box edit the same weight; whichever one
-        // moved updates the other.
+        // Dragging a slider rescales the other topics live, from the weights
+        // the drag started with, so the total stays 100%. The number box
+        // rebalances when its value is committed (Enter or leaving the box).
         teacherWeightsRows.addEventListener('input', (e) => {
-            const isRange = e.target.classList.contains('weight-range');
-            if (!isRange && !e.target.classList.contains('weight-input')) return;
             const row = e.target.closest('.weight-row');
+            if (!row) return;
             const value = parseFloat(e.target.value);
-            const pct = Number.isFinite(value) ? Math.round(value * 10) / 10 : 0;
-            teacherWeights[row.dataset.key] = pct;
-            if (isRange) row.querySelector('.weight-input').value = pct.toFixed(1);
-            else row.querySelector('.weight-range').value = pct;
-            markEdited();
+            const pct = Number.isFinite(value) ? value : 0;
+            if (e.target.classList.contains('weight-range')) {
+                if (!rebalanceBase) rebalanceBase = { ...teacherWeights };
+                teacherWeights = rebalanceWeights(rebalanceBase, row.dataset.key, pct);
+                writeWeightInputs();
+                markEdited();
+            } else if (e.target.classList.contains('weight-input')) {
+                teacherWeights[row.dataset.key] = Math.round(pct * 10) / 10;
+                row.querySelector('.weight-range').value = teacherWeights[row.dataset.key];
+                markEdited();
+            }
         });
         teacherWeightsRows.addEventListener('change', (e) => {
-            if (e.target.classList.contains('weight-input')) writeWeightInputs();
+            const row = e.target.closest('.weight-row');
+            if (!row) return;
+            if (e.target.classList.contains('weight-range')) {
+                rebalanceBase = null;
+            } else if (e.target.classList.contains('weight-input')) {
+                teacherWeights = rebalanceWeights(teacherWeights, row.dataset.key, teacherWeights[row.dataset.key]);
+                writeWeightInputs();
+                markEdited();
+            }
         });
         teacherWeightsRows.addEventListener('click', (e) => {
             const btn = e.target.closest('.weight-focus');
