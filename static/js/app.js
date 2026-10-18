@@ -112,6 +112,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let teacherWeightsState = 'idle';
     let teacherTopics = [];      // gradeable topic rows from the last Generate
     let teacherWeights = {};     // topic key -> percent currently in the inputs
+    // Bumped by every edit; a response whose number is no longer current
+    // describes a form that has since changed, and is dropped.
+    let teacherRequestSeq = 0;
     let studentInstructionsFile = null;
     let studentSubmissionFiles = [];
     let latestEvaluationReport = null;
@@ -656,13 +659,24 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function weightsEdited() {
+        teacherRequestSeq++;
         refreshWeightsSummary();
         if (teacherWeightsState === 'finalized') setWeightsState('stale');
     }
 
     // Files or policies changed: the topic list may differ, so start over.
     function invalidateWeights() {
+        teacherRequestSeq++;
         if (teacherWeightsState !== 'idle') setWeightsState('idle');
+    }
+
+    // Title, description or total changed: the panel stays valid (weights
+    // are percentages), but a finalized sheet no longer matches the form.
+    function formEdited() {
+        teacherRequestSeq++;
+        if (teacherWeightsState === 'idle') return;
+        refreshWeightsSummary();
+        if (teacherWeightsState === 'finalized') setWeightsState('stale');
     }
 
     function showWeightsError(message) {
@@ -711,10 +725,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const formData = buildTeacherFormData(null);
+            const seq = ++teacherRequestSeq;
 
             try {
                 showLoading("Extracting reference topology & detecting configuration topics...");
                 const res = await fetch('/api/criteria/generate', { method: 'POST', body: formData });
+                if (seq !== teacherRequestSeq) return;
                 if (!res.ok) {
                     throw new Error(await describeFailure(res, `Server error ${res.status}`));
                 }
@@ -745,9 +761,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             const formData = buildTeacherFormData(teacherWeights);
+            const seq = ++teacherRequestSeq;
             try {
                 showLoading("Applying grading weights & building instructions.txt...");
                 const res = await fetch('/api/criteria/generate', { method: 'POST', body: formData });
+                if (seq !== teacherRequestSeq) return;
                 if (!res.ok) {
                     throw new Error(await describeFailure(res, `Server error ${res.status}`));
                 }
@@ -796,7 +814,11 @@ document.addEventListener('DOMContentLoaded', () => {
         teacherWeightsEvenBtn.addEventListener('click', () => { distributeWeightsEvenly(); writeWeightInputs(); weightsEdited(); });
     }
     if (teacherTotalPoints) {
-        teacherTotalPoints.addEventListener('input', () => { if (teacherWeightsState !== 'idle') refreshWeightsSummary(); });
+        teacherTotalPoints.addEventListener('input', formEdited);
+    }
+    if (teacherLabTitle) teacherLabTitle.addEventListener('input', formEdited);
+    if (teacherLabDesc) {
+        teacherLabDesc.addEventListener('input', formEdited);
     }
     Object.values(policyElements).forEach(el => { if (el) el.addEventListener('change', invalidateWeights); });
 

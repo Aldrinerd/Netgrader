@@ -96,3 +96,21 @@ def test_weights_panel_escapes_file_derived_text():
     assert risky, "renderWeightsPanel no longer interpolates topic fields; update this test"
     unescaped = [expr for expr in risky if not expr.startswith("escapeHtml(")]
     assert not unescaped, unescaped
+
+
+def test_teacher_requests_ignore_responses_overtaken_by_edits():
+    """
+    Generate and Finalize must drop a response if the instructor edited a
+    weight, a policy, the files or the total while it was in flight;
+    otherwise Download is enabled for a rubric the form no longer describes.
+    """
+    with open(APP_JS, encoding="utf-8") as f:
+        source = f.read()
+    for handler in ("teacherGenerateBtn.addEventListener", "teacherFinalizeBtn.addEventListener"):
+        start = source.index(handler)
+        body = source[start:source.index("\n    }\n", start)]
+        assert "const seq = ++teacherRequestSeq;" in body, handler
+        assert "if (seq !== teacherRequestSeq) return;" in body, handler
+    for fn in ("function weightsEdited(", "function invalidateWeights(", "function formEdited("):
+        start = source.index(fn)
+        assert "teacherRequestSeq++" in source[start:source.index("\n    }\n", start)], fn
