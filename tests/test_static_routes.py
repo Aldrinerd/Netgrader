@@ -259,3 +259,28 @@ def test_floating_routes_are_graded_regardless_of_line_order():
     assert sorted(r["via_device"] for r in r1_routes if r["network"] == "192.168.2.0") == ["R2", "R3"]
     outcomes, _, _ = _grade(reference, _topology(R1=[(primary, backup + primary)]))
     assert outcomes["R1"].passed
+
+
+def test_floating_route_does_not_invent_a_link_on_the_wrong_port():
+    """Next-hop evidence belongs to the interface whose subnet holds the next hop."""
+    primary = "ip route 192.168.2.0 255.255.255.0 10.0.12.2\n"
+    topology = _topology(R1=[(primary, primary + "ip route 192.168.2.0 255.255.255.0 10.0.13.2 5\n")])
+    pairs = {(l.source_device, l.source_interface, l.target_device) for l in topology.links}
+    assert ("R1", "GigabitEthernet0/0", "R3") not in pairs
+    assert ("R1", "GigabitEthernet0/1", "R3") in pairs
+
+
+def test_interface_with_mask_but_no_cidr_still_has_a_network():
+    from src.models import InterfaceData
+    from src.topics.static_routes import _network_of
+    intf = InterfaceData(name="GigabitEthernet0/0", ip_address="10.0.12.1", subnet_mask="255.255.255.252")
+    assert str(_network_of(intf)) == "10.0.12.0/30"
+
+
+def test_malformed_next_hop_is_skipped_not_a_crash():
+    reference = _topology(
+        R2=[("ip address 10.0.12.2 255.255.255.252", "ip address 10.0.12.300 255.255.255.252")],
+        R1=[(R1_TO_R2_LAN, "ip route 192.168.2.0 255.255.255.0 10.0.12.300\n")],
+    )
+    rules, warnings = generate_rules(reference, STRICT)
+    assert "R1: static route to 192.168.2.0/24 was not graded because next hop 10.0.12.300 is not a valid address." in warnings

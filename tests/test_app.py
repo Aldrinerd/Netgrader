@@ -236,6 +236,7 @@ def test_generate_applies_topic_weights():
     ("not json", "JSON object of topic -> percent"),
     ('{"stp": 100}', "not graded yet"),
     ('{"static_routing": 100}', "Missing a weight"),
+    ("null", "JSON object of topic -> percent"),
 ])
 def test_generate_rejects_bad_weights(raw, fragment):
     res = _generate(topic_weights=raw)

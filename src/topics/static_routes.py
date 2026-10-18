@@ -55,10 +55,13 @@ def destination_label(route: dict, dynamic: bool) -> str:
 
 
 def _network_of(intf: InterfaceData | None) -> ipaddress.IPv4Network | None:
-    if intf is None or not intf.ip_address or intf.cidr is None:
+    if intf is None or not intf.ip_address:
+        return None
+    prefix = intf.cidr if intf.cidr is not None else intf.subnet_mask
+    if prefix is None:
         return None
     try:
-        return ipaddress.ip_interface(f"{intf.ip_address}/{intf.cidr}").network
+        return ipaddress.ip_interface(f"{intf.ip_address}/{prefix}").network
     except ValueError:
         return None
 
@@ -120,6 +123,10 @@ def _resolve_neighbor(topology: TopologyResult, hostname: str,
                       route: RouteEntry) -> tuple[str, str, str] | str:
     """(via_device, via_interface, style), or the reason the route cannot be graded."""
     if route.next_hop:
+        try:
+            hop = ipaddress.ip_address(route.next_hop)
+        except ValueError:
+            return f"next hop {route.next_hop} is not a valid address"
         owner = _ip_owner(topology.devices, route.next_hop)
         if owner is None:
             return f"next hop {route.next_hop} belongs to no device"
@@ -128,7 +135,6 @@ def _resolve_neighbor(topology: TopologyResult, hostname: str,
         # A recursive next hop would fail the grader's directly-connected
         # check for an identical student, so it cannot become a requirement.
         device = topology.devices[hostname]
-        hop = ipaddress.ip_address(route.next_hop)
         if not any(net is not None and hop in net for net in map(_network_of, device.interfaces.values())):
             return f"next hop {route.next_hop} is not on a network directly connected to {hostname}"
         return owner[0], owner[1], "next_hop"

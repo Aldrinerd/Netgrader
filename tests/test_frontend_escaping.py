@@ -111,6 +111,38 @@ def test_teacher_requests_ignore_responses_overtaken_by_edits():
         body = source[start:source.index("\n    }\n", start)]
         assert "const seq = ++teacherRequestSeq;" in body, handler
         assert "if (seq !== teacherRequestSeq) return;" in body, handler
-    for fn in ("function weightsEdited(", "function invalidateWeights(", "function formEdited("):
+    for fn in ("function markEdited(", "function invalidateWeights("):
         start = source.index(fn)
         assert "teacherRequestSeq++" in source[start:source.index("\n    }\n", start)], fn
+
+
+def _function_body(source, name):
+    start = source.index(f"function {name}(")
+    return source[start:source.index("\n    }\n", start)]
+
+
+def test_one_edit_transition_for_weights_and_form_fields():
+    """Weight edits and title/total edits share one stale transition."""
+    with open(APP_JS, encoding="utf-8") as f:
+        source = f.read()
+    assert "function formEdited(" not in source
+    assert "function weightsEdited(" not in source
+    assert "teacherRequestSeq++" in _function_body(source, "markEdited")
+
+
+def test_untouched_defaults_are_not_sent_as_weights():
+    """Defaults depend on the total; sending stale defaults after a total change would rescale the rubric."""
+    with open(APP_JS, encoding="utf-8") as f:
+        source = f.read()
+    assert "weightsMatchDefaults()" in _function_body(source, "buildTeacherFormData")
+
+
+def test_superseded_requests_neither_hide_the_spinner_nor_report_errors():
+    with open(APP_JS, encoding="utf-8") as f:
+        source = f.read()
+    for handler in ("teacherGenerateBtn.addEventListener", "teacherFinalizeBtn.addEventListener"):
+        start = source.index(handler)
+        body = source[start:source.index("\n    }\n", start)]
+        assert "teacherRequestsInFlight++" in body, handler
+        assert "if (--teacherRequestsInFlight === 0) hideLoading();" in body, handler
+        assert re.search(r"\} catch \(err\) \{\s*if \(seq !== teacherRequestSeq\) return;", body), handler

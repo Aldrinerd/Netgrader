@@ -160,3 +160,9 @@ def test_analyze_response_carries_no_raw_config():
     data = client.post("/api/analyze", files=files).json()
     assert data["devices"]
     assert all("config_lines" not in dev for dev in data["devices"].values())
+
+
+def test_inter_vlan_detector_does_not_recompile_per_call():
+    import inspect
+    from src.topics import registry
+    assert "_config_matches(" not in inspect.getsource(registry._inter_vlan_routing)

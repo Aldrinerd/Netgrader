@@ -302,6 +302,8 @@ async def api_generate_criteria(
         try:
             requested_weights = json.loads(topic_weights)
         except json.JSONDecodeError:
+            requested_weights = None
+        if not isinstance(requested_weights, dict):
             raise HTTPException(status_code=400, detail="topic_weights must be a JSON object of topic -> percent")
 
     try:

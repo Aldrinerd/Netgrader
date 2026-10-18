@@ -60,8 +60,11 @@ def _config_matches(*patterns: str) -> Detector:
     return detect
 
 
+_SUBINTERFACE_DOT1Q = _config_matches(r"^encapsulation\s+dot1q\s+\d+")
+
+
 def _inter_vlan_routing(device: ParsedDevice) -> bool:
-    if _config_matches(r"^encapsulation\s+dot1q\s+\d+")(device):
+    if _SUBINTERFACE_DOT1Q(device):
         return True
     # An addressed SVI routes between VLANs only when `ip routing` is on.
     # Without it, it is a layer-2 switch's management address.

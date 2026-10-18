@@ -115,6 +115,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Bumped by every edit; a response whose number is no longer current
     // describes a form that has since changed, and is dropped.
     let teacherRequestSeq = 0;
+    let teacherRequestsInFlight = 0;   // the spinner hides when this reaches 0
     let studentInstructionsFile = null;
     let studentSubmissionFiles = [];
     let latestEvaluationReport = null;
@@ -584,6 +585,12 @@ document.addEventListener('DOMContentLoaded', () => {
         keys.forEach((k, i) => { teacherWeights[k] = units[i] / 10; });
     }
 
+    // True while every input still holds the default from the last Generate.
+    // Defaults depend on the total, so they are left for the server to derive.
+    function weightsMatchDefaults() {
+        return teacherTopics.every(t => Math.abs((teacherWeights[t.key] || 0) - t.default_percent) < 0.001);
+    }
+
     function resetWeightsToDefaults() {
         teacherTopics.forEach(t => { teacherWeights[t.key] = t.default_percent; });
     }
@@ -658,11 +665,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function weightsEdited() {
-        teacherRequestSeq++;
-        refreshWeightsSummary();
-        if (teacherWeightsState === 'finalized') setWeightsState('stale');
-    }
 
     // Files or policies changed: the topic list may differ, so start over.
     function invalidateWeights() {
@@ -670,9 +672,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (teacherWeightsState !== 'idle') setWeightsState('idle');
     }
 
-    // Title, description or total changed: the panel stays valid (weights
-    // are percentages), but a finalized sheet no longer matches the form.
-    function formEdited() {
+    // A weight, the title, the description or the total changed. The panel
+    // stays valid, but a finalized sheet no longer matches the form.
+    function markEdited() {
         teacherRequestSeq++;
         if (teacherWeightsState === 'idle') return;
         refreshWeightsSummary();
@@ -704,7 +706,7 @@ document.addEventListener('DOMContentLoaded', () => {
         formData.append('allow_flexible_process_ids', document.getElementById('policy-allow-flexible-process-ids')?.checked ? 'true' : 'false');
         formData.append('grade_security_baseline', document.getElementById('policy-grade-security-baseline')?.checked ? 'true' : 'false');
         formData.append('grade_interface_descriptions', document.getElementById('policy-grade-interface-descriptions')?.checked ? 'true' : 'false');
-        if (weights) formData.append('topic_weights', JSON.stringify(weights));
+        if (weights && !weightsMatchDefaults()) formData.append('topic_weights', JSON.stringify(weights));
         return formData;
     }
 
@@ -726,6 +728,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const formData = buildTeacherFormData(null);
             const seq = ++teacherRequestSeq;
+            teacherRequestsInFlight++;
 
             try {
                 showLoading("Extracting reference topology & detecting configuration topics...");
@@ -745,11 +748,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 showToast("Rubric generated. Review the grading weights, then finalize.");
             } catch (err) {
+                if (seq !== teacherRequestSeq) return;
                 showPanelMessage(`<div class="empty-icon">⚠️</div><h3>Could Not Generate Rubric</h3>`
                     + `<p class="empty-error">${escapeHtml(err.message)}</p>`);
                 alert(`Generation Error: ${err.message}`);
             } finally {
-                hideLoading();
+                if (--teacherRequestsInFlight === 0) hideLoading();
             }
         });
     }
@@ -762,6 +766,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const formData = buildTeacherFormData(teacherWeights);
             const seq = ++teacherRequestSeq;
+            teacherRequestsInFlight++;
             try {
                 showLoading("Applying grading weights & building instructions.txt...");
                 const res = await fetch('/api/criteria/generate', { method: 'POST', body: formData });
@@ -781,9 +786,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 setWeightsState('finalized');
                 showToast("Rubric finalized. instructions.txt is ready to download.");
             } catch (err) {
+                if (seq !== teacherRequestSeq) return;
                 showWeightsError(err.message);
             } finally {
-                hideLoading();
+                if (--teacherRequestsInFlight === 0) hideLoading();
             }
         });
     }
@@ -794,7 +800,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const key = e.target.closest('.weight-row').dataset.key;
             const value = parseFloat(e.target.value);
             teacherWeights[key] = Number.isFinite(value) ? Math.round(value * 10) / 10 : 0;
-            weightsEdited();
+            markEdited();
         });
         teacherWeightsRows.addEventListener('change', (e) => {
             if (e.target.classList.contains('weight-input')) writeWeightInputs();
@@ -804,21 +810,21 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!btn) return;
             focusWeights(btn.closest('.weight-row').dataset.key);
             writeWeightInputs();
-            weightsEdited();
+            markEdited();
         });
     }
     if (teacherWeightsResetBtn) {
-        teacherWeightsResetBtn.addEventListener('click', () => { resetWeightsToDefaults(); writeWeightInputs(); weightsEdited(); });
+        teacherWeightsResetBtn.addEventListener('click', () => { resetWeightsToDefaults(); writeWeightInputs(); markEdited(); });
     }
     if (teacherWeightsEvenBtn) {
-        teacherWeightsEvenBtn.addEventListener('click', () => { distributeWeightsEvenly(); writeWeightInputs(); weightsEdited(); });
+        teacherWeightsEvenBtn.addEventListener('click', () => { distributeWeightsEvenly(); writeWeightInputs(); markEdited(); });
     }
     if (teacherTotalPoints) {
-        teacherTotalPoints.addEventListener('input', formEdited);
+        teacherTotalPoints.addEventListener('input', markEdited);
     }
-    if (teacherLabTitle) teacherLabTitle.addEventListener('input', formEdited);
+    if (teacherLabTitle) teacherLabTitle.addEventListener('input', markEdited);
     if (teacherLabDesc) {
-        teacherLabDesc.addEventListener('input', formEdited);
+        teacherLabDesc.addEventListener('input', markEdited);
     }
     Object.values(policyElements).forEach(el => { if (el) el.addEventListener('change', invalidateWeights); });
 
