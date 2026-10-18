@@ -9,12 +9,13 @@ largest-remainder apportionment, so every total comes out exact.
   validate_weights  checks an instructor's requested split (TopicWeightError)
   apply_weights     rescales rule points to a requested split; a 0% topic's
                     rules become ungraded (graded=False, points=0)
+  topic_summary     the rows the Teacher Studio's weights panel shows
 """
 import math
 from typing import Sequence
 
-from src.models import EvaluationRule
-from src.topics.registry import TOPICS, TOPICS_BY_KEY, topic_for_category
+from src.models import EvaluationCriteria, EvaluationRule, TopologyResult
+from src.topics.registry import TOPICS, TOPICS_BY_KEY, detect_topics, topic_for_category
 
 TENTHS = 10
 PERCENT_UNITS = 100 * TENTHS        # 100.0% in tenths of a percent
@@ -198,3 +199,34 @@ def apply_weights(rules: list[EvaluationRule], base_points: dict[str, float],
         for rule in topic_rules:
             rule.points = base_points[rule.rule_id]
         normalize_rule_points(topic_rules, shares[key] / TENTHS)
+
+
+def topic_summary(criteria: EvaluationCriteria, topology: TopologyResult) -> list[dict]:
+    """Rows for the weights panel: this rubric's gradeable topics, then detected-only ones."""
+    defaults = criteria.reference_summary.get("default_topic_weights", {})
+    rows = []
+    for key, topic_rules in rules_by_topic(criteria.rules).items():
+        rows.append({
+            "key": key,
+            "label": TOPICS_BY_KEY[key].label,
+            "gradeable": True,
+            "devices": sorted({r.target_device for r in topic_rules}),
+            "checkpoints": len(topic_rules),
+            "default_percent": defaults.get(key),
+            "percent": criteria.topic_weights.get(key),
+            "points": round(sum(r.points for r in topic_rules), 1),
+        })
+    detected = detect_topics(topology)
+    for topic in TOPICS:
+        if not topic.gradeable and topic.key in detected:
+            rows.append({
+                "key": topic.key,
+                "label": topic.label,
+                "gradeable": False,
+                "devices": detected[topic.key],
+                "checkpoints": 0,
+                "default_percent": None,
+                "percent": None,
+                "points": None,
+            })
+    return rows

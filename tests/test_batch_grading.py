@@ -175,3 +175,25 @@ def test_csv_leaves_ordinary_values_alone():
 def test_csv_lone_dash_is_not_prefixed():
     from src.app import _csv_safe
     assert _csv_safe("-") == "-"
+
+
+def test_error_row_counts_only_graded_checkpoints():
+    from src.app import process_bundle_dict
+    from src.criteria_generator import format_criteria_to_instructions_txt, generate_criteria_from_topology
+    from tests.fixtures import network_bundle
+
+    defaults = generate_criteria_from_topology(process_bundle_dict(network_bundle("static_chain"))).topic_weights
+    weights = dict(defaults)
+    weights["static_routing"] = round(weights["static_routing"] + weights["cabling"], 1)
+    weights["cabling"] = 0.0
+    criteria = generate_criteria_from_topology(
+        process_bundle_dict(network_bundle("static_chain")), topic_weights=weights)
+    txt = format_criteria_to_instructions_txt(criteria)
+    res = client.post("/api/evaluate/batch", files=[
+        ("instructions_file", ("instructions.txt", txt.encode("utf-8"), "text/plain")),
+        ("student_files", ("Empty Student.txt", b"   ", "text/plain")),
+    ])
+    assert res.status_code == 200
+    row = res.json()["results"][0]
+    assert row["status"].startswith("ERROR")
+    assert row["failed_count"] == sum(r.graded for r in criteria.rules)

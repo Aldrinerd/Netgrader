@@ -177,3 +177,75 @@ def test_criteria_generate_accepts_a_real_reference_bundle():
     assert response.status_code == 200
     criteria = response.json()["criteria"]
     assert len([r for r in criteria["rules"] if r["category"] != "device"]) > 0
+
+
+import json  # noqa: E402
+
+from src.topics.weights import largest_remainder  # noqa: E402
+
+
+def _static_chain_files():
+    bundle = network_bundle("static_chain")
+    return [("files", (name, text.encode("utf-8"), "text/plain")) for name, text in bundle.items()]
+
+
+def _generate(**data):
+    return client.post("/api/criteria/generate", files=_static_chain_files(), data=data)
+
+
+def test_generate_returns_topics_and_warnings():
+    data = _generate(lab_title="Static Lab").json()
+    topics = {t["key"]: t for t in data["topics"]}
+    static = topics["static_routing"]
+    assert static["gradeable"] is True
+    assert static["checkpoints"] == 3
+    assert static["devices"] == ["R1", "R2", "R3"]
+    assert static["percent"] == static["default_percent"]
+    assert sum(t["percent"] for t in data["topics"] if t["gradeable"]) == pytest.approx(100.0)
+    assert data["reference_warnings"] == []
+
+
+def test_generate_lists_detected_only_topics_last():
+    import os
+    sample = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tests", "fixtures", "sample_topology.xml")
+    with open(sample, "rb") as f:
+        xml = f.read()
+    data = client.post("/api/criteria/generate",
+                       files=[("files", ("sample_topology.xml", xml, "application/xml"))]).json()
+    flags = [t["gradeable"] for t in data["topics"]]
+    assert flags == sorted(flags, reverse=True)
+    ssh = next(t for t in data["topics"] if t["key"] == "ssh")
+    assert ssh["gradeable"] is False and ssh["percent"] is None and ssh["devices"]
+
+
+def test_generate_applies_topic_weights():
+    defaults = {t["key"]: t["default_percent"] for t in _generate().json()["topics"] if t["gradeable"]}
+    others = [k for k in defaults if k != "static_routing"]
+    units = largest_remainder([defaults[k] for k in others], 500)
+    weights = {k: u / 10 for k, u in zip(others, units)}
+    weights["static_routing"] = 50.0
+    res = _generate(topic_weights=json.dumps(weights))
+    assert res.status_code == 200
+    data = res.json()
+    static = next(t for t in data["topics"] if t["key"] == "static_routing")
+    assert static["percent"] == 50.0 and static["points"] == 50.0
+    assert "GRADING WEIGHTS" in data["instructions_txt"]
+
+
+@pytest.mark.parametrize("raw,fragment", [
+    ("not json", "JSON object of topic -> percent"),
+    ('{"stp": 100}', "not graded yet"),
+    ('{"static_routing": 100}', "Missing a weight"),
+])
+def test_generate_rejects_bad_weights(raw, fragment):
+    res = _generate(topic_weights=raw)
+    assert res.status_code == 400
+    assert fragment in res.json()["detail"]
+
+
+def test_generate_rejects_weights_that_grade_only_device_presence():
+    weights = {t["key"]: 0 for t in _generate().json()["topics"] if t["gradeable"]}
+    weights["devices"] = 100
+    res = _generate(topic_weights=json.dumps(weights))
+    assert res.status_code == 400
+    assert "At least one topic other than Device Presence" in res.json()["detail"]

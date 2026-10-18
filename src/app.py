@@ -2,6 +2,7 @@
 import csv
 import io
 import ipaddress
+import json
 import os
 import zipfile
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -26,6 +27,7 @@ from src.models import (
 )
 from src.parsers import parse_device_bundle
 from src.pkt_parser import parse_pkt_file
+from src.topics.weights import TopicWeightError, topic_summary
 
 app = FastAPI(
     title="Network Configuration Evaluation & Topology Discovery Tool",
@@ -271,7 +273,8 @@ async def api_generate_criteria(
     strict_cable_type: bool = Form(True),
     allow_flexible_process_ids: bool = Form(True),
     grade_security_baseline: bool = Form(False),
-    grade_interface_descriptions: bool = Form(False)
+    grade_interface_descriptions: bool = Form(False),
+    topic_weights: str = Form(""),
 ):
     """
     Teacher Studio: Ingests an instructor's reference Packet Tracer file (.pkt/.xml)
@@ -294,19 +297,36 @@ async def api_generate_criteria(
         grade_interface_descriptions=grade_interface_descriptions
     )
 
-    criteria = generate_criteria_from_topology(
-        topology=topology,
-        lab_title=lab_title,
-        lab_description=lab_description,
-        target_total_points=total_points,
-        policies=policies
-    )
+    requested_weights = None
+    if topic_weights.strip():
+        try:
+            requested_weights = json.loads(topic_weights)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="topic_weights must be a JSON object of topic -> percent")
+
+    try:
+        criteria = generate_criteria_from_topology(
+            topology=topology,
+            lab_title=lab_title,
+            lab_description=lab_description,
+            target_total_points=total_points,
+            policies=policies,
+            topic_weights=requested_weights,
+        )
+    except TopicWeightError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     # Guard against a reference file that parses but carries nothing gradeable.
     # A plain text file produces one device named after the filename and a
     # single "this device must exist" rule -- a rubric that looks valid and is
     # worthless. Better to refuse it than to let an instructor hand it out.
-    gradeable_rules = [r for r in criteria.rules if r.category != "device"]
+    gradeable_rules = [r for r in criteria.rules if r.category != "device" and r.graded]
     if not gradeable_rules:
+        if any(r.category != "device" for r in criteria.rules):
+            raise HTTPException(
+                status_code=400,
+                detail=("Every configuration topic is set to 0%. At least one topic other than "
+                        "Device Presence must carry points."),
+            )
         device_names = ", ".join(sorted(topology.devices)) or "none"
         raise HTTPException(
             status_code=400,
@@ -324,7 +344,9 @@ async def api_generate_criteria(
     return {
         "criteria": criteria,
         "instructions_txt": instructions_txt,
-        "topology": topology
+        "topology": topology,
+        "topics": topic_summary(criteria, topology),
+        "reference_warnings": criteria.reference_summary.get("reference_warnings", []),
     }
 
 
@@ -493,7 +515,7 @@ async def api_evaluate_batch(
                 "max_score": round(sum(r.points for r in criteria.rules), 1),
                 "percentage": 0.0,
                 "passed_count": 0,
-                "failed_count": len(criteria.rules),
+                "failed_count": sum(1 for r in criteria.rules if r.graded),
                 "missed": [],
                 "failed_categories": [],
                 "status": f"ERROR: {e}",
