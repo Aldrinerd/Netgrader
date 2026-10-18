@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from src.models import ParsedDevice, TopologyResult
+from src.topics import static_routes
 
 Detector = Callable[[ParsedDevice], bool]
 
@@ -77,8 +78,9 @@ TOPICS: tuple[Topic, ...] = (
     Topic("cabling", "Cabling", ("cabling",), gradeable=True),
     Topic("vlans_trunking", "VLANs & Trunking", ("vlan_trunk",), gradeable=True),
     Topic("ospf", "OSPF", ("routing",), gradeable=True),
-    Topic("static_routing", "Static Routing",
-          detect=_config_matches(r"^ip\s+route\s+\d")),
+    Topic("static_routing", "Static Routing", ("static_route",), gradeable=True,
+          detect=_config_matches(r"^ip\s+route\s+\d"),
+          generate=static_routes.generate_rules, evaluate=static_routes.evaluate),
     Topic("default_gateways", "Default Gateways", ("gateway",), gradeable=True),
     Topic("security_baseline", "Security Baseline", ("security",), gradeable=True),
     Topic("interface_descriptions", "Interface Descriptions", ("documentation",), gradeable=True),
