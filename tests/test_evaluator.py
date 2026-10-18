@@ -15,9 +15,10 @@ def test_evaluate_perfect_submission():
 
     assert report.total_score == criteria.total_points
     assert report.percentage == 100.0
-    assert report.grade_letter in ("A", "A+")
     assert report.failed_count == 0
     assert report.passed_count == len(criteria.rules)
+    # Results are reported as score and percentage only; no letter grade.
+    assert "grade_letter" not in report.model_dump()
 
     for res in report.results:
         assert res.passed is True
@@ -131,7 +132,6 @@ Interface: GigabitEthernet0/1, Port ID (outgoing port): GigabitEthernet0/1
     report = evaluate_student_submission(criteria, student_top)
     
     assert report.percentage == 100.0
-    assert report.grade_letter in ("A", "A+")
     assert report.failed_count == 0
     rel_results = [r for r in report.results if r.category == "relational_subnet"]
     assert len(rel_results) > 0

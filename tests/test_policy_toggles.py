@@ -98,6 +98,12 @@ def m_readdress(t):
     t.devices["PC1"].interfaces["FastEthernet0"].network_address = "10.20.30.0"
     t.devices["PC1"].default_gateway = "10.20.30.1"
     t.devices["SW1"].default_gateway = "10.20.30.1"
+    # A correct renumbering advertises the new subnets into OSPF as well.
+    renumbered = {"10.0.0.0": "172.16.5.0", "192.168.1.0": "10.20.30.0"}
+    for dev in ("R1", "R2"):
+        for proc in t.devices[dev].ospf_processes:
+            for n in proc["networks"]:
+                n["network"] = renumbered.get(n["network"], n["network"])
     return t
 
 

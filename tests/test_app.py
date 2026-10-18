@@ -113,7 +113,6 @@ def test_api_criteria_generate_and_evaluate_flow():
     assert eval_res.status_code == 200
     eval_data = eval_res.json()
     assert eval_data["percentage"] == 100.0
-    assert eval_data["grade_letter"] in ("A", "A+")
     assert eval_data["passed_count"] > 0
     assert eval_data["failed_count"] == 0
 

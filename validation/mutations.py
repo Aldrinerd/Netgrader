@@ -118,6 +118,12 @@ def _ospf_network_missing(topo):
     topo.devices["R2"].ospf_processes = []
 
 
+def _ospf_one_network_left_out(topo):
+    """R1 advertises the router link but forgets its LAN (issue #1)."""
+    proc = topo.devices["R1"].ospf_processes[0]
+    proc["networks"] = [n for n in proc["networks"] if n["network"] != "192.168.10.0"]
+
+
 def _enable_secret_removed(topo):
     topo.devices["R2"].has_enable_secret = False
 
@@ -162,6 +168,11 @@ def _different_but_valid_addressing(topo):
         intf = topo.devices[host].interfaces["GigabitEthernet0/0"]
         intf.ip_address = ip
         intf.network_address = "172.16.5.0"
+        # A student who renumbers the link advertises the new subnet too;
+        # leaving the old statement would really break the adjacency.
+        for n in topo.devices[host].ospf_processes[0]["networks"]:
+            if n["network"] == "10.0.0.0":
+                n["network"] = "172.16.5.0"
 
 
 def _native_vlan_changed_on_both_ends(topo):
@@ -182,6 +193,17 @@ def _ospf_timers_changed_on_both_ends(topo):
         intf = topo.devices[host].interfaces["GigabitEthernet0/0"]
         intf.ospf_hello_interval = 5
         intf.ospf_dead_interval = 20
+
+
+def _interface_mode_ospf(topo):
+    """`ip ospf 1 area 0` on each interface instead of network statements (issue #2)."""
+    for host in ("R1", "R2"):
+        dev = topo.devices[host]
+        dev.ospf_processes = [{"process_id": 1, "networks": []}]
+        for intf in dev.interfaces.values():
+            if intf.ip_address:
+                intf.ospf_process_id = 1
+                intf.ospf_area = 0
 
 
 def _extra_unrelated_interface(topo):
@@ -245,7 +267,9 @@ CATALOGUE: list = [
         label="Link endpoints in different subnets",
         fault="R2 Gi0/0 moved to 10.9.9.2 while R1 stays on 10.0.0.1",
         apply=_subnet_mismatch_across_link,
-        expect_categories=frozenset({"relational_subnet"}),
+        # R2's `network 10.0.0.0 0.0.0.3 area 0` no longer matches 10.9.9.2,
+        # so on a real router OSPF stops running on that interface too.
+        expect_categories=frozenset({"relational_subnet", "routing"}),
         policies=DYNAMIC,
     ),
     Mutation(
@@ -292,6 +316,14 @@ CATALOGUE: list = [
         fault="R2 has no OSPF process at all",
         apply=_ospf_network_missing,
         expect_categories=frozenset({"routing"}),
+    ),
+    Mutation(
+        id="ospf_network_left_out",
+        label="OSPF network missing from area",
+        fault="R1 advertises the router link but not its 192.168.10.0/24 LAN",
+        apply=_ospf_one_network_left_out,
+        expect_categories=frozenset({"routing"}),
+        expect_mentions=("192.168.10.0/24",),
     ),
     Mutation(
         id="enable_secret_removed",
@@ -359,6 +391,12 @@ CATALOGUE: list = [
         label="Correct work, non-default OSPF timers agreed by both ends",
         fault="Both ends of the R1-R2 link use hello 5 / dead 20",
         apply=_ospf_timers_changed_on_both_ends,
+    ),
+    Mutation(
+        id="interface_mode_ospf",
+        label="Correct work, OSPF enabled per interface instead of network statements",
+        fault="R1 and R2 use 'ip ospf 1 area 0' on each interface",
+        apply=_interface_mode_ospf,
     ),
     Mutation(
         id="extra_loopback",

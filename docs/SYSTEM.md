@@ -68,11 +68,14 @@ Upload (.pkt / .pka / .xml / .zip / .txt)
 | `src/fusion_engine.py` | Infers links from config evidence when no `.pkt` cabling exists. Seven signals combined by Noisy-OR. |
 | `src/conflict_detector.py` | Subnet mismatch, interfaces down, duplicate IPs, native VLAN mismatch, wrong cable type — each with line citations. |
 | `src/link_attributes.py` | The link-scoped rule registry: 14 attributes, 4 predicates, compatibility matrices. |
+| `src/ospf.py` | One view of where OSPF runs (process, interface, area, subnet), from `network` statements or interface-mode `ip ospf`. Used by rule generation and grading. |
 | `src/criteria_generator.py` | Reference topology → `EvaluationCriteria`; renders and re-parses `instructions.txt`. |
 | `src/evaluator.py` | Student topology + criteria → `EvaluationReport`. **The score is decided here and is final.** |
 | `src/feedback.py` | Deterministic per-checkpoint guidance and ranked study topics. |
 | `src/llm.py` | Optional local Ollama client. Never raises, never blocks, never sees a score. |
 | `src/narrative.py` | The only place a model is used. Student summary, class briefing. |
+| `src/chat_guard.py` | Student-chat checks before and after the model: injection, off-topic and full-solution refusals; config blocks cut from replies. |
+| `src/integrity.py` | HMAC signatures for the report findings and the chat replies the browser sends back. |
 | `src/app.py` | FastAPI application and nine endpoints. |
 | `validation/` | SOP #3 measurement instrument. Imported by nothing in `src/`. |
 
@@ -94,7 +97,7 @@ A rubric is a list of `EvaluationRule`. Eleven categories exist:
 | `vlan_trunk` | Trunk mode and access VLAN assignment. |
 | `link_agreement` | **Both ends of a link agree.** See §4. |
 | `gateway` | Hosts and switches have a gateway inside the connected router's subnet. |
-| `routing` | Networks advertised into the right OSPF area. |
+| `routing` | Every subnet the reference runs OSPF on in an area is covered by the student in that area. Either style counts: `network` statements (wildcard-aware, so a summary covers several subnets) or interface-mode `ip ospf P area A`, read through one view in `src/ospf.py`. Partial coverage earns proportional credit but does not pass. Under dynamic subnetting the student's corresponding interface must be in the area. |
 | `security` | `enable secret`, `service password-encryption`, `line vty` login. |
 | `documentation` | Interface descriptions naming the correct peer. |
 
@@ -291,7 +294,7 @@ Enforced structurally, not by convention:
 | Student "what to study next" | `/api/report/narrative` | Study topics and counts | Template, `source: "template"` |
 | Class briefing | `/api/class/briefing` | Concepts × students affected | Template, `source: "template"` |
 | Student follow-up chat | `/api/chat/report` | Study topics **plus each missed checkpoint**: device, interface, description, feedback and *Found:* value | `503` with the reason |
-| Instructor follow-up chat | `/api/chat/class` | **Results table with names** (from submission filenames), score, grade, missed concepts, plus server-computed ranking, lowest/highest (ties included), average and students per concept | `503` with the reason |
+| Instructor follow-up chat | `/api/chat/class` | **Results table with names** (from submission filenames), score, percentage, missed concepts, plus server-computed ranking, lowest/highest (ties included), average and students per concept | `503` with the reason |
 
 Every response says who wrote it (`source: "model"` or `"template"`), and the
 UI shows it as a badge. The header's AI indicator reads `/api/llm/status` on
@@ -306,7 +309,7 @@ chatbox disables itself and says so.
 R1?", the student chat includes each missed checkpoint's *Found:* value, for
 example `172.16.50.1/24` or `No matching OSPF config`. That is a fragment the
 grader extracted, not the student's configuration text, and it carries no name.
-The score, percentage and grade are not sent. `tests/test_chat.py` asserts the
+The score and percentage are not sent. `tests/test_chat.py` asserts the
 findings contain no score-like text.
 
 **Chat guard rails** (`src/narrative.py`):
@@ -319,6 +322,26 @@ findings contain no score-like text.
   Because they are rebuilt on every request, history trimming cannot drop them.
 - Client history is sanitised: `user`/`assistant` roles only, 1,000 characters
   per message, the last 12 messages, and it must end with the user's question.
+- **Signed context** (`src/integrity.py`). `/api/evaluate` signs the report's
+  findings with an HMAC (`findings_signature`), and `/api/chat/report` returns
+  `400` for a report that does not verify, so text edited in the browser can
+  never become model context. Each reply carries a `signature`. An assistant
+  turn sent back without a valid one is dropped, so a student cannot plant
+  replies the model never wrote. The key is random per server process, so a
+  restart means grading again before chatting.
+- **Checked before the model** (`src/chat_guard.py`). Injection phrasing,
+  off-topic tasks (essays, poems, recipes) and requests for the whole
+  configuration get a fixed refusal (`source: "template"`), and the model is
+  not called. A question with no networking or lab term in it goes through a
+  one-word yes/no topic check first. Short follow-ups in a conversation skip
+  that check.
+- **Checked after the model.** Runs of more than 4 configuration lines are cut
+  from a reply. A reply that walks through more than 6 commands in any
+  layout (for example a numbered list of inline code, which llama3.2:3b
+  produced when asked) is withheld whole.
+- Findings are marked as data in the system prompt, and the findings marker
+  cannot be spoofed from inside a question.
+- Red-team set: `tests/test_chat_safeguards.py`.
 - The student prompt says the grade is final, disputes go to the instructor,
   only answer about this lab, never invent an error, and do not write the full
   fixing configuration.
@@ -354,18 +377,20 @@ from `src/`; nothing in `src/` imports it, and a test enforces that.
    side by side. Anything the parser drops makes them diverge and is named by
    rule id.
 
-### Twenty-two cases
+### Twenty-five cases
 
-**Sixteen injected faults** measure recall: native VLAN mismatch, trunk left
+**Eighteen injected faults** measure recall: native VLAN mismatch, trunk left
 as access, populated VLAN pruned, interface shutdown, wrong IP, wrong mask,
 subnet mismatch, device missing, cable unplugged, wrong access VLAN, gateway
-removed, gateway in wrong subnet, OSPF missing, `enable secret` removed, OSPF
-hello mismatch, duplex hard-set against auto.
+removed, gateway in wrong subnet, OSPF missing, one OSPF network left out of
+its area, `enable secret` removed, plaintext `enable password` instead of
+`enable secret`, OSPF hello mismatch, duplex hard-set against auto.
 
-**Six negative cases** measure specificity — correct work that merely differs
+**Seven negative cases** measure specificity — correct work that merely differs
 from the reference: renamed devices, the student's own addressing plan, a
 native VLAN both ends agree on, an unused VLAN pruned, non-default OSPF timers
-agreed by both ends, a spare loopback.
+agreed by both ends, OSPF enabled per interface instead of by `network`
+statements, a spare loopback.
 
 The negative cases matter more. A grader that fails everything scores 100%
 recall; only specificity distinguishes a strict grader from an accurate one.
@@ -423,7 +448,7 @@ worse than no instrument.
 | GET | `/api/llm/status` | Narrative layer availability. |
 | POST | `/api/report/narrative` | Student summary. |
 | POST | `/api/class/briefing` | Instructor class briefing. **Instructor only.** |
-| POST | `/api/chat/report` | Follow-up question about one report → model answer, or `503` if no model. |
+| POST | `/api/chat/report` | Follow-up question about one report → model answer, a template refusal, `400` if the report's `findings_signature` does not verify, or `503` if no model. |
 | POST | `/api/chat/class` | Follow-up question about the class results table (with names) → model answer, or `503`. **Instructor only.** |
 
 ### Instructor access

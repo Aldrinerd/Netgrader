@@ -25,6 +25,7 @@ class InterfaceData(BaseModel):
     ospf_hello_interval: int | None = None
     ospf_dead_interval: int | None = None
     ospf_area: int | None = None
+    ospf_process_id: int | None = None    # from `ip ospf <pid> area <a>`
     ospf_network_type: str | None = None      # broadcast / point-to-point / ...
     ospf_authentication: str | None = None    # message-digest / text / null
     mtu: int | None = None
@@ -204,7 +205,6 @@ class ClassChatStudent(BaseModel):
     name: str
     status: str = "graded"
     percentage: float = 0.0
-    grade_letter: str = "-"
     total_score: float = 0.0
     max_score: float = 0.0
     failed_count: int = 0
@@ -226,8 +226,10 @@ class EvaluationReport(BaseModel):
     percentage: float
     passed_count: int
     failed_count: int
-    grade_letter: str
     results: list[RuleResult] = Field(default_factory=list)
     study_topics: list[StudyTopic] = Field(default_factory=list)
     topology: TopologyResult
+    # HMAC over the findings, set by /api/evaluate. The student chat only
+    # accepts a report whose findings still match it (src/integrity.py).
+    findings_signature: str | None = None
 

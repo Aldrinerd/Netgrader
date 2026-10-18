@@ -21,6 +21,9 @@ computed by deterministic rules — there is no AI in the grading path.**
 | **Command Prompt** | Not needed. The launcher runs through Python, not `cmd.exe`. |
 | **Internet** | Not needed. Fonts and the Packet Tracer decoder are bundled. |
 
+For the school IT office: [docs/DEPLOYMENT_SECURITY.md](docs/DEPLOYMENT_SECURITY.md)
+covers the firewall rule, the data handled, the access model and how to verify each claim.
+
 ### Start it
 
 **Double-click `start_server.py`.**
@@ -171,11 +174,11 @@ In **Instructor Studio**, scroll to *Batch Grading & Gradebook Export*:
 
 You get a class average, the highest and lowest scores, a per-student table,
 and a **Download Gradebook CSV** button. The CSV opens directly in Excel and
-includes each student's score, percentage, letter grade, and the list of
+includes each student's score, percentage, and the list of
 checkpoints they missed.
 
 The **Highest** and **Lowest** cards show who scored it (every name, when
-students tie). Click the **Student**, **Score**, **%** or **Grade** column
+students tie). Click the **Student**, **Score** or **%** column
 headings to sort the table; click again to reverse. Scores sort lowest-first,
 and files that could not be graded always stay at the bottom.
 

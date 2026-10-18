@@ -111,6 +111,5 @@ def test_teacher_generate_then_student_evaluate(live_server):
 
     # The reference file graded against its own rubric must score perfectly.
     assert eval_data["percentage"] == 100.0
-    assert eval_data["grade_letter"] in ("A", "A+")
     assert eval_data["passed_count"] > 0
     assert eval_data["failed_count"] == 0

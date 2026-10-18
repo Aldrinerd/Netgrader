@@ -109,6 +109,7 @@ def test_csv_is_valid_and_quotes_names_with_commas(instructions_txt):
     assert header[0] == "Student"
     assert "Percentage" in header
     assert "Missed Checkpoints" in header
+    assert "Grade" not in header
     assert len(body) == 2
 
     # A name containing a comma must survive the CSV round trip intact.
@@ -156,9 +157,9 @@ def test_csv_neutralises_formula_prefixes(prefix):
         "student": name,
         "missed": [f"{prefix}cmd|' /C calc'!A0"],
     }])
-    row = next(r for r in csv.reader(io.StringIO(text)) if r and r[0] != "Student")
+    header, row = list(csv.reader(io.StringIO(text)))[:2]
     assert row[0] == "'" + name
-    assert row[8].startswith("'")
+    assert row[header.index("Missed Checkpoints")].startswith("'")
 
 
 def test_csv_leaves_ordinary_values_alone():
@@ -171,7 +172,6 @@ def test_csv_leaves_ordinary_values_alone():
     assert row[1] == "Lab 3"
 
 
-def test_csv_error_row_grade_dash_is_not_prefixed():
-    from src.app import _build_gradebook_csv
-    text = _build_gradebook_csv("Lab", [{"student": "A", "grade_letter": "-", "missed": []}])
-    assert list(csv.reader(io.StringIO(text)))[1][5] == "-"
+def test_csv_lone_dash_is_not_prefixed():
+    from src.app import _csv_safe
+    assert _csv_safe("-") == "-"

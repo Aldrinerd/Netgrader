@@ -228,9 +228,10 @@ def parse_running_config(content: str, start_line: int, device: ParsedDevice) ->
             # `ip ospf <process-id> area <area-id>` -- interface-level OSPF,
             # an alternative to `network ... area ...` under `router ospf`.
             ospf_area = re.match(
-                r"^ip\s+ospf\s+\d+\s+area\s+(\d+)", stripped, re.IGNORECASE)
+                r"^ip\s+ospf\s+(\d+)\s+area\s+(\d+)", stripped, re.IGNORECASE)
             if ospf_area:
-                current_intf.ospf_area = int(ospf_area.group(1))
+                current_intf.ospf_process_id = int(ospf_area.group(1))
+                current_intf.ospf_area = int(ospf_area.group(2))
                 current_intf.evidence_lines["ospf_area"] = line_no
                 continue
 

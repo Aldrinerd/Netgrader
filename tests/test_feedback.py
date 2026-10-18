@@ -158,7 +158,6 @@ def test_guidance_cannot_change_a_score(graded_report):
         "percentage": graded_report.percentage,
         "passed": graded_report.passed_count,
         "failed": graded_report.failed_count,
-        "letter": graded_report.grade_letter,
         "earned": [r.points_earned for r in graded_report.results],
         "outcomes": [r.passed for r in graded_report.results],
     }
@@ -171,7 +170,6 @@ def test_guidance_cannot_change_a_score(graded_report):
     assert graded_report.percentage == before["percentage"]
     assert graded_report.passed_count == before["passed"]
     assert graded_report.failed_count == before["failed"]
-    assert graded_report.grade_letter == before["letter"]
     assert [r.points_earned for r in graded_report.results] == before["earned"]
     assert [r.passed for r in graded_report.results] == before["outcomes"]
 
@@ -185,7 +183,8 @@ def test_explain_never_raises_on_malformed_input():
 
 
 def test_old_reports_without_guidance_still_deserialise():
-    """A report serialised before this change must still load."""
+    """A report serialised before this change (including the since-removed
+    letter grade) must still load."""
     from src.models import EvaluationReport
     legacy = {
         "lab_title": "Old Lab", "total_score": 50.0, "max_score": 100.0,

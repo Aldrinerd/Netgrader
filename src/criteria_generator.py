@@ -8,6 +8,7 @@ formats student lab assignment instructions (.txt), and parses them back for aut
 import json
 import re
 from src.link_attributes import LINK_ATTRIBUTES, applicable_attributes, compare as compare_link_attribute
+from src.ospf import ospf_areas, ospf_enablements
 from src.models import EvaluationCriteria, EvaluationPolicies, EvaluationRule, TopologyResult
 
 # Rule points are stored to one decimal place, so all apportionment is done in
@@ -153,26 +154,34 @@ def generate_criteria_from_topology(
                 }
             ))
 
-        # Routing Rules: one per OSPF area advertised by the reference device.
+        # Routing Rules: one per OSPF area the reference device runs in.
+        # Either config style counts (network statements or interface-mode
+        # `ip ospf P area A`, issue #2), and the rule records every connected
+        # subnet the reference puts into that area, so advertising one of
+        # five networks no longer earns full marks (issue #1).
         # The process ID itself is only enforced when allow_flexible_process_ids is off.
-        for proc in dev.ospf_processes:
-            areas = {
-                n.get("area") for n in proc.get("networks", [])
-                if isinstance(n, dict) and n.get("area") is not None
-            }
-            for area in sorted(areas):
-                add_rule(EvaluationRule(
-                    rule_id=f"ospf_{dev.hostname.lower()}_area{area}",
-                    category="routing",
-                    description=f"Advertise networks into OSPF Area {area} on {dev_name}",
-                    points=8.0,
-                    target_device=dev.hostname,
-                    expected_value={
-                        "protocol": "ospf",
-                        "area": area,
-                        "process_id": proc.get("process_id", 1),
-                    }
-                ))
+        enablements = ospf_enablements(dev)
+        for area in sorted(ospf_areas(dev)):
+            in_area = [e for e in enablements if e["area"] == area]
+            pids = [e["process_id"] for e in in_area if e["process_id"] is not None]
+            pids += [p.get("process_id") for p in dev.ospf_processes
+                     if any(n.get("area") == area for n in p.get("networks", []) if isinstance(n, dict))]
+            add_rule(EvaluationRule(
+                rule_id=f"ospf_{dev.hostname.lower()}_area{area}",
+                category="routing",
+                description=f"Advertise networks into OSPF Area {area} on {dev_name}",
+                points=8.0,
+                target_device=dev.hostname,
+                expected_value={
+                    "protocol": "ospf",
+                    "area": area,
+                    "process_id": pids[0] if pids else 1,
+                    "networks": [
+                        {"interface": e["interface"], "subnet": e["subnet"]}
+                        for e in in_area if e["subnet"]
+                    ],
+                }
+            ))
 
         # Interface Operational Status & IP / Relational Subnet Rules
         for intf_name, intf in dev.interfaces.items():

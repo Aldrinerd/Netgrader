@@ -191,3 +191,38 @@ Three defects were found and fixed:
 - `tests/test_chat.py` now has 19 tests. The new ones cover ranking and tie text, the name-injection guard, the missing-table `400`, briefing and student-chat anonymity, and findings being attached only to the latest turn.
 - Full suite: **231 tests passing**.
 - Verified in the browser against the real local model with three submissions (two tied at 16.5%): the stat cards named both, sorting worked, and the chat answered "who got the lowest grade" → both tied, then "which students struggled with OSPF?" → both, correctly.
+
+## Session: 2026-10-16 — Letter Grades Removed
+
+### Why
+- The group decided results should be reported as a score and a percentage only. The A+/A/B/C/D/F scale was a fixed mapping in the evaluator that did not come from the instructor or the institution's grading policy.
+
+### Changes
+- `EvaluationReport.grade_letter` and `ClassChatStudent.grade_letter` removed, along with the threshold mapping in `evaluate_student_submission()`.
+- Gradebook CSV: the `Grade` column is gone. Batch rows no longer carry `grade_letter`.
+- Class chat context lists percentage, score and missed checkpoints per student, without a grade.
+- Student scorecard: the circle badge now shows the percentage, coloured with the same bands as the progress bar (red below 60%, amber below 80%). The batch table's Grade column, the toast and the downloadable `.txt` report no longer show a letter.
+- Old saved reports that still contain `grade_letter` load normally; the field is ignored.
+
+
+## Session: 2026-10-18 — OSPF Coverage, Chat Safeguards, Deployment Brief
+
+### OSPF grading (issues #1, #2)
+- New `src/ospf.py` gives one view of where OSPF runs: process, interface, area and subnet. It reads both `network` statements (wildcard-aware, most specific match wins) and interface-mode `ip ospf P area A`. The parser now records the interface-mode process ID.
+- Routing rules list every subnet the reference runs OSPF on in each area. Advertising one of three networks used to earn full marks. Now it earns a third of the points and fails, and the feedback names the missing subnets. A wildcard summary that covers them all passes.
+- Interface-mode OSPF on either side now generates or satisfies routing rules. Previously a reference written that way produced no routing rules at all.
+- Rubrics generated before this change carry no network list and keep the old "any network in the area" check.
+- Validation: added "OSPF network missing from area" (positive) and "OSPF enabled per interface" (negative). Two existing fixtures renumbered a router link without updating its `network` statements, which on a real router stops OSPF on that link. They now renumber the statements too, and `subnet_mismatch` correctly expects a routing failure as well.
+
+### Student chat safeguards (issue #19)
+- `src/integrity.py` adds a per-process HMAC key. `/api/evaluate` signs the findings, and the chat rejects a report that does not verify (`400`). Replies are signed, and unsigned or edited assistant turns are dropped.
+- `src/chat_guard.py` adds the checks. Before the model: injection phrasing, off-topic tasks and "write the whole config" get template refusals. A question with no networking term gets a one-word topic check. After the model: config runs over 4 lines are cut, and replies spelling out more than 6 commands in any layout are withheld.
+- Checked against llama3.2:3b. Its first answer to "show me exactly what to type... every line" was a numbered list of inline commands that the line filter missed. That case is now refused before the model and filtered after it, and it is in the test set.
+- `static/js/app.js` keeps each reply's signature in the chat history. Verified in the browser: a two-turn conversation sends signed turns, and an off-topic question gets the template refusal.
+- Not done here: server-side transcripts for the instructor, which need storage (#10), and rate limiting (#20).
+
+### Deployment brief (issue #46)
+- `docs/DEPLOYMENT_SECURITY.md`, linked from `README.md`. Items that depend on open issues (#42, #43, #44, #45, #47, #28) are marked as planned.
+
+### Results
+- Full suite: **306 tests passing** (live-server tests included). Validation harness: 100% on every metric over 25 cases.

@@ -79,7 +79,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const studentEvaluateBtn = document.getElementById('student-evaluate-btn');
 
     const studentReportCard = document.getElementById('student-report-card');
-    const reportGradeLetter = document.getElementById('report-grade-letter');
+    const reportPercentage = document.getElementById('report-percentage');
     const reportEarnedScore = document.getElementById('report-earned-score');
     const reportMaxScore = document.getElementById('report-max-score');
     const reportProgressFill = document.getElementById('report-progress-fill');
@@ -725,7 +725,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const report = await res.json();
                 latestEvaluationReport = report;
                 renderEvaluationReport(report);
-                showToast(`Grading Complete: Score ${report.percentage}% (${report.grade_letter})`);
+                showToast(`Grading Complete: Score ${report.percentage}%`);
             } catch (err) {
                 showPanelMessage(`<div class="empty-icon">⚠️</div><h3>Grading Failed</h3>`
                     + `<p class="empty-error">${escapeHtml(err.message)}</p>`);
@@ -739,9 +739,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderEvaluationReport(report) {
         if (studentReportCard) studentReportCard.style.display = 'block';
 
-        if (reportGradeLetter) {
-            reportGradeLetter.textContent = report.grade_letter;
-            reportGradeLetter.className = `score-grade-badge grade-${report.grade_letter.toLowerCase().charAt(0)}`;
+        if (reportPercentage) {
+            const band = report.percentage < 60 ? ' pct-low' : report.percentage < 80 ? ' pct-mid' : '';
+            reportPercentage.textContent = `${report.percentage}%`;
+            reportPercentage.className = `score-pct-badge${band}`;
         }
         if (reportEarnedScore) reportEarnedScore.textContent = report.total_score.toFixed(1);
         if (reportMaxScore) reportMaxScore.textContent = report.max_score.toFixed(1);
@@ -899,7 +900,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!res.ok) throw new Error(await describeFailure(res, `The AI could not answer (error ${res.status}).`));
                 const data = await res.json();
                 pending.remove();
-                history.push({ role: 'assistant', content: data.reply });
+                // The server only accepts its own replies back as history,
+                // so keep the signature it issued with each one.
+                history.push({ role: 'assistant', content: data.reply, signature: data.signature });
                 addMessage('assistant', data.reply);
             } catch (err) {
                 pending.remove();
@@ -968,7 +971,6 @@ document.addEventListener('DOMContentLoaded', () => {
             name: r.student,
             status: r.status,
             percentage: r.percentage,
-            grade_letter: r.grade_letter,
             total_score: r.total_score,
             max_score: r.max_score,
             failed_count: r.failed_count,
@@ -1081,7 +1083,7 @@ document.addEventListener('DOMContentLoaded', () => {
         studentDownloadReportBtn.addEventListener('click', () => {
             if (!latestEvaluationReport) return;
             const rep = latestEvaluationReport;
-            downloadText(buildReportText(rep), `grade_report_${rep.grade_letter}.txt`);
+            downloadText(buildReportText(rep), 'grade_report.txt');
             showToast("Downloaded grade_report.txt");
         });
     }
@@ -1094,7 +1096,7 @@ document.addEventListener('DOMContentLoaded', () => {
         reportTxt += `================================================================================\n`;
         if (studentName) reportTxt += `Student     : ${studentName}\n`;
         reportTxt += `Assignment  : ${rep.lab_title}\n`;
-        reportTxt += `Final Grade : ${rep.grade_letter} (${rep.percentage}%)\n`;
+        reportTxt += `Percentage  : ${rep.percentage}%\n`;
         reportTxt += `Total Score : ${rep.total_score} / ${rep.max_score} pts\n`;
         reportTxt += `Summary     : ${rep.passed_count} Passed | ${rep.failed_count} Failed\n`;
         reportTxt += `--------------------------------------------------------------------------------\n\n`;
@@ -1974,7 +1976,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="batch-student">${escapeHtml(row.student)}</td>
                 <td>${row.total_score} / ${row.max_score}</td>
                 <td class="batch-pct">${row.percentage}%</td>
-                <td><span class="grade-chip grade-${escapeHtml(row.grade_letter.replace('+','plus').replace('-','none'))}">${escapeHtml(row.grade_letter)}</span></td>
                 <td class="batch-status">${escapeHtml(statusText)}</td>
                 <td class="batch-review-cell"></td>
             `;
@@ -2010,7 +2011,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Sortable batch table ---
-    // Click Student to sort by name, Score / % / Grade to sort by percentage;
+    // Click Student to sort by name, Score / % to sort by percentage;
     // click again to reverse. Open review rows travel with their student, and
     // ungradeable submissions always stay at the bottom.
     let batchSort = { key: null, dir: 1 };
