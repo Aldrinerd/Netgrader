@@ -173,6 +173,10 @@ class EvaluationRule(BaseModel):
     target_device: str
     target_interface: str | None = None
     expected_value: dict | str | int | float | None = None
+    # False when the instructor weighted this rule's topic 0%: the rule still
+    # prints in instructions.txt (and still tells the evaluator which devices
+    # the reference has), but earns and costs nothing.
+    graded: bool = True
 
 
 class EvaluationCriteria(BaseModel):
@@ -182,6 +186,9 @@ class EvaluationCriteria(BaseModel):
     policies: EvaluationPolicies = Field(default_factory=EvaluationPolicies)
     rules: list[EvaluationRule] = Field(default_factory=list)
     reference_summary: dict = Field(default_factory=dict)
+    # Topic key -> percent of total_points (src/topics/weights.py). Empty for
+    # rubrics generated before topic weights existed.
+    topic_weights: dict[str, float] = Field(default_factory=dict)
 
 
 class RuleResult(BaseModel):

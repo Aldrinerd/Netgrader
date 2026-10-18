@@ -409,6 +409,10 @@ def evaluate_student_submission(
     segments = _compute_broadcast_domains(devices, links)
 
     for rule in criteria.rules:
+        # A rule in a topic weighted 0% is printed for reference only. It
+        # still informed the device mapping above, but it is not graded.
+        if not rule.graded:
+            continue
         pts_possible = float(rule.points)
         max_score += pts_possible
         exp = rule.expected_value or {}

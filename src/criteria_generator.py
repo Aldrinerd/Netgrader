@@ -11,70 +11,7 @@ from src.link_attributes import LINK_ATTRIBUTES, applicable_attributes, compare 
 from src.ospf import ospf_areas, ospf_enablements
 from src.models import EvaluationCriteria, EvaluationPolicies, EvaluationRule, TopologyResult
 from src.topics.registry import TOPICS
-
-# Rule points are stored to one decimal place, so all apportionment is done in
-# tenths of a point using integers. This avoids float drift entirely.
-_TENTHS = 10
-
-
-def _normalize_rule_points(rules: list[EvaluationRule], target_total: float) -> None:
-    """
-    Rescale rule weights in place so they sum to exactly `target_total`.
-
-    Uses largest-remainder (Hamilton) apportionment in tenths of a point.
-    Every rule is guaranteed a strictly positive score whenever the target
-    allows it, because a rule worth zero or fewer points corrupts grading:
-    a negative weight means PASSING a checkpoint would lower a student's
-    percentage.
-    """
-    if not rules or target_total <= 0:
-        return
-
-    total_tenths = int(round(target_total * _TENTHS))
-    count = len(rules)
-
-    # Degenerate case: fewer tenths than rules, so not every rule can be worth
-    # something. Spread what exists as evenly as possible rather than going
-    # negative, and let the caller's total stand.
-    if total_tenths < count:
-        base, remainder = divmod(total_tenths, count)
-        for i, rule in enumerate(rules):
-            rule.points = round((base + (1 if i < remainder else 0)) / _TENTHS, 1)
-        return
-
-    weights = [max(float(r.points), 0.0) for r in rules]
-    weight_sum = sum(weights)
-    if weight_sum <= 0:
-        weights = [1.0] * count
-        weight_sum = float(count)
-
-    # Ideal share for each rule, floored, with a guaranteed minimum of one tenth.
-    exact = [total_tenths * w / weight_sum for w in weights]
-    allocation = [max(1, int(share)) for share in exact]
-
-    # Hand out or claw back tenths until the allocation sums exactly to target.
-    drift = total_tenths - sum(allocation)
-    if drift > 0:
-        # Largest fractional remainder gets the surplus tenths first.
-        order = sorted(range(count), key=lambda i: exact[i] - int(exact[i]), reverse=True)
-        for step in range(drift):
-            allocation[order[step % count]] += 1
-    elif drift < 0:
-        # Over-allocated by the minimum floor: reclaim from the largest rules,
-        # never dropping any rule below one tenth of a point.
-        order = sorted(range(count), key=lambda i: allocation[i], reverse=True)
-        step = 0
-        while drift < 0:
-            index = order[step % count]
-            if allocation[index] > 1:
-                allocation[index] -= 1
-                drift += 1
-            step += 1
-            if step > count * total_tenths + count:  # safety valve
-                break
-
-    for rule, tenths in zip(rules, allocation):
-        rule.points = round(tenths / _TENTHS, 1)
+from src.topics.weights import apply_weights, default_weights, normalize_rule_points, same_weights, validate_weights
 
 
 def generate_criteria_from_topology(
@@ -82,11 +19,15 @@ def generate_criteria_from_topology(
     lab_title: str = "Packet Tracer Lab Assignment",
     lab_description: str = "",
     target_total_points: float = 100.0,
-    policies: EvaluationPolicies | None = None
+    policies: EvaluationPolicies | None = None,
+    topic_weights: dict[str, float] | None = None,
 ) -> EvaluationCriteria:
     """
     Generates an EvaluationCriteria object with discrete grading rules extracted
     from an instructor's gold-standard reference topology according to evaluation policies.
+
+    topic_weights: topic key -> percent; None (or the defaults) keeps today's
+    split. Raises TopicWeightError for an invalid split.
     """
     if policies is None:
         policies = EvaluationPolicies()
@@ -430,9 +371,20 @@ def generate_criteria_from_topology(
                 add_rule(rule)
             reference_warnings.extend(topic_warnings)
 
-    # Point Normalization so total equals target_total_points (e.g. 100.0 pts)
+    # Point normalization. Base points first split the total across all rules
+    # exactly as before topic weights existed (the "legacy" rubric). Its
+    # topic split is the default the weights panel shows, so an instructor who
+    # accepts the defaults gets this rubric, point for point.
+    base_points = {r.rule_id: r.points for r in raw_rules}
     if raw_rules:
-        _normalize_rule_points(raw_rules, target_total_points)
+        normalize_rule_points(raw_rules, target_total_points)
+    defaults = default_weights(raw_rules)
+    applied = defaults
+    if topic_weights is not None:
+        requested = validate_weights(topic_weights, defaults)
+        if not same_weights(requested, defaults):
+            apply_weights(raw_rules, base_points, requested, target_total_points)
+            applied = requested
 
     ref_summary = {
         "device_count": len([d for d in topology.devices.values() if not d.is_placeholder]),
@@ -441,6 +393,7 @@ def generate_criteria_from_topology(
         "ip_count": len([r for r in raw_rules if r.category in ("interface_ip", "relational_subnet")]),
         "policy_summary": policies.model_dump(),
         "reference_warnings": reference_warnings,
+        "default_topic_weights": defaults,
     }
 
     return EvaluationCriteria(
@@ -449,7 +402,8 @@ def generate_criteria_from_topology(
         total_points=target_total_points,
         policies=policies,
         rules=raw_rules,
-        reference_summary=ref_summary
+        reference_summary=ref_summary,
+        topic_weights=applied,
     )
 
 
