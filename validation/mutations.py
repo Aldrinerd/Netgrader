@@ -47,6 +47,7 @@ class Mutation:
     expect_categories: frozenset = frozenset()   # empty => must still score 100%
     expect_mentions: tuple = ()             # substrings the guidance should contain
     policies: EvaluationPolicies = field(default_factory=EvaluationPolicies)
+    reference: str = "default"              # which validation/reference.py builder
 
     @property
     def is_negative(self) -> bool:
@@ -215,6 +216,29 @@ def _extra_unrelated_interface(topo):
     )
 
 
+def _static_route_deleted(topo):
+    topo.devices["R1"].routes = []
+
+
+def _static_route_wrong_neighbor(topo):
+    """R1 hands traffic for R2's LAN to PC1 instead of R2."""
+    topo.devices["R1"].routes[0].next_hop = "192.168.10.11"
+
+
+def _static_route_exit_interface(topo):
+    """`ip route ... GigabitEthernet0/0` instead of R2's address."""
+    route = topo.devices["R1"].routes[0]
+    route.next_hop = None
+    route.outgoing_interface = "GigabitEthernet0/0"
+
+
+def _static_lan_renumbered(topo):
+    """R2's LAN on the student's own subnet, and R1's route following it."""
+    lan = topo.devices["R2"].interfaces["GigabitEthernet0/1"]
+    lan.ip_address, lan.network_address = "192.168.50.1", "192.168.50.0"
+    topo.devices["R1"].routes[0].network = "192.168.50.0"
+
+
 CATALOGUE: list = [
     # --- positive -----------------------------------------------------------
     Mutation(
@@ -359,6 +383,24 @@ CATALOGUE: list = [
         expect_mentions=("collision",),
     ),
 
+    Mutation(
+        id="static_route_deleted",
+        label="Static route left out",
+        fault="R1 has no route to R2's LAN",
+        apply=_static_route_deleted,
+        expect_categories=frozenset({"static_route"}),
+        expect_mentions=("no static route",),
+        reference="static",
+    ),
+    Mutation(
+        id="static_route_wrong_neighbor",
+        label="Static route aimed at the wrong neighbor",
+        fault="R1 sends traffic for R2's LAN to PC1 instead of R2",
+        apply=_static_route_wrong_neighbor,
+        expect_categories=frozenset({"static_route"}),
+        expect_mentions=("should go via R2",),
+        reference="static",
+    ),
     # --- negative -----------------------------------------------------------
     Mutation(
         id="devices_renamed",
@@ -403,6 +445,21 @@ CATALOGUE: list = [
         label="Correct work, plus an interface the lab never asked for",
         fault="A spare Loopback0 added to R1",
         apply=_extra_unrelated_interface,
+    ),
+    Mutation(
+        id="static_route_exit_interface",
+        label="Static route written with an exit interface",
+        fault="R1 names GigabitEthernet0/0 instead of R2's address",
+        apply=_static_route_exit_interface,
+        reference="static",
+    ),
+    Mutation(
+        id="static_lan_renumbered",
+        label="Static route to a student-chosen subnet",
+        fault="R2's LAN uses 192.168.50.0/24 and R1's route follows it",
+        apply=_static_lan_renumbered,
+        policies=DYNAMIC,
+        reference="static",
     ),
 ]
 

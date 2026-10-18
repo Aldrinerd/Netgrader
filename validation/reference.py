@@ -20,12 +20,14 @@ but exercises every rule category the engine can emit:
   routing           OSPF area 0 on R1 and R2
   security          enable secret / password-encryption / vty login
   relational_subnet under allow_dynamic_subnetting
+  static_route      build_static_reference(): the same network routed statically
 """
 
 from src.models import (
     DiscoveredLink,
     InterfaceData,
     ParsedDevice,
+    RouteEntry,
     TopologyResult,
 )
 
@@ -171,3 +173,19 @@ def build_reference() -> TopologyResult:
             link("SW2", "FastEthernet0/1", "PC2", "FastEthernet0"),
         ],
     )
+
+
+def build_static_reference() -> TopologyResult:
+    """
+    The reference network routed with static routes instead of OSPF. R2
+    gains a LAN of its own; R1 routes to it by next hop and R2 points a
+    default route back at R1. Graded against its own rubric it must score 100%.
+    """
+    topo = build_reference()
+    r1, r2 = topo.devices["R1"], topo.devices["R2"]
+    r1.ospf_processes = []
+    r2.ospf_processes = []
+    r2.interfaces["GigabitEthernet0/1"] = _routed("GigabitEthernet0/1", "192.168.20.1", 24, "192.168.20.0")
+    r1.routes = [RouteEntry(network="192.168.20.0", cidr=24, protocol="S", next_hop="10.0.0.2")]
+    r2.routes = [RouteEntry(network="0.0.0.0", cidr=0, protocol="S", next_hop="10.0.0.1")]
+    return topo
