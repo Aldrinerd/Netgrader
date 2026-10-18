@@ -19,6 +19,7 @@ from src.link_attributes import LINK_ATTRIBUTES, compare as compare_link_attribu
 from src.ospf import ospf_enablements, statement_covers
 from src.parsers import canonical_device_name, normalize_interface_name
 from src.topics import EvalContext
+from src.topics.registry import topic_for_category
 
 
 def _build_device_mapping(criteria: EvaluationCriteria, student_topology: TopologyResult) -> dict[str, str]:
@@ -412,8 +413,17 @@ def evaluate_student_submission(
         max_score += pts_possible
         exp = rule.expected_value or {}
 
+        # Topics graded by a module in src/topics/ (static routes, ...).
+        grader = topic_for_category(rule.category).evaluate
+        if grader is not None:
+            outcome = grader(rule, ctx)
+            pts_earned = outcome.points_earned
+            passed = outcome.passed
+            actual = outcome.actual
+            feedback = outcome.feedback
+
         # 1. Device Presence Rule
-        if rule.category == "device":
+        elif rule.category == "device":
             dev = _find_student_device(devices, rule.target_device, device_mapping)
             if dev and not dev.is_placeholder:
                 pts_earned = pts_possible

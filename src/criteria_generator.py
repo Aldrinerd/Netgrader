@@ -10,6 +10,7 @@ import re
 from src.link_attributes import LINK_ATTRIBUTES, applicable_attributes, compare as compare_link_attribute
 from src.ospf import ospf_areas, ospf_enablements
 from src.models import EvaluationCriteria, EvaluationPolicies, EvaluationRule, TopologyResult
+from src.topics.registry import TOPICS
 
 # Rule points are stored to one decimal place, so all apportionment is done in
 # tenths of a point using integers. This avoids float drift entirely.
@@ -418,6 +419,17 @@ def generate_criteria_from_topology(
                         }
                     ))
 
+    # 3. Topic graders (src/topics/): topics added after the registry existed
+    # generate their own rules. Their warnings name reference configuration
+    # that could not be graded, for the instructor to see.
+    reference_warnings: list[str] = []
+    for topic in TOPICS:
+        if topic.generate is not None:
+            topic_rules, topic_warnings = topic.generate(topology, policies)
+            for rule in topic_rules:
+                add_rule(rule)
+            reference_warnings.extend(topic_warnings)
+
     # Point Normalization so total equals target_total_points (e.g. 100.0 pts)
     if raw_rules:
         _normalize_rule_points(raw_rules, target_total_points)
@@ -427,7 +439,8 @@ def generate_criteria_from_topology(
         "link_count": len(topology.links),
         "rule_count": len(raw_rules),
         "ip_count": len([r for r in raw_rules if r.category in ("interface_ip", "relational_subnet")]),
-        "policy_summary": policies.model_dump()
+        "policy_summary": policies.model_dump(),
+        "reference_warnings": reference_warnings,
     }
 
     return EvaluationCriteria(

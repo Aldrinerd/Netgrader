@@ -183,3 +183,40 @@ def test_renamed_neighbor_is_matched_under_custom_hostnames():
     )
     outcomes, _, _ = _grade(_topology(), student, CUSTOM_NAMES)
     assert outcomes["R1"].passed and outcomes["R2"].passed
+
+
+from src.criteria_generator import generate_criteria_from_topology  # noqa: E402
+from src.evaluator import evaluate_student_submission  # noqa: E402
+from src.topics.registry import TOPICS_BY_KEY, topic_for_category  # noqa: E402
+
+
+def test_static_routing_topic_is_gradeable():
+    topic = TOPICS_BY_KEY["static_routing"]
+    assert topic.gradeable and topic.categories == ("static_route",)
+    assert topic_for_category("static_route") is topic
+
+
+def test_generator_adds_static_rules_and_reference_warnings():
+    reference = _topology(R1=[(R1_TO_R3_LAN, R1_TO_R3_LAN + "ip route 10.9.0.0 255.255.0.0 10.0.12.99\n")])
+    criteria = generate_criteria_from_topology(reference, lab_title="Static Lab")
+    assert {r.target_device for r in criteria.rules if r.category == "static_route"} == {"R1", "R2", "R3"}
+    assert criteria.reference_summary["reference_warnings"] == [
+        "R1: static route to 10.9.0.0/16 was not graded because next hop 10.0.12.99 belongs to no device."
+    ]
+    assert round(sum(r.points for r in criteria.rules) * 10) == 1000
+
+
+def test_full_pipeline_scores_a_correct_submission_at_100():
+    criteria = generate_criteria_from_topology(_topology())
+    assert evaluate_student_submission(criteria, _topology()).percentage == 100.0
+
+
+def test_full_pipeline_explains_a_wrong_neighbor():
+    criteria = generate_criteria_from_topology(_topology())
+    wrong = R1_TO_R2_LAN.replace("10.0.12.2", "10.0.13.2")
+    report = evaluate_student_submission(criteria, _topology(R1=[(R1_TO_R2_LAN, wrong)]))
+    failed = [r for r in report.results if not r.passed]
+    assert [(r.category, r.target_device) for r in failed] == [("static_route", "R1")]
+    assert "it should go via R2" in failed[0].feedback
+    assert "wrong neighbour" in failed[0].guidance
+    assert "Static routing and next-hop selection" in [t.topic for t in report.study_topics]
