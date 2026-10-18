@@ -158,9 +158,21 @@ Upload (.pkt / .pka / .xml / .zip / .txt)
   confidence-rated links and an evidence drawer citing exact config lines.
 - **Instructor Studio** — generate a rubric from your reference file, with
   nine policy switches controlling grading strictness, plus **batch grading**
-  for the whole class. Only visible on the computer running the server.
+  for the whole class. After generating, set how much of the grade each
+  detected topic carries before you download `instructions.txt`. Only visible
+  on the computer running the server.
 - **Student Grading** — upload `instructions.txt` plus your attempt, get a
   scorecard.
+
+### Weighting a lab toward this week's lesson
+
+In **Instructor Studio**, after **Generate**, the *Grading Weights* panel
+lists every configuration topic found in your reference file with its share
+of the grade. Type new percentages, or press **Focus** on this week's topic
+(it takes 50% and the rest scale down), then click **Finalize rubric**. Only
+then is `instructions.txt` offered for download. A topic at 0% is not graded,
+but its tables still print so students can build the lab. Topics the tool
+cannot grade yet (STP, HSRP, ACLs, ...) are listed as "not graded yet".
 
 ### Grading a whole class
 

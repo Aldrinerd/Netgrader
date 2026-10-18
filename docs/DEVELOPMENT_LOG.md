@@ -226,3 +226,22 @@ Three defects were found and fixed:
 
 ### Results
 - Full suite: **306 tests passing** (live-server tests included). Validation harness: 100% on every metric over 25 cases.
+
+
+## Session: 2026-10-18 — Topic-Weighted Rubrics
+
+### Why
+- Instructors could not say which topic a lab is about. Each rule had a fixed base value, so a lab with many interfaces was graded mostly on addressing and cabling, whatever the lesson was. Static routes were parsed but never graded.
+
+### Changes
+- `src/topics/registry.py`: 23 topics. 11 gradeable topics own every rule category. 12 are detected only (STP, EtherChannel, port security, HSRP, DHCP, inter-VLAN routing, ACL, NAT, SSH, EIGRP, RIP, IPv6). Detection is deterministic over `ParsedDevice.config_lines`, which is never serialized.
+- `src/topics/static_routes.py`: new `static_route` category. One rule per device with static routes. Each route must reach the same destination through the counterpart of the same neighbor. Broken reference routes are skipped and reported to the instructor.
+- `src/topics/weights.py`: the default split is today's rubric. A requested split is apportioned by topic, then by base points inside each topic. A 0% topic is ungraded but still printed. Accepting the defaults reproduces today's rubric exactly.
+- `/api/criteria/generate` takes `topic_weights` and returns `topics` and `reference_warnings`. The Teacher Studio shows a Grading Weights panel (Focus, Reset, Distribute evenly) and offers `instructions.txt` only after Finalize. Each topic takes two lines, because the Teacher Studio column is narrow even on desktop.
+- `instructions.txt`: Grading Weights and Static Routing sections, reference-only markers, rubric grouped by topic, computed section numbers.
+- Validation: a static-routing reference and four cases (two positive, two negative).
+- Decisions D1–D8: `docs/superpowers/specs/2026-10-18-topic-weighted-rubrics-design.md`.
+
+### Results
+- Full suite: **413 tests passing** (live-server tests included). Validation harness: 100% recall (20 faults), 100% specificity (9 cases), 100% consistency and feedback reliability over 29 cases.
+- Verified in the browser: Generate, Focus, Finalize, the stale state after an edit, and invalidation when a policy changes.
