@@ -58,6 +58,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const teacherRulesCountBadge = document.getElementById('teacher-rules-count-badge');
     const teacherDownloadBtn = document.getElementById('teacher-download-btn');
     const teacherCopyBtn = document.getElementById('teacher-copy-btn');
+    const teacherWeightsRows = document.getElementById('teacher-weights-rows');
+    const teacherWeightsTotal = document.getElementById('teacher-weights-total');
+    const teacherWeightsDetected = document.getElementById('teacher-weights-detected');
+    const teacherWeightsWarnings = document.getElementById('teacher-weights-warnings');
+    const teacherWeightsError = document.getElementById('teacher-weights-error');
+    const teacherWeightsResetBtn = document.getElementById('teacher-weights-reset');
+    const teacherWeightsEvenBtn = document.getElementById('teacher-weights-even');
+    const teacherFinalizeBtn = document.getElementById('teacher-finalize-btn');
+    const teacherInstructionsSection = document.getElementById('teacher-instructions-section');
+    const teacherPreviewStale = document.getElementById('teacher-preview-stale');
 
     // --- Mode 3: Student Portal Elements ---
     const studentInstDropZone = document.getElementById('student-inst-drop-zone');
@@ -96,6 +106,12 @@ document.addEventListener('DOMContentLoaded', () => {
     let selectedFiles = [];
     let teacherSelectedFiles = [];
     let generatedInstructionsText = "";
+    // Grading weights panel (docs/superpowers/specs/2026-10-18-topic-weighted-rubrics-design.md).
+    // idle -> weighting (Generate) -> finalized (Finalize) -> stale (a weight edited)
+    const FOCUS_SHARE = 50;
+    let teacherWeightsState = 'idle';
+    let teacherTopics = [];      // gradeable topic rows from the last Generate
+    let teacherWeights = {};     // topic key -> percent currently in the inputs
     let studentInstructionsFile = null;
     let studentSubmissionFiles = [];
     let latestEvaluationReport = null;
@@ -217,7 +233,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (filePreviewList) filePreviewList.style.display = 'none';
             if (teacherFilePreview) teacherFilePreview.style.display = 'none';
-            if (teacherResultCard) teacherResultCard.style.display = 'none';
+            setWeightsState('idle');
             if (studentInstInfo) studentInstInfo.style.display = 'none';
             if (studentSubPreview) studentSubPreview.style.display = 'none';
             if (studentReportCard) studentReportCard.style.display = 'none';
@@ -349,6 +365,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (policyElements.gradeSecurity) policyElements.gradeSecurity.checked = !!values.gradeSecurity;
         if (policyElements.gradeDescriptions) policyElements.gradeDescriptions.checked = !!values.gradeDescriptions;
         if (activeBtn) setProfileActive(activeBtn);
+        invalidateWeights();
     }
 
     if (btnProfileDefault) {
@@ -508,6 +525,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function handleTeacherFiles(files) {
         teacherSelectedFiles = Array.from(files);
+        invalidateWeights();
         if (teacherSelectedFiles.length === 0) return;
 
         if (teacherFilePreview) teacherFilePreview.style.display = 'block';
@@ -522,11 +540,166 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Mirrors largest_remainder() in src/topics/weights.py: split `units`
+    // whole units in proportion to `weights`, exactly.
+    function largestRemainder(weights, units) {
+        const total = weights.reduce((a, b) => a + b, 0);
+        if (units <= 0 || total <= 0) return weights.map(() => 0);
+        const exact = weights.map(w => units * w / total);
+        const alloc = exact.map(x => Math.floor(x + 1e-9));
+        const leftover = units - alloc.reduce((a, b) => a + b, 0);
+        const order = exact.map((_, i) => i)
+            .sort((a, b) => ((exact[b] - alloc[b]) - (exact[a] - alloc[a])) || (a - b));
+        for (let i = 0; i < leftover; i++) alloc[order[i]] += 1;
+        return alloc;
+    }
+
+    function weightsTotal() {
+        return Math.round(Object.values(teacherWeights).reduce((a, b) => a + b, 0) * 10) / 10;
+    }
+
+    // Focus: the topic takes FOCUS_SHARE, the others that carry weight scale
+    // down to share the rest. A topic already at or above it is left alone.
+    function focusWeights(key) {
+        if ((teacherWeights[key] || 0) >= FOCUS_SHARE) return;
+        const others = Object.keys(teacherWeights).filter(k => k !== key && teacherWeights[k] > 0);
+        const next = {};
+        Object.keys(teacherWeights).forEach(k => { next[k] = 0; });
+        if (others.length === 0) {
+            next[key] = 100;
+        } else {
+            next[key] = FOCUS_SHARE;
+            const units = largestRemainder(others.map(k => teacherWeights[k]), (100 - FOCUS_SHARE) * 10);
+            others.forEach((k, i) => { next[k] = units[i] / 10; });
+        }
+        teacherWeights = next;
+    }
+
+    function distributeWeightsEvenly() {
+        const keys = Object.keys(teacherWeights);
+        const units = largestRemainder(keys.map(() => 1), 1000);
+        keys.forEach((k, i) => { teacherWeights[k] = units[i] / 10; });
+    }
+
+    function resetWeightsToDefaults() {
+        teacherTopics.forEach(t => { teacherWeights[t.key] = t.default_percent; });
+    }
+
+    function renderWeightsPanel(data) {
+        teacherTopics = data.topics.filter(t => t.gradeable);
+        teacherWeights = {};
+        teacherTopics.forEach(t => { teacherWeights[t.key] = t.percent; });
+
+        teacherWeightsRows.innerHTML = teacherTopics.map(t => `
+            <div class="weight-row" data-key="${escapeHtml(t.key)}">
+                <div class="weight-topic">
+                    <span class="weight-label">${escapeHtml(t.label)}</span>
+                    <span class="weight-meta">${t.checkpoints} checkpoint${t.checkpoints === 1 ? '' : 's'} · ${escapeHtml(t.devices.join(', '))}</span>
+                </div>
+                <input type="number" class="form-input weight-input" min="0" max="100" step="0.1"
+                       aria-label="${escapeHtml(t.label)} weight in percent">
+                <div class="weight-bar"><span class="weight-bar-fill"></span></div>
+                <span class="weight-points"></span>
+                <button type="button" class="btn btn-outline btn-sm weight-focus">Focus</button>
+            </div>`).join('');
+
+        const detected = data.topics.filter(t => !t.gradeable);
+        teacherWeightsDetected.style.display = detected.length ? 'block' : 'none';
+        teacherWeightsDetected.innerHTML = detected.length
+            ? '<span class="weights-detected-title">Detected, not graded yet:</span> ' + detected.map(t =>
+                `<span class="weights-chip">${escapeHtml(t.label)} <small>(${escapeHtml(t.devices.join(', '))})</small></span>`).join(' ')
+            : '';
+
+        const warnings = data.reference_warnings || [];
+        teacherWeightsWarnings.style.display = warnings.length ? 'block' : 'none';
+        teacherWeightsWarnings.innerHTML = warnings.map(warning => `<div>⚠ ${escapeHtml(warning)}</div>`).join('');
+
+        hideWeightsError();
+        writeWeightInputs();
+        refreshWeightsSummary();
+    }
+
+    function writeWeightInputs() {
+        teacherWeightsRows.querySelectorAll('.weight-row').forEach(row => {
+            row.querySelector('.weight-input').value = (teacherWeights[row.dataset.key] || 0).toFixed(1);
+        });
+    }
+
+    function refreshWeightsSummary() {
+        const total = weightsTotal();
+        const ok = Math.abs(total - 100) <= 0.05;
+        const points = teacherTotalPoints ? parseFloat(teacherTotalPoints.value) || 100 : 100;
+        teacherWeightsTotal.textContent = `Total: ${total.toFixed(1)}% ${ok ? '✓' : '(must be 100%)'}`;
+        teacherWeightsTotal.classList.toggle('is-off', !ok);
+        teacherFinalizeBtn.disabled = !ok;
+        teacherWeightsRows.querySelectorAll('.weight-row').forEach(row => {
+            const pct = teacherWeights[row.dataset.key] || 0;
+            row.querySelector('.weight-bar-fill').style.width = `${Math.min(Math.max(pct, 0), 100)}%`;
+            row.querySelector('.weight-points').textContent = pct > 0
+                ? `≈${(pct / 100 * points).toFixed(1)} pts` : 'reference only';
+            row.classList.toggle('is-zero', pct === 0);
+        });
+    }
+
+    function setWeightsState(state) {
+        teacherWeightsState = state;
+        if (teacherResultCard) teacherResultCard.style.display = state === 'idle' ? 'none' : 'block';
+        const showPreview = state === 'finalized' || state === 'stale';
+        if (teacherInstructionsSection) teacherInstructionsSection.style.display = showPreview ? 'block' : 'none';
+        if (teacherPreviewStale) teacherPreviewStale.style.display = state === 'stale' ? 'block' : 'none';
+        if (teacherDownloadBtn) teacherDownloadBtn.disabled = state !== 'finalized';
+        if (teacherCopyBtn) teacherCopyBtn.disabled = state !== 'finalized';
+        if (teacherRulesCountBadge && state === 'weighting') {
+            teacherRulesCountBadge.textContent = 'Weights not finalized';
+            teacherRulesCountBadge.className = 'badge badge-amber';
+        }
+    }
+
+    function weightsEdited() {
+        refreshWeightsSummary();
+        if (teacherWeightsState === 'finalized') setWeightsState('stale');
+    }
+
+    // Files or policies changed: the topic list may differ, so start over.
+    function invalidateWeights() {
+        if (teacherWeightsState !== 'idle') setWeightsState('idle');
+    }
+
+    function showWeightsError(message) {
+        teacherWeightsError.textContent = message;
+        teacherWeightsError.style.display = 'block';
+    }
+
+    function hideWeightsError() {
+        teacherWeightsError.textContent = '';
+        teacherWeightsError.style.display = 'none';
+    }
+
+    function buildTeacherFormData(weights) {
+        const formData = new FormData();
+        teacherSelectedFiles.forEach(f => formData.append('files', f));
+        formData.append('lab_title', teacherLabTitle ? teacherLabTitle.value.trim() || 'Packet Tracer Lab Assignment' : 'Packet Tracer Lab Assignment');
+        formData.append('lab_description', teacherLabDesc ? teacherLabDesc.value.trim() : '');
+        formData.append('total_points', teacherTotalPoints ? parseFloat(teacherTotalPoints.value) || 100.0 : 100.0);
+        formData.append('allow_dynamic_subnetting', document.getElementById('policy-allow-dynamic-subnetting')?.checked ? 'true' : 'false');
+        formData.append('enforce_prefix_length', document.getElementById('policy-enforce-prefix-length')?.checked ? 'true' : 'false');
+        formData.append('verify_default_gateways', document.getElementById('policy-verify-default-gateways')?.checked ? 'true' : 'false');
+        formData.append('allow_custom_hostnames', document.getElementById('policy-allow-custom-hostnames')?.checked ? 'true' : 'false');
+        formData.append('strict_port_matching', document.getElementById('policy-strict-port-matching')?.checked ? 'true' : 'false');
+        formData.append('strict_cable_type', document.getElementById('policy-strict-cable-type')?.checked ? 'true' : 'false');
+        formData.append('allow_flexible_process_ids', document.getElementById('policy-allow-flexible-process-ids')?.checked ? 'true' : 'false');
+        formData.append('grade_security_baseline', document.getElementById('policy-grade-security-baseline')?.checked ? 'true' : 'false');
+        formData.append('grade_interface_descriptions', document.getElementById('policy-grade-interface-descriptions')?.checked ? 'true' : 'false');
+        if (weights) formData.append('topic_weights', JSON.stringify(weights));
+        return formData;
+    }
+
     if (teacherClearBtn) {
         teacherClearBtn.addEventListener('click', () => {
             teacherSelectedFiles = [];
             if (teacherFileInput) teacherFileInput.value = '';
             if (teacherFilePreview) teacherFilePreview.style.display = 'none';
+            invalidateWeights();
         });
     }
 
@@ -537,40 +710,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            const formData = new FormData();
-            teacherSelectedFiles.forEach(f => formData.append('files', f));
-            formData.append('lab_title', teacherLabTitle ? teacherLabTitle.value.trim() || 'Packet Tracer Lab Assignment' : 'Packet Tracer Lab Assignment');
-            formData.append('lab_description', teacherLabDesc ? teacherLabDesc.value.trim() : '');
-            formData.append('total_points', teacherTotalPoints ? parseFloat(teacherTotalPoints.value) || 100.0 : 100.0);
-
-            // Policy parameters
-            formData.append('allow_dynamic_subnetting', document.getElementById('policy-allow-dynamic-subnetting')?.checked ? 'true' : 'false');
-            formData.append('enforce_prefix_length', document.getElementById('policy-enforce-prefix-length')?.checked ? 'true' : 'false');
-            formData.append('verify_default_gateways', document.getElementById('policy-verify-default-gateways')?.checked ? 'true' : 'false');
-            formData.append('allow_custom_hostnames', document.getElementById('policy-allow-custom-hostnames')?.checked ? 'true' : 'false');
-            formData.append('strict_port_matching', document.getElementById('policy-strict-port-matching')?.checked ? 'true' : 'false');
-            formData.append('strict_cable_type', document.getElementById('policy-strict-cable-type')?.checked ? 'true' : 'false');
-            formData.append('allow_flexible_process_ids', document.getElementById('policy-allow-flexible-process-ids')?.checked ? 'true' : 'false');
-            formData.append('grade_security_baseline', document.getElementById('policy-grade-security-baseline')?.checked ? 'true' : 'false');
-            formData.append('grade_interface_descriptions', document.getElementById('policy-grade-interface-descriptions')?.checked ? 'true' : 'false');
+            const formData = buildTeacherFormData(null);
 
             try {
-                showLoading("Extracting reference topology & generating rubric...");
+                showLoading("Extracting reference topology & detecting configuration topics...");
                 const res = await fetch('/api/criteria/generate', { method: 'POST', body: formData });
                 if (!res.ok) {
                     throw new Error(await describeFailure(res, `Server error ${res.status}`));
                 }
                 const data = await res.json();
 
-                generatedInstructionsText = data.instructions_txt;
-                if (teacherInstructionsPreview) teacherInstructionsPreview.textContent = generatedInstructionsText;
-                if (teacherRulesCountBadge) teacherRulesCountBadge.textContent = `${data.criteria.rules.length} Rules (${data.criteria.total_points} pts)`;
-                if (teacherResultCard) teacherResultCard.style.display = 'block';
+                generatedInstructionsText = "";
+                renderWeightsPanel(data);
+                setWeightsState('weighting');
 
                 if (data.topology) {
                     renderTopology(data.topology);
                 }
-                showToast("Lab instructions & rubric generated!");
+                showToast("Rubric generated. Review the grading weights, then finalize.");
             } catch (err) {
                 showPanelMessage(`<div class="empty-icon">⚠️</div><h3>Could Not Generate Rubric</h3>`
                     + `<p class="empty-error">${escapeHtml(err.message)}</p>`);
@@ -581,9 +738,71 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    if (teacherFinalizeBtn) {
+        teacherFinalizeBtn.addEventListener('click', async () => {
+            if (teacherSelectedFiles.length === 0) {
+                alert("Please upload a reference Packet Tracer (.pkt/.xml) or config bundle.");
+                return;
+            }
+            const formData = buildTeacherFormData(teacherWeights);
+            try {
+                showLoading("Applying grading weights & building instructions.txt...");
+                const res = await fetch('/api/criteria/generate', { method: 'POST', body: formData });
+                if (!res.ok) {
+                    throw new Error(await describeFailure(res, `Server error ${res.status}`));
+                }
+                const data = await res.json();
+                hideWeightsError();
+                generatedInstructionsText = data.instructions_txt;
+                if (teacherInstructionsPreview) teacherInstructionsPreview.textContent = generatedInstructionsText;
+                const graded = data.criteria.rules.filter(r => r.graded !== false).length;
+                if (teacherRulesCountBadge) {
+                    teacherRulesCountBadge.textContent = `${graded} Checkpoints (${data.criteria.total_points} pts)`;
+                    teacherRulesCountBadge.className = 'badge badge-green';
+                }
+                setWeightsState('finalized');
+                showToast("Rubric finalized. instructions.txt is ready to download.");
+            } catch (err) {
+                showWeightsError(err.message);
+            } finally {
+                hideLoading();
+            }
+        });
+    }
+
+    if (teacherWeightsRows) {
+        teacherWeightsRows.addEventListener('input', (e) => {
+            if (!e.target.classList.contains('weight-input')) return;
+            const key = e.target.closest('.weight-row').dataset.key;
+            const value = parseFloat(e.target.value);
+            teacherWeights[key] = Number.isFinite(value) ? Math.round(value * 10) / 10 : 0;
+            weightsEdited();
+        });
+        teacherWeightsRows.addEventListener('change', (e) => {
+            if (e.target.classList.contains('weight-input')) writeWeightInputs();
+        });
+        teacherWeightsRows.addEventListener('click', (e) => {
+            const btn = e.target.closest('.weight-focus');
+            if (!btn) return;
+            focusWeights(btn.closest('.weight-row').dataset.key);
+            writeWeightInputs();
+            weightsEdited();
+        });
+    }
+    if (teacherWeightsResetBtn) {
+        teacherWeightsResetBtn.addEventListener('click', () => { resetWeightsToDefaults(); writeWeightInputs(); weightsEdited(); });
+    }
+    if (teacherWeightsEvenBtn) {
+        teacherWeightsEvenBtn.addEventListener('click', () => { distributeWeightsEvenly(); writeWeightInputs(); weightsEdited(); });
+    }
+    if (teacherTotalPoints) {
+        teacherTotalPoints.addEventListener('input', () => { if (teacherWeightsState !== 'idle') refreshWeightsSummary(); });
+    }
+    Object.values(policyElements).forEach(el => { if (el) el.addEventListener('change', invalidateWeights); });
+
     if (teacherDownloadBtn) {
         teacherDownloadBtn.addEventListener('click', () => {
-            if (!generatedInstructionsText) return;
+            if (!generatedInstructionsText || teacherWeightsState !== 'finalized') return;
             const blob = new Blob([generatedInstructionsText], { type: 'text/plain;charset=utf-8' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -599,7 +818,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (teacherCopyBtn) {
         teacherCopyBtn.addEventListener('click', async () => {
-            if (!generatedInstructionsText) return;
+            if (!generatedInstructionsText || teacherWeightsState !== 'finalized') return;
             try {
                 await navigator.clipboard.writeText(generatedInstructionsText);
                 showToast("Copied instructions.txt to clipboard!");
@@ -644,7 +863,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (studentInstInfo) studentInstInfo.style.display = 'block';
             if (criteriaLabTitle) criteriaLabTitle.textContent = crit.lab_title;
             if (criteriaPointsTag) criteriaPointsTag.textContent = `${crit.total_points} Total pts`;
-            if (criteriaRulesTag) criteriaRulesTag.textContent = `${crit.rules.length} Checkpoints`;
+            if (criteriaRulesTag) criteriaRulesTag.textContent = `${crit.rules.filter(r => r.graded !== false).length} Checkpoints`;
 
             if (studentInstStatus) {
                 studentInstStatus.textContent = '✅ Verified';

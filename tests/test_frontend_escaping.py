@@ -82,3 +82,17 @@ def test_escape_helper_covers_attribute_quotes():
     helper = source[source.index("function escapeHtml"):]
     helper = helper[:helper.index("\n    }\n")]
     assert "&quot;" in helper and "&#39;" in helper
+
+
+def test_weights_panel_escapes_file_derived_text():
+    """Topic rows carry device names and warnings taken from the reference file."""
+    with open(APP_JS, encoding="utf-8") as f:
+        source = f.read()
+    start = source.index("function renderWeightsPanel(")
+    end = source.index("\n    }\n", start)
+    body = source[start:end]
+    risky = [expr.strip() for expr in INTERPOLATION.findall(body)
+             if re.search(r"\b(label|devices|warning|key)\b", expr)]
+    assert risky, "renderWeightsPanel no longer interpolates topic fields; update this test"
+    unescaped = [expr for expr in risky if not expr.startswith("escapeHtml(")]
+    assert not unescaped, unescaped
