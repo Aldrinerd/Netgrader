@@ -2019,7 +2019,7 @@ html, body {
 .weight-row:last-child { border-bottom: none; padding-bottom: 0; }
 .weight-topic { grid-area: topic; }
 .weight-input { grid-area: input; }
-.weight-bar { grid-area: bar; }
+.weight-range { grid-area: bar; }
 .weight-points { grid-area: points; }
 .weight-focus { grid-area: focus; }
 .weight-row.is-zero .weight-label { color: var(--text-muted); }
@@ -2027,8 +2027,7 @@ html, body {
 .weight-label { color: var(--text-primary); font-weight: 500; }
 .weight-meta { color: var(--text-muted); font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .weight-input { width: 76px; text-align: right; font-variant-numeric: tabular-nums; }
-.weight-bar { height: 6px; background-color: var(--bg-base); border-radius: 3px; overflow: hidden; }
-.weight-bar-fill { display: block; height: 100%; width: 0; background-color: var(--accent-blue); transition: width 0.15s ease; }
+.weight-range { width: 100%; min-width: 0; margin: 0; accent-color: var(--accent-blue); cursor: pointer; }
 .weight-points { color: var(--text-secondary); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
 .weights-detected, .weights-warnings, .weights-error { margin-top: 12px; font-size: 0.85rem; }
 .weights-detected { color: var(--text-secondary); }
@@ -2041,6 +2040,6 @@ html, body {
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
 @media (max-width: 400px) {
-    .weight-row { grid-template-columns: 76px minmax(0, 1fr) auto; grid-template-areas: "topic topic topic" "input points focus"; }
-    .weight-bar { display: none; }
+    .weight-row { grid-template-columns: 76px minmax(0, 1fr) auto; grid-template-areas: "topic topic topic" "input bar focus"; }
+    .weight-points { display: none; }
 }

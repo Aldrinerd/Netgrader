@@ -608,7 +608,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
                 <input type="number" class="form-input weight-input" min="0" max="100" step="0.1"
                        aria-label="${escapeHtml(t.label)} weight in percent">
-                <div class="weight-bar"><span class="weight-bar-fill"></span></div>
+                <input type="range" class="weight-range" min="0" max="100" step="0.1"
+                       aria-label="${escapeHtml(t.label)} weight slider">
                 <span class="weight-points"></span>
                 <button type="button" class="btn btn-outline btn-sm weight-focus">Focus</button>
             </div>`).join('');
@@ -631,7 +632,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function writeWeightInputs() {
         teacherWeightsRows.querySelectorAll('.weight-row').forEach(row => {
-            row.querySelector('.weight-input').value = (teacherWeights[row.dataset.key] || 0).toFixed(1);
+            const pct = teacherWeights[row.dataset.key] || 0;
+            row.querySelector('.weight-input').value = pct.toFixed(1);
+            row.querySelector('.weight-range').value = pct;
         });
     }
 
@@ -644,7 +647,6 @@ document.addEventListener('DOMContentLoaded', () => {
         teacherFinalizeBtn.disabled = !ok;
         teacherWeightsRows.querySelectorAll('.weight-row').forEach(row => {
             const pct = teacherWeights[row.dataset.key] || 0;
-            row.querySelector('.weight-bar-fill').style.width = `${Math.min(Math.max(pct, 0), 100)}%`;
             row.querySelector('.weight-points').textContent = pct > 0
                 ? `≈${(pct / 100 * points).toFixed(1)} pts` : 'reference only';
             row.classList.toggle('is-zero', pct === 0);
@@ -795,11 +797,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (teacherWeightsRows) {
+        // The slider and the number box edit the same weight; whichever one
+        // moved updates the other.
         teacherWeightsRows.addEventListener('input', (e) => {
-            if (!e.target.classList.contains('weight-input')) return;
-            const key = e.target.closest('.weight-row').dataset.key;
+            const isRange = e.target.classList.contains('weight-range');
+            if (!isRange && !e.target.classList.contains('weight-input')) return;
+            const row = e.target.closest('.weight-row');
             const value = parseFloat(e.target.value);
-            teacherWeights[key] = Number.isFinite(value) ? Math.round(value * 10) / 10 : 0;
+            const pct = Number.isFinite(value) ? Math.round(value * 10) / 10 : 0;
+            teacherWeights[row.dataset.key] = pct;
+            if (isRange) row.querySelector('.weight-input').value = pct.toFixed(1);
+            else row.querySelector('.weight-range').value = pct;
             markEdited();
         });
         teacherWeightsRows.addEventListener('change', (e) => {

@@ -146,3 +146,15 @@ def test_superseded_requests_neither_hide_the_spinner_nor_report_errors():
         assert "teacherRequestsInFlight++" in body, handler
         assert "if (--teacherRequestsInFlight === 0) hideLoading();" in body, handler
         assert re.search(r"\} catch \(err\) \{\s*if \(seq !== teacherRequestSeq\) return;", body), handler
+
+
+def test_each_topic_has_a_slider_synced_with_its_number_box():
+    """Weights are set by dragging a slider; the number box stays for exact values."""
+    with open(APP_JS, encoding="utf-8") as f:
+        source = f.read()
+    panel = _function_body(source, "renderWeightsPanel")
+    assert 'type="range"' in panel and 'class="weight-range"' in panel
+    assert "weight-range" in _function_body(source, "writeWeightInputs")
+    start = source.index("teacherWeightsRows.addEventListener('input'")
+    handler = source[start:source.index("});", start)]
+    assert "weight-range" in handler
