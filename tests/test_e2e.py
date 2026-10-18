@@ -67,10 +67,29 @@ def test_end_to_end_custom_upload():
     assert len(data["conflicts"]) >= 1
     assert any(c["category"] == "vlan_trunk_mismatch" for c in data["conflicts"])
 
-def test_pasig_edge_rtr1_analysis_generates_unknown_nodes():
-    with open("captures/PASIG_EDGE_RTR1.txt", "rb") as f:
-        content = f.read()
-    files = [("files", ("PASIG_EDGE_RTR1.txt", content, "text/plain"))]
+# A lone edge router whose neighbours were never uploaded. Invented addressing:
+# this used to read a real lab capture from captures/, which is gitignored, so
+# the test could only ever pass on one machine.
+LONE_EDGE_ROUTER = """EDGE_RTR1#show running-config
+hostname EDGE_RTR1
+!
+interface GigabitEthernet0/0
+ description TO CORE SW1
+ ip address 10.20.0.1 255.255.255.252
+!
+interface GigabitEthernet0/1
+ description TO CORE SW2
+ ip address 10.20.0.5 255.255.255.252
+!
+interface Serial0/0/0
+ description TO ISP
+ ip address 203.0.113.1 255.255.255.252
+!
+"""
+
+
+def test_lone_edge_router_analysis_generates_unknown_nodes():
+    files = [("files", ("EDGE_RTR1.txt", LONE_EDGE_ROUTER.encode("utf-8"), "text/plain"))]
     response = client.post("/api/analyze", files=files)
     assert response.status_code == 200
     data = response.json()

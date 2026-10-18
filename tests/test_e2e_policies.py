@@ -42,7 +42,6 @@ def test_full_policy_generation_and_grading_flow_xml():
     assert eval_res.status_code == 200
     eval_json = eval_res.json()
     assert eval_json["percentage"] == 100.0
-    assert eval_json["grade_letter"] in ("A", "A+")
     assert eval_json["failed_count"] == 0
 
 
@@ -138,7 +137,6 @@ Interface: GigabitEthernet0/0, Port ID (outgoing port): GigabitEthernet0/0
     assert eval_res.status_code == 200
     eval_json = eval_res.json()
     assert eval_json["percentage"] == 100.0
-    assert eval_json["grade_letter"] in ("A", "A+")
     assert eval_json["failed_count"] == 0
 
     rel_results = [r for r in eval_json["results"] if r["category"] == "relational_subnet"]

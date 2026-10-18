@@ -9,6 +9,7 @@ multi-device grading fixtures, so they live here instead.
   network_bundle("ospf_clean")            converged 3-router OSPF ring
   network_bundle("subnet_cabling_error")  subnet mismatch + downed link
   network_bundle("vlan_trunk_mismatch")   native VLAN mismatch on a trunk
+  network_bundle("static_chain")          R1 routing to two branch LANs by static route
 """
 
 PRESET_FILES = {
@@ -299,7 +300,83 @@ Vlan    Mac Address       Type        Ports
   20    0001.4255.4401    DYNAMIC     Fa0/1
   10    0001.4255.1101    DYNAMIC     Fa0/24
 """
-    }
+    },
+    "static_chain": {
+        "R1.txt": """R1# show running-config
+hostname R1
+!
+interface GigabitEthernet0/0
+ description Link to R2
+ ip address 10.0.12.1 255.255.255.252
+!
+interface GigabitEthernet0/1
+ description Link to R3
+ ip address 10.0.13.1 255.255.255.252
+!
+interface GigabitEthernet0/2
+ description HQ LAN
+ ip address 192.168.1.1 255.255.255.0
+!
+ip route 192.168.2.0 255.255.255.0 10.0.12.2
+ip route 192.168.3.0 255.255.255.0 GigabitEthernet0/1
+!
+R1# show cdp neighbors detail
+-------------------------
+Device ID: R2
+Entry address(es): 
+  IP address: 10.0.12.2
+Platform: Cisco 2911,  Capabilities: Router
+Interface: GigabitEthernet0/0,  Port ID (outgoing port): GigabitEthernet0/0
+-------------------------
+Device ID: R3
+Entry address(es): 
+  IP address: 10.0.13.2
+Platform: Cisco 2911,  Capabilities: Router
+Interface: GigabitEthernet0/1,  Port ID (outgoing port): GigabitEthernet0/0
+""",
+        "R2.txt": """R2# show running-config
+hostname R2
+!
+interface GigabitEthernet0/0
+ description Link to R1
+ ip address 10.0.12.2 255.255.255.252
+!
+interface GigabitEthernet0/1
+ description Branch 2 LAN
+ ip address 192.168.2.1 255.255.255.0
+!
+ip route 0.0.0.0 0.0.0.0 10.0.12.1
+!
+R2# show cdp neighbors detail
+-------------------------
+Device ID: R1
+Entry address(es): 
+  IP address: 10.0.12.1
+Platform: Cisco 2911,  Capabilities: Router
+Interface: GigabitEthernet0/0,  Port ID (outgoing port): GigabitEthernet0/0
+""",
+        "R3.txt": """R3# show running-config
+hostname R3
+!
+interface GigabitEthernet0/0
+ description Link to R1
+ ip address 10.0.13.2 255.255.255.252
+!
+interface GigabitEthernet0/1
+ description Branch 3 LAN
+ ip address 192.168.3.1 255.255.255.0
+!
+ip route 0.0.0.0 0.0.0.0 10.0.13.1
+!
+R3# show cdp neighbors detail
+-------------------------
+Device ID: R1
+Entry address(es): 
+  IP address: 10.0.13.1
+Platform: Cisco 2911,  Capabilities: Router
+Interface: GigabitEthernet0/0,  Port ID (outgoing port): GigabitEthernet0/1
+""",
+    },
 }
 
 def network_bundle(name: str) -> dict[str, str]:

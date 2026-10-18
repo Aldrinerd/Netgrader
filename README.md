@@ -21,6 +21,9 @@ computed by deterministic rules — there is no AI in the grading path.**
 | **Command Prompt** | Not needed. The launcher runs through Python, not `cmd.exe`. |
 | **Internet** | Not needed. Fonts and the Packet Tracer decoder are bundled. |
 
+For the school IT office: [docs/DEPLOYMENT_SECURITY.md](docs/DEPLOYMENT_SECURITY.md)
+covers the firewall rule, the data handled, the access model and how to verify each claim.
+
 ### Start it
 
 **Double-click `start_server.py`.**
@@ -155,9 +158,21 @@ Upload (.pkt / .pka / .xml / .zip / .txt)
   confidence-rated links and an evidence drawer citing exact config lines.
 - **Instructor Studio** — generate a rubric from your reference file, with
   nine policy switches controlling grading strictness, plus **batch grading**
-  for the whole class. Only visible on the computer running the server.
+  for the whole class. After generating, set how much of the grade each
+  detected topic carries before you download `instructions.txt`. Only visible
+  on the computer running the server.
 - **Student Grading** — upload `instructions.txt` plus your attempt, get a
   scorecard.
+
+### Weighting a lab toward this week's lesson
+
+In **Instructor Studio**, after **Generate**, the *Grading Weights* panel
+lists every configuration topic found in your reference file with its share
+of the grade. Type new percentages, or press **Focus** on this week's topic
+(it takes 50% and the rest scale down), then click **Finalize rubric**. Only
+then is `instructions.txt` offered for download. A topic at 0% is not graded,
+but its tables still print so students can build the lab. Topics the tool
+cannot grade yet (STP, HSRP, ACLs, ...) are listed as "not graded yet".
 
 ### Grading a whole class
 
@@ -171,11 +186,11 @@ In **Instructor Studio**, scroll to *Batch Grading & Gradebook Export*:
 
 You get a class average, the highest and lowest scores, a per-student table,
 and a **Download Gradebook CSV** button. The CSV opens directly in Excel and
-includes each student's score, percentage, letter grade, and the list of
+includes each student's score, percentage, and the list of
 checkpoints they missed.
 
 The **Highest** and **Lowest** cards show who scored it (every name, when
-students tie). Click the **Student**, **Score**, **%** or **Grade** column
+students tie). Click the **Student**, **Score** or **%** column
 headings to sort the table; click again to reverse. Scores sort lowest-first,
 and files that could not be graded always stay at the bottom.
 
@@ -296,3 +311,12 @@ support. `libtwofish.dll` ships prebuilt — no C compiler is required on Window
 
 If `.pkt` upload ever reports as unavailable, `.txt` / `.zip` config bundle
 upload continues to work.
+
+---
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
+
+Third-party software, fonts, and icons included in this repository are subject to their respective licenses as detailed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+

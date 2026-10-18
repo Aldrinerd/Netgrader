@@ -22,7 +22,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src import app as app_module
-from src import llm, narrative
+from src import integrity, llm, narrative
 from src.app import app, process_bundle_dict
 from src.criteria_generator import generate_criteria_from_topology
 from src.evaluator import evaluate_student_submission
@@ -34,12 +34,12 @@ lab_pc = TestClient(app, client=("192.168.1.23", 50000))
 
 # A batch results table as the page sends it. Names are submission filenames.
 CLASS = [
-    {"name": "Santos, Maria", "percentage": 16.5, "grade_letter": "F", "total_score": 16.5,
+    {"name": "Santos, Maria", "percentage": 16.5, "total_score": 16.5,
      "max_score": 100.0, "failed_count": 21,
      "topics": ["IPv4 addressing and subnet masks", "Dynamic routing and OSPF areas"]},
-    {"name": "Dela Cruz, Juan", "percentage": 100.0, "grade_letter": "A+", "total_score": 100.0,
+    {"name": "Dela Cruz, Juan", "percentage": 100.0, "total_score": 100.0,
      "max_score": 100.0, "failed_count": 0, "topics": []},
-    {"name": "Reyes, Ana", "percentage": 16.5, "grade_letter": "F", "total_score": 16.5,
+    {"name": "Reyes, Ana", "percentage": 16.5, "total_score": 16.5,
      "max_score": 100.0, "failed_count": 18, "topics": ["Dynamic routing and OSPF areas"]},
     {"name": "broken", "status": "ERROR: bad zip"},
 ]
@@ -58,7 +58,14 @@ def graded_report():
     criteria = generate_criteria_from_topology(
         reference, lab_title="OSPF Ring Lab", policies=EvaluationPolicies()
     )
-    return evaluate_student_submission(criteria, process_bundle_dict(network_bundle("subnet_cabling_error")))
+    report = evaluate_student_submission(criteria, process_bundle_dict(network_bundle("subnet_cabling_error")))
+    report.findings_signature = integrity.sign_report(report)   # as /api/evaluate does
+    return report
+
+
+def _said(text):
+    """An assistant turn as the page holds it: with the server's signature."""
+    return {"role": "assistant", "content": text, "signature": integrity.sign_reply(text)}
 
 
 def _report_payload(report, question="Why did I lose points?"):
@@ -146,7 +153,7 @@ def test_client_history_is_sanitised():
 
 def test_question_must_come_last(graded_report, model_ready):
     payload = _report_payload(graded_report)
-    payload["messages"].append({"role": "assistant", "content": "I answered already"})
+    payload["messages"].append(_said("I answered already"))
     assert instructor.post("/api/chat/report", json=payload).status_code == 400
 
 
@@ -176,7 +183,8 @@ def test_student_can_ask_about_their_report(graded_report, model_ready):
     response = lab_pc.post("/api/chat/report", json=_report_payload(graded_report))
     assert response.status_code == 200
     assert response.json() == {"reply": "Start with the subnet on R1 G0/0.", "source": "model",
-                               "model": llm.model_name()}
+                               "model": llm.model_name(),
+                               "signature": integrity.sign_reply("Start with the subnet on R1 G0/0.")}
 
     call = model_ready[0]
     findings = _findings(call)
@@ -197,13 +205,13 @@ def test_conversation_history_reaches_the_model(graded_report, model_ready):
     payload = _report_payload(graded_report)
     payload["messages"] = [
         {"role": "user", "content": "What is wrong on R1?"},
-        {"role": "assistant", "content": "The G0/0 address is in the wrong subnet."},
+        _said("The G0/0 address is in the wrong subnet."),
         {"role": "user", "content": "Which command shows that?"},
     ]
     assert lab_pc.post("/api/chat/report", json=payload).status_code == 200
     sent = model_ready[0]["messages"]
     # Earlier turns arrive unchanged; the latest question carries the findings.
-    assert sent[:-1] == payload["messages"][:-1]
+    assert sent[:-1] == [{"role": m["role"], "content": m["content"]} for m in payload["messages"][:-1]]
     assert _question(model_ready[0]) == "Which command shows that?"
     assert "Configure R1" in _findings(model_ready[0])
 
@@ -213,7 +221,7 @@ def test_findings_are_reattached_every_turn_not_accumulated(graded_report, model
     payload = _report_payload(graded_report)
     payload["messages"] = [
         {"role": "user", "content": "First?"},
-        {"role": "assistant", "content": "Answer one."},
+        _said("Answer one."),
         {"role": "user", "content": "Second?"},
     ]
     lab_pc.post("/api/chat/report", json=payload)

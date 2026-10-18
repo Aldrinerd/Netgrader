@@ -27,8 +27,11 @@ from src.evaluator import evaluate_student_submission
 from src.models import EvaluationPolicies, EvaluationReport, TopologyResult
 from src.parsers import parse_device_bundle
 from validation.mutations import CATALOGUE, Mutation
-from validation.reference import build_reference
+from validation.reference import build_reference, build_static_reference
 from validation.reference_text import CLI_DEVICES, CONFIG_BUNDLES
+
+# Each mutation names the reference it is injected into (Mutation.reference).
+REFERENCES = {"default": build_reference, "static": build_static_reference}
 
 REPEATS = 3  # how many times each submission is graded to test determinism
 
@@ -140,9 +143,8 @@ def _check_reference(policies: EvaluationPolicies) -> tuple:
     achievable. A rubric its own reference cannot satisfy makes every number
     below meaningless, so this runs first and is reported first.
     """
-    reference = build_reference()
-    report = _grade(reference, build_reference(), policies)
-    return report.percentage == 100.0, report.percentage
+    scores = [_grade(build(), build(), policies).percentage for build in REFERENCES.values()]
+    return all(score == 100.0 for score in scores), min(scores)
 
 
 def build_parsed_reference() -> TopologyResult:
@@ -232,8 +234,9 @@ def check_fidelity(policies: EvaluationPolicies | None = None) -> FidelityReport
 
 
 def run_mutation(mutation: Mutation) -> MutationOutcome:
-    reference = build_reference()
-    student = build_reference()
+    build = REFERENCES[mutation.reference]
+    reference = build()
+    student = build()
     mutation.apply(student)
 
     reports = [_grade(reference, student, mutation.policies) for _ in range(REPEATS)]

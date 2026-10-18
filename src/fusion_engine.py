@@ -1,4 +1,5 @@
 # src/fusion_engine.py
+import ipaddress
 import re
 from typing import Literal
 from src.models import (
@@ -22,6 +23,25 @@ SIGNAL_WEIGHTS: dict[str, float] = {
 
 _SWITCHING_TYPES = ("switch", "l3_switch")
 
+
+
+def _interface_reaching(device, ip: str) -> str | None:
+    """The device's interface whose subnet contains `ip`, if any."""
+    try:
+        address = ipaddress.ip_address(ip)
+    except ValueError:
+        return None
+    for name, intf in device.interfaces.items():
+        if not intf.ip_address:
+            continue
+        try:
+            network = ipaddress.ip_interface(
+                f"{intf.ip_address}/{intf.cidr or intf.subnet_mask or 24}").network
+        except ValueError:
+            continue
+        if address in network:
+            return name
+    return None
 
 def calculate_noisy_or(weights: list[float]) -> float:
     """Calculates combined probability using Noisy-OR formula: P = 1 - product(1 - w_i)."""
@@ -183,7 +203,12 @@ def infer_topology_links(devices: dict[str, ParsedDevice]) -> list[DiscoveredLin
                         continue
                     for intf_b_name, intf_b in dev_b.interfaces.items():
                         if intf_b.ip_address == route.next_hop:
-                            out_intf = route.outgoing_interface or "GigabitEthernet0/0"
+                            # Evidence belongs to the local interface that can
+                            # actually reach the next hop. Guessing Gi0/0 made a
+                            # floating route via another neighbor invent a link.
+                            out_intf = route.outgoing_interface or _interface_reaching(dev_a, route.next_hop)
+                            if out_intf is None:
+                                continue
                             ev = [f"{dev_a.raw_filename} (Route {route.network}/{route.cidr} via {route.next_hop})"]
                             add_signal(
                                 dev_a.hostname,

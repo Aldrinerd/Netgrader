@@ -109,6 +109,7 @@ def test_csv_is_valid_and_quotes_names_with_commas(instructions_txt):
     assert header[0] == "Student"
     assert "Percentage" in header
     assert "Missed Checkpoints" in header
+    assert "Grade" not in header
     assert len(body) == 2
 
     # A name containing a comma must survive the CSV round trip intact.
@@ -156,9 +157,9 @@ def test_csv_neutralises_formula_prefixes(prefix):
         "student": name,
         "missed": [f"{prefix}cmd|' /C calc'!A0"],
     }])
-    row = next(r for r in csv.reader(io.StringIO(text)) if r and r[0] != "Student")
+    header, row = list(csv.reader(io.StringIO(text)))[:2]
     assert row[0] == "'" + name
-    assert row[8].startswith("'")
+    assert row[header.index("Missed Checkpoints")].startswith("'")
 
 
 def test_csv_leaves_ordinary_values_alone():
@@ -171,7 +172,28 @@ def test_csv_leaves_ordinary_values_alone():
     assert row[1] == "Lab 3"
 
 
-def test_csv_error_row_grade_dash_is_not_prefixed():
-    from src.app import _build_gradebook_csv
-    text = _build_gradebook_csv("Lab", [{"student": "A", "grade_letter": "-", "missed": []}])
-    assert list(csv.reader(io.StringIO(text)))[1][5] == "-"
+def test_csv_lone_dash_is_not_prefixed():
+    from src.app import _csv_safe
+    assert _csv_safe("-") == "-"
+
+
+def test_error_row_counts_only_graded_checkpoints():
+    from src.app import process_bundle_dict
+    from src.criteria_generator import format_criteria_to_instructions_txt, generate_criteria_from_topology
+    from tests.fixtures import network_bundle
+
+    defaults = generate_criteria_from_topology(process_bundle_dict(network_bundle("static_chain"))).topic_weights
+    weights = dict(defaults)
+    weights["static_routing"] = round(weights["static_routing"] + weights["cabling"], 1)
+    weights["cabling"] = 0.0
+    criteria = generate_criteria_from_topology(
+        process_bundle_dict(network_bundle("static_chain")), topic_weights=weights)
+    txt = format_criteria_to_instructions_txt(criteria)
+    res = client.post("/api/evaluate/batch", files=[
+        ("instructions_file", ("instructions.txt", txt.encode("utf-8"), "text/plain")),
+        ("student_files", ("Empty Student.txt", b"   ", "text/plain")),
+    ])
+    assert res.status_code == 200
+    row = res.json()["results"][0]
+    assert row["status"].startswith("ERROR")
+    assert row["failed_count"] == sum(r.graded for r in criteria.rules)

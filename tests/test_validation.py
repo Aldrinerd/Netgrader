@@ -24,17 +24,17 @@ def test_the_reference_is_a_correct_network():
     the catalogue uses, because a rubric its own reference cannot satisfy puts
     100% out of reach for the class and makes every other figure meaningless.
     """
-    for policies in {m.policies.model_dump_json() for m in CATALOGUE}:
-        pol = EvaluationPolicies.model_validate_json(policies)
-        reference = build_reference()
-        report = evaluate_student_submission(
-            generate_criteria_from_topology(reference, policies=pol),
-            build_reference(),
-        )
-        assert report.percentage == 100.0, (
-            f"reference is not clean under {pol.model_dump()}: "
-            f"{[(r.rule_id, r.actual_value) for r in report.results if not r.passed]}"
-        )
+    for build in harness.REFERENCES.values():
+        for policies in {m.policies.model_dump_json() for m in CATALOGUE}:
+            pol = EvaluationPolicies.model_validate_json(policies)
+            report = evaluate_student_submission(
+                generate_criteria_from_topology(build(), policies=pol),
+                build(),
+            )
+            assert report.percentage == 100.0, (
+                f"{build.__name__} is not clean under {pol.model_dump()}: "
+                f"{[(r.rule_id, r.actual_value) for r in report.results if not r.passed]}"
+            )
 
 
 def test_every_catalogue_entry_behaves_as_declared():
@@ -232,3 +232,16 @@ def test_a_fidelity_failure_fails_the_whole_suite(monkeypatch):
         lambda *a, **k: harness.FidelityReport(matched=False, findings=["x"]),
     )
     assert not harness.run().all_correct
+
+
+def test_static_reference_produces_static_route_rules():
+    from validation.reference import build_static_reference
+    criteria = generate_criteria_from_topology(build_static_reference())
+    assert {r.target_device for r in criteria.rules if r.category == "static_route"} == {"R1", "R2"}
+    assert not [r for r in criteria.rules if r.category == "routing"]
+
+
+def test_static_cases_are_in_the_catalogue():
+    ids = {m.id for m in CATALOGUE if m.reference == "static"}
+    assert ids == {"static_route_deleted", "static_route_wrong_neighbor",
+                   "static_route_exit_interface", "static_lan_renumbered"}

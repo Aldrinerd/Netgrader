@@ -58,6 +58,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const teacherRulesCountBadge = document.getElementById('teacher-rules-count-badge');
     const teacherDownloadBtn = document.getElementById('teacher-download-btn');
     const teacherCopyBtn = document.getElementById('teacher-copy-btn');
+    const teacherWeightsRows = document.getElementById('teacher-weights-rows');
+    const teacherWeightsTotal = document.getElementById('teacher-weights-total');
+    const teacherWeightsDetected = document.getElementById('teacher-weights-detected');
+    const teacherWeightsWarnings = document.getElementById('teacher-weights-warnings');
+    const teacherWeightsError = document.getElementById('teacher-weights-error');
+    const teacherWeightsResetBtn = document.getElementById('teacher-weights-reset');
+    const teacherWeightsEvenBtn = document.getElementById('teacher-weights-even');
+    const teacherFinalizeBtn = document.getElementById('teacher-finalize-btn');
+    const teacherInstructionsSection = document.getElementById('teacher-instructions-section');
+    const teacherPreviewStale = document.getElementById('teacher-preview-stale');
 
     // --- Mode 3: Student Portal Elements ---
     const studentInstDropZone = document.getElementById('student-inst-drop-zone');
@@ -79,7 +89,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const studentEvaluateBtn = document.getElementById('student-evaluate-btn');
 
     const studentReportCard = document.getElementById('student-report-card');
-    const reportGradeLetter = document.getElementById('report-grade-letter');
+    const reportPercentage = document.getElementById('report-percentage');
     const reportEarnedScore = document.getElementById('report-earned-score');
     const reportMaxScore = document.getElementById('report-max-score');
     const reportProgressFill = document.getElementById('report-progress-fill');
@@ -96,6 +106,17 @@ document.addEventListener('DOMContentLoaded', () => {
     let selectedFiles = [];
     let teacherSelectedFiles = [];
     let generatedInstructionsText = "";
+    // Grading weights panel (docs/superpowers/specs/2026-10-18-topic-weighted-rubrics-design.md).
+    // idle -> weighting (Generate) -> finalized (Finalize) -> stale (a weight edited)
+    const FOCUS_SHARE = 50;
+    let teacherWeightsState = 'idle';
+    let teacherTopics = [];      // gradeable topic rows from the last Generate
+    let teacherWeights = {};     // topic key -> percent currently in the inputs
+    // Bumped by every edit; a response whose number is no longer current
+    // describes a form that has since changed, and is dropped.
+    let teacherRequestSeq = 0;
+    let teacherRequestsInFlight = 0;   // the spinner hides when this reaches 0
+    let rebalanceBase = null;          // weights when the current slider drag began
     let studentInstructionsFile = null;
     let studentSubmissionFiles = [];
     let latestEvaluationReport = null;
@@ -217,7 +238,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (filePreviewList) filePreviewList.style.display = 'none';
             if (teacherFilePreview) teacherFilePreview.style.display = 'none';
-            if (teacherResultCard) teacherResultCard.style.display = 'none';
+            setWeightsState('idle');
             if (studentInstInfo) studentInstInfo.style.display = 'none';
             if (studentSubPreview) studentSubPreview.style.display = 'none';
             if (studentReportCard) studentReportCard.style.display = 'none';
@@ -349,6 +370,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (policyElements.gradeSecurity) policyElements.gradeSecurity.checked = !!values.gradeSecurity;
         if (policyElements.gradeDescriptions) policyElements.gradeDescriptions.checked = !!values.gradeDescriptions;
         if (activeBtn) setProfileActive(activeBtn);
+        invalidateWeights();
     }
 
     if (btnProfileDefault) {
@@ -508,6 +530,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function handleTeacherFiles(files) {
         teacherSelectedFiles = Array.from(files);
+        invalidateWeights();
         if (teacherSelectedFiles.length === 0) return;
 
         if (teacherFilePreview) teacherFilePreview.style.display = 'block';
@@ -522,11 +545,196 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Mirrors largest_remainder() in src/topics/weights.py: split `units`
+    // whole units in proportion to `weights`, exactly.
+    function largestRemainder(weights, units) {
+        const total = weights.reduce((a, b) => a + b, 0);
+        if (units <= 0 || total <= 0) return weights.map(() => 0);
+        const exact = weights.map(w => units * w / total);
+        const alloc = exact.map(x => Math.floor(x + 1e-9));
+        const leftover = units - alloc.reduce((a, b) => a + b, 0);
+        const order = exact.map((_, i) => i)
+            .sort((a, b) => ((exact[b] - alloc[b]) - (exact[a] - alloc[a])) || (a - b));
+        for (let i = 0; i < leftover; i++) alloc[order[i]] += 1;
+        return alloc;
+    }
+
+    function weightsTotal() {
+        return Math.round(Object.values(teacherWeights).reduce((a, b) => a + b, 0) * 10) / 10;
+    }
+
+    // Focus: the topic takes FOCUS_SHARE, the others that carry weight scale
+    // down to share the rest. A topic already at or above it is left alone.
+    function focusWeights(key) {
+        if ((teacherWeights[key] || 0) >= FOCUS_SHARE) return;
+        const others = Object.keys(teacherWeights).filter(k => k !== key && teacherWeights[k] > 0);
+        const next = {};
+        Object.keys(teacherWeights).forEach(k => { next[k] = 0; });
+        if (others.length === 0) {
+            next[key] = 100;
+        } else {
+            next[key] = FOCUS_SHARE;
+            const units = largestRemainder(others.map(k => teacherWeights[k]), (100 - FOCUS_SHARE) * 10);
+            others.forEach((k, i) => { next[k] = units[i] / 10; });
+        }
+        teacherWeights = next;
+    }
+
+    // Set one topic to `value` and rescale the others to share what is left,
+    // in proportion to their weights in `base`. A topic at 0% stays at 0%,
+    // unless every other topic is at 0%; then the rest is spread evenly.
+    function rebalanceWeights(base, key, value) {
+        const target = Math.round(Math.min(Math.max(value, 0), 100) * 10) / 10;
+        const others = Object.keys(base).filter(k => k !== key);
+        const live = others.filter(k => base[k] > 0);
+        const sharing = live.length ? live : others;
+        const units = largestRemainder(sharing.map(k => (live.length ? base[k] : 1)), Math.round((100 - target) * 10));
+        const next = {};
+        others.forEach(k => { next[k] = 0; });
+        sharing.forEach((k, i) => { next[k] = units[i] / 10; });
+        next[key] = target;
+        return next;
+    }
+
+    function distributeWeightsEvenly() {
+        const keys = Object.keys(teacherWeights);
+        const units = largestRemainder(keys.map(() => 1), 1000);
+        keys.forEach((k, i) => { teacherWeights[k] = units[i] / 10; });
+    }
+
+    // True while every input still holds the default from the last Generate.
+    // Defaults depend on the total, so they are left for the server to derive.
+    function weightsMatchDefaults() {
+        return teacherTopics.every(t => Math.abs((teacherWeights[t.key] || 0) - t.default_percent) < 0.001);
+    }
+
+    function resetWeightsToDefaults() {
+        teacherTopics.forEach(t => { teacherWeights[t.key] = t.default_percent; });
+    }
+
+    function renderWeightsPanel(data) {
+        teacherTopics = data.topics.filter(t => t.gradeable);
+        teacherWeights = {};
+        teacherTopics.forEach(t => { teacherWeights[t.key] = t.percent; });
+
+        teacherWeightsRows.innerHTML = teacherTopics.map(t => `
+            <div class="weight-row" data-key="${escapeHtml(t.key)}">
+                <div class="weight-topic">
+                    <span class="weight-label">${escapeHtml(t.label)}</span>
+                    <span class="weight-meta">${t.checkpoints} checkpoint${t.checkpoints === 1 ? '' : 's'} · ${escapeHtml(t.devices.join(', '))}</span>
+                </div>
+                <input type="number" class="form-input weight-input" min="0" max="100" step="0.1"
+                       aria-label="${escapeHtml(t.label)} weight in percent">
+                <input type="range" class="weight-range" min="0" max="100" step="0.1"
+                       aria-label="${escapeHtml(t.label)} weight slider">
+                <span class="weight-points"></span>
+                <button type="button" class="btn btn-outline btn-sm weight-focus">Focus</button>
+            </div>`).join('');
+
+        const detected = data.topics.filter(t => !t.gradeable);
+        teacherWeightsDetected.style.display = detected.length ? 'block' : 'none';
+        teacherWeightsDetected.innerHTML = detected.length
+            ? '<span class="weights-detected-title">Detected, not graded yet:</span> ' + detected.map(t =>
+                `<span class="weights-chip">${escapeHtml(t.label)} <small>(${escapeHtml(t.devices.join(', '))})</small></span>`).join(' ')
+            : '';
+
+        const warnings = data.reference_warnings || [];
+        teacherWeightsWarnings.style.display = warnings.length ? 'block' : 'none';
+        teacherWeightsWarnings.innerHTML = warnings.map(warning => `<div>⚠ ${escapeHtml(warning)}</div>`).join('');
+
+        hideWeightsError();
+        writeWeightInputs();
+        refreshWeightsSummary();
+    }
+
+    function writeWeightInputs() {
+        teacherWeightsRows.querySelectorAll('.weight-row').forEach(row => {
+            const pct = teacherWeights[row.dataset.key] || 0;
+            row.querySelector('.weight-input').value = pct.toFixed(1);
+            row.querySelector('.weight-range').value = pct;
+        });
+    }
+
+    function refreshWeightsSummary() {
+        const total = weightsTotal();
+        const ok = Math.abs(total - 100) <= 0.05;
+        const points = teacherTotalPoints ? parseFloat(teacherTotalPoints.value) || 100 : 100;
+        teacherWeightsTotal.textContent = `Total: ${total.toFixed(1)}% ${ok ? '✓' : '(must be 100%)'}`;
+        teacherWeightsTotal.classList.toggle('is-off', !ok);
+        teacherFinalizeBtn.disabled = !ok;
+        teacherWeightsRows.querySelectorAll('.weight-row').forEach(row => {
+            const pct = teacherWeights[row.dataset.key] || 0;
+            row.querySelector('.weight-points').textContent = pct > 0
+                ? `≈${(pct / 100 * points).toFixed(1)} pts` : 'reference only';
+            row.classList.toggle('is-zero', pct === 0);
+        });
+    }
+
+    function setWeightsState(state) {
+        teacherWeightsState = state;
+        if (teacherResultCard) teacherResultCard.style.display = state === 'idle' ? 'none' : 'block';
+        const showPreview = state === 'finalized' || state === 'stale';
+        if (teacherInstructionsSection) teacherInstructionsSection.style.display = showPreview ? 'block' : 'none';
+        if (teacherPreviewStale) teacherPreviewStale.style.display = state === 'stale' ? 'block' : 'none';
+        if (teacherDownloadBtn) teacherDownloadBtn.disabled = state !== 'finalized';
+        if (teacherCopyBtn) teacherCopyBtn.disabled = state !== 'finalized';
+        if (teacherRulesCountBadge && state === 'weighting') {
+            teacherRulesCountBadge.textContent = 'Weights not finalized';
+            teacherRulesCountBadge.className = 'badge badge-amber';
+        }
+    }
+
+
+    // Files or policies changed: the topic list may differ, so start over.
+    function invalidateWeights() {
+        teacherRequestSeq++;
+        if (teacherWeightsState !== 'idle') setWeightsState('idle');
+    }
+
+    // A weight, the title, the description or the total changed. The panel
+    // stays valid, but a finalized sheet no longer matches the form.
+    function markEdited() {
+        teacherRequestSeq++;
+        if (teacherWeightsState === 'idle') return;
+        refreshWeightsSummary();
+        if (teacherWeightsState === 'finalized') setWeightsState('stale');
+    }
+
+    function showWeightsError(message) {
+        teacherWeightsError.textContent = message;
+        teacherWeightsError.style.display = 'block';
+    }
+
+    function hideWeightsError() {
+        teacherWeightsError.textContent = '';
+        teacherWeightsError.style.display = 'none';
+    }
+
+    function buildTeacherFormData(weights) {
+        const formData = new FormData();
+        teacherSelectedFiles.forEach(f => formData.append('files', f));
+        formData.append('lab_title', teacherLabTitle ? teacherLabTitle.value.trim() || 'Packet Tracer Lab Assignment' : 'Packet Tracer Lab Assignment');
+        formData.append('lab_description', teacherLabDesc ? teacherLabDesc.value.trim() : '');
+        formData.append('total_points', teacherTotalPoints ? parseFloat(teacherTotalPoints.value) || 100.0 : 100.0);
+        formData.append('allow_dynamic_subnetting', document.getElementById('policy-allow-dynamic-subnetting')?.checked ? 'true' : 'false');
+        formData.append('enforce_prefix_length', document.getElementById('policy-enforce-prefix-length')?.checked ? 'true' : 'false');
+        formData.append('verify_default_gateways', document.getElementById('policy-verify-default-gateways')?.checked ? 'true' : 'false');
+        formData.append('allow_custom_hostnames', document.getElementById('policy-allow-custom-hostnames')?.checked ? 'true' : 'false');
+        formData.append('strict_port_matching', document.getElementById('policy-strict-port-matching')?.checked ? 'true' : 'false');
+        formData.append('strict_cable_type', document.getElementById('policy-strict-cable-type')?.checked ? 'true' : 'false');
+        formData.append('allow_flexible_process_ids', document.getElementById('policy-allow-flexible-process-ids')?.checked ? 'true' : 'false');
+        formData.append('grade_security_baseline', document.getElementById('policy-grade-security-baseline')?.checked ? 'true' : 'false');
+        formData.append('grade_interface_descriptions', document.getElementById('policy-grade-interface-descriptions')?.checked ? 'true' : 'false');
+        if (weights && !weightsMatchDefaults()) formData.append('topic_weights', JSON.stringify(weights));
+        return formData;
+    }
+
     if (teacherClearBtn) {
         teacherClearBtn.addEventListener('click', () => {
             teacherSelectedFiles = [];
             if (teacherFileInput) teacherFileInput.value = '';
             if (teacherFilePreview) teacherFilePreview.style.display = 'none';
+            invalidateWeights();
         });
     }
 
@@ -537,53 +745,131 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            const formData = new FormData();
-            teacherSelectedFiles.forEach(f => formData.append('files', f));
-            formData.append('lab_title', teacherLabTitle ? teacherLabTitle.value.trim() || 'Packet Tracer Lab Assignment' : 'Packet Tracer Lab Assignment');
-            formData.append('lab_description', teacherLabDesc ? teacherLabDesc.value.trim() : '');
-            formData.append('total_points', teacherTotalPoints ? parseFloat(teacherTotalPoints.value) || 100.0 : 100.0);
-
-            // Policy parameters
-            formData.append('allow_dynamic_subnetting', document.getElementById('policy-allow-dynamic-subnetting')?.checked ? 'true' : 'false');
-            formData.append('enforce_prefix_length', document.getElementById('policy-enforce-prefix-length')?.checked ? 'true' : 'false');
-            formData.append('verify_default_gateways', document.getElementById('policy-verify-default-gateways')?.checked ? 'true' : 'false');
-            formData.append('allow_custom_hostnames', document.getElementById('policy-allow-custom-hostnames')?.checked ? 'true' : 'false');
-            formData.append('strict_port_matching', document.getElementById('policy-strict-port-matching')?.checked ? 'true' : 'false');
-            formData.append('strict_cable_type', document.getElementById('policy-strict-cable-type')?.checked ? 'true' : 'false');
-            formData.append('allow_flexible_process_ids', document.getElementById('policy-allow-flexible-process-ids')?.checked ? 'true' : 'false');
-            formData.append('grade_security_baseline', document.getElementById('policy-grade-security-baseline')?.checked ? 'true' : 'false');
-            formData.append('grade_interface_descriptions', document.getElementById('policy-grade-interface-descriptions')?.checked ? 'true' : 'false');
+            const formData = buildTeacherFormData(null);
+            const seq = ++teacherRequestSeq;
+            teacherRequestsInFlight++;
 
             try {
-                showLoading("Extracting reference topology & generating rubric...");
+                showLoading("Extracting reference topology & detecting configuration topics...");
                 const res = await fetch('/api/criteria/generate', { method: 'POST', body: formData });
+                if (seq !== teacherRequestSeq) return;
                 if (!res.ok) {
                     throw new Error(await describeFailure(res, `Server error ${res.status}`));
                 }
                 const data = await res.json();
 
-                generatedInstructionsText = data.instructions_txt;
-                if (teacherInstructionsPreview) teacherInstructionsPreview.textContent = generatedInstructionsText;
-                if (teacherRulesCountBadge) teacherRulesCountBadge.textContent = `${data.criteria.rules.length} Rules (${data.criteria.total_points} pts)`;
-                if (teacherResultCard) teacherResultCard.style.display = 'block';
+                generatedInstructionsText = "";
+                renderWeightsPanel(data);
+                setWeightsState('weighting');
 
                 if (data.topology) {
                     renderTopology(data.topology);
                 }
-                showToast("Lab instructions & rubric generated!");
+                showToast("Rubric generated. Review the grading weights, then finalize.");
             } catch (err) {
+                if (seq !== teacherRequestSeq) return;
                 showPanelMessage(`<div class="empty-icon">⚠️</div><h3>Could Not Generate Rubric</h3>`
                     + `<p class="empty-error">${escapeHtml(err.message)}</p>`);
                 alert(`Generation Error: ${err.message}`);
             } finally {
-                hideLoading();
+                if (--teacherRequestsInFlight === 0) hideLoading();
             }
         });
     }
 
+    if (teacherFinalizeBtn) {
+        teacherFinalizeBtn.addEventListener('click', async () => {
+            if (teacherSelectedFiles.length === 0) {
+                alert("Please upload a reference Packet Tracer (.pkt/.xml) or config bundle.");
+                return;
+            }
+            const formData = buildTeacherFormData(teacherWeights);
+            const seq = ++teacherRequestSeq;
+            teacherRequestsInFlight++;
+            try {
+                showLoading("Applying grading weights & building instructions.txt...");
+                const res = await fetch('/api/criteria/generate', { method: 'POST', body: formData });
+                if (seq !== teacherRequestSeq) return;
+                if (!res.ok) {
+                    throw new Error(await describeFailure(res, `Server error ${res.status}`));
+                }
+                const data = await res.json();
+                hideWeightsError();
+                generatedInstructionsText = data.instructions_txt;
+                if (teacherInstructionsPreview) teacherInstructionsPreview.textContent = generatedInstructionsText;
+                const graded = data.criteria.rules.filter(r => r.graded !== false).length;
+                if (teacherRulesCountBadge) {
+                    teacherRulesCountBadge.textContent = `${graded} Checkpoints (${data.criteria.total_points} pts)`;
+                    teacherRulesCountBadge.className = 'badge badge-green';
+                }
+                setWeightsState('finalized');
+                showToast("Rubric finalized. instructions.txt is ready to download.");
+            } catch (err) {
+                if (seq !== teacherRequestSeq) return;
+                showWeightsError(err.message);
+            } finally {
+                if (--teacherRequestsInFlight === 0) hideLoading();
+            }
+        });
+    }
+
+    if (teacherWeightsRows) {
+        // Dragging a slider rescales the other topics live, from the weights
+        // the drag started with, so the total stays 100%. The number box
+        // rebalances when its value is committed (Enter or leaving the box).
+        teacherWeightsRows.addEventListener('input', (e) => {
+            const row = e.target.closest('.weight-row');
+            if (!row) return;
+            const value = parseFloat(e.target.value);
+            const pct = Number.isFinite(value) ? value : 0;
+            if (e.target.classList.contains('weight-range')) {
+                if (!rebalanceBase) rebalanceBase = { ...teacherWeights };
+                teacherWeights = rebalanceWeights(rebalanceBase, row.dataset.key, pct);
+                writeWeightInputs();
+                markEdited();
+            } else if (e.target.classList.contains('weight-input')) {
+                teacherWeights[row.dataset.key] = Math.round(pct * 10) / 10;
+                row.querySelector('.weight-range').value = teacherWeights[row.dataset.key];
+                markEdited();
+            }
+        });
+        teacherWeightsRows.addEventListener('change', (e) => {
+            const row = e.target.closest('.weight-row');
+            if (!row) return;
+            if (e.target.classList.contains('weight-range')) {
+                rebalanceBase = null;
+            } else if (e.target.classList.contains('weight-input')) {
+                teacherWeights = rebalanceWeights(teacherWeights, row.dataset.key, teacherWeights[row.dataset.key]);
+                writeWeightInputs();
+                markEdited();
+            }
+        });
+        teacherWeightsRows.addEventListener('click', (e) => {
+            const btn = e.target.closest('.weight-focus');
+            if (!btn) return;
+            focusWeights(btn.closest('.weight-row').dataset.key);
+            writeWeightInputs();
+            markEdited();
+        });
+    }
+    if (teacherWeightsResetBtn) {
+        teacherWeightsResetBtn.addEventListener('click', () => { resetWeightsToDefaults(); writeWeightInputs(); markEdited(); });
+    }
+    if (teacherWeightsEvenBtn) {
+        teacherWeightsEvenBtn.addEventListener('click', () => { distributeWeightsEvenly(); writeWeightInputs(); markEdited(); });
+    }
+    if (teacherTotalPoints) {
+        teacherTotalPoints.addEventListener('input', markEdited);
+    }
+    if (teacherLabTitle) teacherLabTitle.addEventListener('input', markEdited);
+    if (teacherLabDesc) {
+        teacherLabDesc.addEventListener('input', markEdited);
+    }
+    Object.values(policyElements).forEach(el => { if (el) el.addEventListener('change', invalidateWeights); });
+
     if (teacherDownloadBtn) {
         teacherDownloadBtn.addEventListener('click', () => {
-            if (!generatedInstructionsText) return;
+            if (!generatedInstructionsText || teacherWeightsState !== 'finalized') return;
             const blob = new Blob([generatedInstructionsText], { type: 'text/plain;charset=utf-8' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -599,7 +885,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (teacherCopyBtn) {
         teacherCopyBtn.addEventListener('click', async () => {
-            if (!generatedInstructionsText) return;
+            if (!generatedInstructionsText || teacherWeightsState !== 'finalized') return;
             try {
                 await navigator.clipboard.writeText(generatedInstructionsText);
                 showToast("Copied instructions.txt to clipboard!");
@@ -644,7 +930,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (studentInstInfo) studentInstInfo.style.display = 'block';
             if (criteriaLabTitle) criteriaLabTitle.textContent = crit.lab_title;
             if (criteriaPointsTag) criteriaPointsTag.textContent = `${crit.total_points} Total pts`;
-            if (criteriaRulesTag) criteriaRulesTag.textContent = `${crit.rules.length} Checkpoints`;
+            if (criteriaRulesTag) criteriaRulesTag.textContent = `${crit.rules.filter(r => r.graded !== false).length} Checkpoints`;
 
             if (studentInstStatus) {
                 studentInstStatus.textContent = '✅ Verified';
@@ -725,7 +1011,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const report = await res.json();
                 latestEvaluationReport = report;
                 renderEvaluationReport(report);
-                showToast(`Grading Complete: Score ${report.percentage}% (${report.grade_letter})`);
+                showToast(`Grading Complete: Score ${report.percentage}%`);
             } catch (err) {
                 showPanelMessage(`<div class="empty-icon">⚠️</div><h3>Grading Failed</h3>`
                     + `<p class="empty-error">${escapeHtml(err.message)}</p>`);
@@ -739,9 +1025,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderEvaluationReport(report) {
         if (studentReportCard) studentReportCard.style.display = 'block';
 
-        if (reportGradeLetter) {
-            reportGradeLetter.textContent = report.grade_letter;
-            reportGradeLetter.className = `score-grade-badge grade-${report.grade_letter.toLowerCase().charAt(0)}`;
+        if (reportPercentage) {
+            const band = report.percentage < 60 ? ' pct-low' : report.percentage < 80 ? ' pct-mid' : '';
+            reportPercentage.textContent = `${report.percentage}%`;
+            reportPercentage.className = `score-pct-badge${band}`;
         }
         if (reportEarnedScore) reportEarnedScore.textContent = report.total_score.toFixed(1);
         if (reportMaxScore) reportMaxScore.textContent = report.max_score.toFixed(1);
@@ -899,7 +1186,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!res.ok) throw new Error(await describeFailure(res, `The AI could not answer (error ${res.status}).`));
                 const data = await res.json();
                 pending.remove();
-                history.push({ role: 'assistant', content: data.reply });
+                // The server only accepts its own replies back as history,
+                // so keep the signature it issued with each one.
+                history.push({ role: 'assistant', content: data.reply, signature: data.signature });
                 addMessage('assistant', data.reply);
             } catch (err) {
                 pending.remove();
@@ -968,7 +1257,6 @@ document.addEventListener('DOMContentLoaded', () => {
             name: r.student,
             status: r.status,
             percentage: r.percentage,
-            grade_letter: r.grade_letter,
             total_score: r.total_score,
             max_score: r.max_score,
             failed_count: r.failed_count,
@@ -1081,7 +1369,7 @@ document.addEventListener('DOMContentLoaded', () => {
         studentDownloadReportBtn.addEventListener('click', () => {
             if (!latestEvaluationReport) return;
             const rep = latestEvaluationReport;
-            downloadText(buildReportText(rep), `grade_report_${rep.grade_letter}.txt`);
+            downloadText(buildReportText(rep), 'grade_report.txt');
             showToast("Downloaded grade_report.txt");
         });
     }
@@ -1094,7 +1382,7 @@ document.addEventListener('DOMContentLoaded', () => {
         reportTxt += `================================================================================\n`;
         if (studentName) reportTxt += `Student     : ${studentName}\n`;
         reportTxt += `Assignment  : ${rep.lab_title}\n`;
-        reportTxt += `Final Grade : ${rep.grade_letter} (${rep.percentage}%)\n`;
+        reportTxt += `Percentage  : ${rep.percentage}%\n`;
         reportTxt += `Total Score : ${rep.total_score} / ${rep.max_score} pts\n`;
         reportTxt += `Summary     : ${rep.passed_count} Passed | ${rep.failed_count} Failed\n`;
         reportTxt += `--------------------------------------------------------------------------------\n\n`;
@@ -1974,7 +2262,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="batch-student">${escapeHtml(row.student)}</td>
                 <td>${row.total_score} / ${row.max_score}</td>
                 <td class="batch-pct">${row.percentage}%</td>
-                <td><span class="grade-chip grade-${escapeHtml(row.grade_letter.replace('+','plus').replace('-','none'))}">${escapeHtml(row.grade_letter)}</span></td>
                 <td class="batch-status">${escapeHtml(statusText)}</td>
                 <td class="batch-review-cell"></td>
             `;
@@ -2010,7 +2297,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Sortable batch table ---
-    // Click Student to sort by name, Score / % / Grade to sort by percentage;
+    // Click Student to sort by name, Score / % to sort by percentage;
     // click again to reverse. Open review rows travel with their student, and
     // ungradeable submissions always stay at the bottom.
     let batchSort = { key: null, dir: 1 };

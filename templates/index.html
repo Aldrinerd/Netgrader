@@ -282,31 +282,49 @@
                             </div>
 
                             <button id="teacher-generate-btn" class="btn btn-primary btn-block" style="margin-top: 12px;">
-                                <span>⚡ Generate Rubric & instructions.txt</span>
+                                <span>⚡ Generate Rubric & Detect Topics</span>
                             </button>
                         </form>
                     </div>
 
-                    <!-- Teacher Output & Download Card -->
+                    <!-- Teacher Output: grading weights, then the finalized instructions sheet -->
                     <div class="panel-card teacher-result-card" id="teacher-result-card" style="display: none;">
                         <div class="card-header">
-                            <span class="card-icon">✅</span>
-                            <h3>Generated Instructions Sheet</h3>
-                            <span id="teacher-rules-count-badge" class="badge badge-green">0 Rules</span>
+                            <span class="card-icon">⚖️</span>
+                            <h3>Grading Weights &amp; Instructions Sheet</h3>
+                            <span id="teacher-rules-count-badge" class="badge badge-amber">Weights not finalized</span>
                         </div>
-                        <p class="card-desc">The student instructions and machine-verifiable evaluation specification have been generated:</p>
-                        
-                        <div class="instructions-preview-box">
-                            <pre id="teacher-instructions-preview"><code><!-- Generated instructions.txt content --></code></pre>
+                        <p class="card-desc">These are the configuration topics found in your reference file. Set how much of the grade each one carries, then finalize to build <code>instructions.txt</code>. A topic at 0% is not graded, but its tables still print for students.</p>
+
+                        <div class="weights-panel">
+                            <div class="weights-header">
+                                <span class="weights-title">Topic weights</span>
+                                <span id="teacher-weights-total" class="weights-total">Total: 100.0%</span>
+                            </div>
+                            <div id="teacher-weights-rows" class="weights-rows"></div>
+                            <div id="teacher-weights-detected" class="weights-detected" style="display: none;"></div>
+                            <div id="teacher-weights-warnings" class="weights-warnings" style="display: none;"></div>
+                            <div id="teacher-weights-error" class="weights-error" role="alert" style="display: none;"></div>
+                            <div class="card-actions-row weights-actions">
+                                <button id="teacher-weights-reset" type="button" class="btn btn-outline btn-sm">Reset to defaults</button>
+                                <button id="teacher-weights-even" type="button" class="btn btn-outline btn-sm">Distribute evenly</button>
+                                <button id="teacher-finalize-btn" type="button" class="btn btn-primary btn-sm">✅ Finalize rubric</button>
+                            </div>
                         </div>
 
-                        <div class="card-actions-row">
-                            <button id="teacher-download-btn" class="btn btn-primary btn-sm">
-                                <span>📥 Download instructions.txt</span>
-                            </button>
-                            <button id="teacher-copy-btn" class="btn btn-outline btn-sm">
-                                <span>📋 Copy to Clipboard</span>
-                            </button>
+                        <div id="teacher-instructions-section" style="display: none;">
+                            <div id="teacher-preview-stale" class="weights-stale" style="display: none;">Weights changed since you finalized. Finalize again to update instructions.txt.</div>
+                            <div class="instructions-preview-box">
+                                <pre id="teacher-instructions-preview"><code><!-- Generated instructions.txt content --></code></pre>
+                            </div>
+                            <div class="card-actions-row">
+                                <button id="teacher-download-btn" class="btn btn-primary btn-sm">
+                                    <span>📥 Download instructions.txt</span>
+                                </button>
+                                <button id="teacher-copy-btn" class="btn btn-outline btn-sm">
+                                    <span>📋 Copy to Clipboard</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
 
@@ -350,7 +368,6 @@
                                             <th><button type="button" class="batch-sort" data-sort="student">Student</button></th>
                                             <th><button type="button" class="batch-sort" data-sort="pct">Score</button></th>
                                             <th><button type="button" class="batch-sort" data-sort="pct">%</button></th>
-                                            <th><button type="button" class="batch-sort" data-sort="pct">Grade</button></th>
                                             <th>Status</th><th>Mistakes</th>
                                         </tr>
                                     </thead>
@@ -437,7 +454,7 @@
 
                         <!-- Hero Score Banner -->
                         <div class="score-hero">
-                            <div class="score-grade-badge" id="report-grade-letter">A</div>
+                            <div class="score-pct-badge" id="report-percentage">90%</div>
                             <div class="score-details">
                                 <div class="score-points">
                                     <span id="report-earned-score">90.0</span> / <span id="report-max-score">100.0</span> <span class="score-unit">pts</span>

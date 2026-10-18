@@ -82,3 +82,79 @@ def test_escape_helper_covers_attribute_quotes():
     helper = source[source.index("function escapeHtml"):]
     helper = helper[:helper.index("\n    }\n")]
     assert "&quot;" in helper and "&#39;" in helper
+
+
+def test_weights_panel_escapes_file_derived_text():
+    """Topic rows carry device names and warnings taken from the reference file."""
+    with open(APP_JS, encoding="utf-8") as f:
+        source = f.read()
+    start = source.index("function renderWeightsPanel(")
+    end = source.index("\n    }\n", start)
+    body = source[start:end]
+    risky = [expr.strip() for expr in INTERPOLATION.findall(body)
+             if re.search(r"\b(label|devices|warning|key)\b", expr)]
+    assert risky, "renderWeightsPanel no longer interpolates topic fields; update this test"
+    unescaped = [expr for expr in risky if not expr.startswith("escapeHtml(")]
+    assert not unescaped, unescaped
+
+
+def test_teacher_requests_ignore_responses_overtaken_by_edits():
+    """
+    Generate and Finalize must drop a response if the instructor edited a
+    weight, a policy, the files or the total while it was in flight;
+    otherwise Download is enabled for a rubric the form no longer describes.
+    """
+    with open(APP_JS, encoding="utf-8") as f:
+        source = f.read()
+    for handler in ("teacherGenerateBtn.addEventListener", "teacherFinalizeBtn.addEventListener"):
+        start = source.index(handler)
+        body = source[start:source.index("\n    }\n", start)]
+        assert "const seq = ++teacherRequestSeq;" in body, handler
+        assert "if (seq !== teacherRequestSeq) return;" in body, handler
+    for fn in ("function markEdited(", "function invalidateWeights("):
+        start = source.index(fn)
+        assert "teacherRequestSeq++" in source[start:source.index("\n    }\n", start)], fn
+
+
+def _function_body(source, name):
+    start = source.index(f"function {name}(")
+    return source[start:source.index("\n    }\n", start)]
+
+
+def test_one_edit_transition_for_weights_and_form_fields():
+    """Weight edits and title/total edits share one stale transition."""
+    with open(APP_JS, encoding="utf-8") as f:
+        source = f.read()
+    assert "function formEdited(" not in source
+    assert "function weightsEdited(" not in source
+    assert "teacherRequestSeq++" in _function_body(source, "markEdited")
+
+
+def test_untouched_defaults_are_not_sent_as_weights():
+    """Defaults depend on the total; sending stale defaults after a total change would rescale the rubric."""
+    with open(APP_JS, encoding="utf-8") as f:
+        source = f.read()
+    assert "weightsMatchDefaults()" in _function_body(source, "buildTeacherFormData")
+
+
+def test_superseded_requests_neither_hide_the_spinner_nor_report_errors():
+    with open(APP_JS, encoding="utf-8") as f:
+        source = f.read()
+    for handler in ("teacherGenerateBtn.addEventListener", "teacherFinalizeBtn.addEventListener"):
+        start = source.index(handler)
+        body = source[start:source.index("\n    }\n", start)]
+        assert "teacherRequestsInFlight++" in body, handler
+        assert "if (--teacherRequestsInFlight === 0) hideLoading();" in body, handler
+        assert re.search(r"\} catch \(err\) \{\s*if \(seq !== teacherRequestSeq\) return;", body), handler
+
+
+def test_each_topic_has_a_slider_synced_with_its_number_box():
+    """Weights are set by dragging a slider; the number box stays for exact values."""
+    with open(APP_JS, encoding="utf-8") as f:
+        source = f.read()
+    panel = _function_body(source, "renderWeightsPanel")
+    assert 'type="range"' in panel and 'class="weight-range"' in panel
+    assert "weight-range" in _function_body(source, "writeWeightInputs")
+    start = source.index("teacherWeightsRows.addEventListener('input'")
+    handler = source[start:source.index("});", start)]
+    assert "weight-range" in handler

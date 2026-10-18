@@ -16,7 +16,10 @@ from src.models import (
 )
 from src.feedback import attach_guidance
 from src.link_attributes import LINK_ATTRIBUTES, compare as compare_link_attribute
+from src.ospf import ospf_enablements, statement_covers
 from src.parsers import canonical_device_name, normalize_interface_name
+from src.topics import EvalContext
+from src.topics.registry import topic_for_category
 
 
 def _build_device_mapping(criteria: EvaluationCriteria, student_topology: TopologyResult) -> dict[str, str]:
@@ -367,13 +370,29 @@ def _evaluate_relational_subnet(
         return True, rule.points, actual_str, feedback_str
 
 
+def make_eval_context(criteria: EvaluationCriteria, student_topology: TopologyResult) -> EvalContext:
+    """Everything a src/topics grader may consult about one submission."""
+    devices = student_topology.devices
+    policies = criteria.policies
+    mapping = _build_device_mapping(criteria, student_topology)
+    return EvalContext(
+        devices=devices,
+        links=student_topology.links,
+        policies=policies,
+        device_mapping=mapping,
+        find_device=lambda name: _find_student_device(devices, name, mapping),
+        find_interface=lambda dev, name: _find_student_interface(
+            dev.interfaces, name, policies.strict_port_matching),
+    )
+
+
 def evaluate_student_submission(
     criteria: EvaluationCriteria,
     student_topology: TopologyResult
 ) -> EvaluationReport:
     """
     Evaluates a student's submission against an EvaluationCriteria specification.
-    Returns a comprehensive EvaluationReport with score, letter grade, and itemized feedback.
+    Returns a comprehensive EvaluationReport with score, percentage, and itemized feedback.
     """
     rule_results: list[RuleResult] = []
     total_score = 0.0
@@ -384,17 +403,31 @@ def evaluate_student_submission(
     devices = student_topology.devices
     links = student_topology.links
     policies = criteria.policies
-    device_mapping = _build_device_mapping(criteria, student_topology)
+    ctx = make_eval_context(criteria, student_topology)
+    device_mapping = ctx.device_mapping
     used_subnets: dict[str, str] = {}
     segments = _compute_broadcast_domains(devices, links)
 
     for rule in criteria.rules:
+        # A rule in a topic weighted 0% is printed for reference only. It
+        # still informed the device mapping above, but it is not graded.
+        if not rule.graded:
+            continue
         pts_possible = float(rule.points)
         max_score += pts_possible
         exp = rule.expected_value or {}
 
+        # Topics graded by a module in src/topics/ (static routes, ...).
+        grader = topic_for_category(rule.category).evaluate
+        if grader is not None:
+            outcome = grader(rule, ctx)
+            pts_earned = outcome.points_earned
+            passed = outcome.passed
+            actual = outcome.actual
+            feedback = outcome.feedback
+
         # 1. Device Presence Rule
-        if rule.category == "device":
+        elif rule.category == "device":
             dev = _find_student_device(devices, rule.target_device, device_mapping)
             if dev and not dev.is_placeholder:
                 pts_earned = pts_possible
@@ -707,28 +740,73 @@ def evaluate_student_submission(
                 actual = f"Device '{rule.target_device}' missing"
                 feedback = f"Cannot evaluate routing: device '{rule.target_device}' missing."
             else:
-                proto = exp.get("protocol", "ospf")
                 exp_area = exp.get("area", 0)
                 exp_pid = exp.get("process_id", 1)
-                
-                matched_ospf = None
-                for proc in dev.ospf_processes:
-                    if policies.allow_flexible_process_ids or proc.get("process_id") == exp_pid:
-                        for n in proc.get("networks", []):
-                            if n.get("area") == exp_area:
-                                matched_ospf = proc
-                                break
-                
-                if matched_ospf:
+                required = exp.get("networks")
+
+                def pid_ok(pid):
+                    return policies.allow_flexible_process_ids or pid == exp_pid
+
+                # Both config styles, one view (issue #2).
+                enabled = [e for e in ospf_enablements(dev)
+                           if e["area"] == exp_area and pid_ok(e["process_id"])]
+                statements = [n for proc in dev.ospf_processes if pid_ok(proc.get("process_id"))
+                              for n in proc.get("networks", [])
+                              if isinstance(n, dict) and n.get("area") == exp_area]
+                pids = sorted({e["process_id"] for e in enabled if e["process_id"] is not None}
+                              | {proc.get("process_id") for proc in dev.ospf_processes
+                                 if pid_ok(proc.get("process_id"))
+                                 and any(n.get("area") == exp_area for n in proc.get("networks", [])
+                                         if isinstance(n, dict))})
+                pid_text = ", ".join(str(p) for p in pids)
+
+                if not required:
+                    # Rubrics written before issue #1 carry no network list, and an
+                    # area with no addressed interface has nothing to cover:
+                    # running OSPF in the area is the whole requirement.
+                    missing = [] if (enabled or statements) else [None]
+                    total_required = 1
+                else:
+                    missing = []
+                    for req in required:
+                        if policies.allow_dynamic_subnetting:
+                            # The student's own subnets: the interface that stands
+                            # in for the reference's must itself be in the area.
+                            intf = _find_student_interface(
+                                dev.interfaces, req.get("interface"), policies.strict_port_matching)
+                            covered = intf is not None and any(
+                                e["interface"] == intf.name for e in enabled)
+                        else:
+                            subnet = req.get("subnet")
+                            covered = any(e["subnet"] == subnet for e in enabled) or any(
+                                statement_covers(st, subnet) for st in statements)
+                        if not covered:
+                            missing.append(req)
+                    total_required = len(required)
+
+                if not missing:
                     pts_earned = pts_possible
                     passed = True
-                    actual = f"OSPF Process {matched_ospf.get('process_id')} (Area {exp_area})"
-                    feedback = f"OSPF routing verified on {rule.target_device} (Area {exp_area}, process ID {matched_ospf.get('process_id')} accepted)."
-                else:
+                    actual = f"OSPF Process {pid_text} (Area {exp_area})"
+                    feedback = f"OSPF routing verified on {rule.target_device} (Area {exp_area}, process ID {pid_text} accepted)."
+                elif not enabled and not statements:
                     pts_earned = 0.0
                     passed = False
                     actual = "No matching OSPF config"
                     feedback = f"Missing OSPF routing for Area {exp_area} on {rule.target_device}."
+                else:
+                    # Partial advertisement earns credit in proportion to the
+                    # required networks covered, but never passes (issue #1).
+                    covered_count = total_required - len(missing)
+                    pts_earned = round(pts_possible * covered_count / total_required, 1)
+                    passed = False
+                    names = ", ".join(
+                        (m.get("subnet") if not policies.allow_dynamic_subnetting else None)
+                        or f"the network on {m.get('interface')}" for m in missing)
+                    actual = f"{covered_count} of {total_required} networks in Area {exp_area}"
+                    feedback = (f"OSPF on {rule.target_device} advertises only {covered_count} of "
+                                f"{total_required} required networks into Area {exp_area}; "
+                                f"not advertised: {names}.")
 
         # 8. Security Baseline Rule
         elif rule.category == "security":
@@ -838,19 +916,6 @@ def evaluate_student_submission(
     total_score = round(total_score, 1)
     max_score = round(max_score, 1)
 
-    if percentage >= 97.0:
-        grade_letter = "A+"
-    elif percentage >= 90.0:
-        grade_letter = "A"
-    elif percentage >= 80.0:
-        grade_letter = "B"
-    elif percentage >= 70.0:
-        grade_letter = "C"
-    elif percentage >= 60.0:
-        grade_letter = "D"
-    else:
-        grade_letter = "F"
-
     report = EvaluationReport(
         lab_title=criteria.lab_title,
         total_score=total_score,
@@ -858,7 +923,6 @@ def evaluate_student_submission(
         percentage=percentage,
         passed_count=passed_count,
         failed_count=failed_count,
-        grade_letter=grade_letter,
         results=rule_results,
         topology=student_topology
     )

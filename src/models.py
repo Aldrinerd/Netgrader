@@ -25,6 +25,7 @@ class InterfaceData(BaseModel):
     ospf_hello_interval: int | None = None
     ospf_dead_interval: int | None = None
     ospf_area: int | None = None
+    ospf_process_id: int | None = None    # from `ip ospf <pid> area <a>`
     ospf_network_type: str | None = None      # broadcast / point-to-point / ...
     ospf_authentication: str | None = None    # message-digest / text / null
     mtu: int | None = None
@@ -87,6 +88,10 @@ class ParsedDevice(BaseModel):
     routes: list[RouteEntry] = Field(default_factory=list)
     mac_table: list[MACTableEntry] = Field(default_factory=list)
     vlans: dict[int, str] = Field(default_factory=dict)
+    # Every non-blank running-config line, stripped. Read by topic detection
+    # (src/topics/registry.py) and never serialized: raw configuration text
+    # must not reach API responses or the chat layers.
+    config_lines: list[str] = Field(default_factory=list, exclude=True)
 
 class ContributingSignal(BaseModel):
     signal_type: str
@@ -160,13 +165,18 @@ class EvaluationRule(BaseModel):
         "link_agreement",
         "gateway",
         "security",
-        "documentation"
+        "documentation",
+        "static_route",
     ]
     description: str
     points: float = 10.0
     target_device: str
     target_interface: str | None = None
     expected_value: dict | str | int | float | None = None
+    # False when the instructor weighted this rule's topic 0%: the rule still
+    # prints in instructions.txt (and still tells the evaluator which devices
+    # the reference has), but earns and costs nothing.
+    graded: bool = True
 
 
 class EvaluationCriteria(BaseModel):
@@ -176,6 +186,9 @@ class EvaluationCriteria(BaseModel):
     policies: EvaluationPolicies = Field(default_factory=EvaluationPolicies)
     rules: list[EvaluationRule] = Field(default_factory=list)
     reference_summary: dict = Field(default_factory=dict)
+    # Topic key -> percent of total_points (src/topics/weights.py). Empty for
+    # rubrics generated before topic weights existed.
+    topic_weights: dict[str, float] = Field(default_factory=dict)
 
 
 class RuleResult(BaseModel):
@@ -204,7 +217,6 @@ class ClassChatStudent(BaseModel):
     name: str
     status: str = "graded"
     percentage: float = 0.0
-    grade_letter: str = "-"
     total_score: float = 0.0
     max_score: float = 0.0
     failed_count: int = 0
@@ -226,8 +238,10 @@ class EvaluationReport(BaseModel):
     percentage: float
     passed_count: int
     failed_count: int
-    grade_letter: str
     results: list[RuleResult] = Field(default_factory=list)
     study_topics: list[StudyTopic] = Field(default_factory=list)
     topology: TopologyResult
+    # HMAC over the findings, set by /api/evaluate. The student chat only
+    # accepts a report whose findings still match it (src/integrity.py).
+    findings_signature: str | None = None
 

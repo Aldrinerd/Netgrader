@@ -68,11 +68,17 @@ Upload (.pkt / .pka / .xml / .zip / .txt)
 | `src/fusion_engine.py` | Infers links from config evidence when no `.pkt` cabling exists. Seven signals combined by Noisy-OR. |
 | `src/conflict_detector.py` | Subnet mismatch, interfaces down, duplicate IPs, native VLAN mismatch, wrong cable type — each with line citations. |
 | `src/link_attributes.py` | The link-scoped rule registry: 14 attributes, 4 predicates, compatibility matrices. |
+| `src/ospf.py` | One view of where OSPF runs (process, interface, area, subnet), from `network` statements or interface-mode `ip ospf`. Used by rule generation and grading. |
 | `src/criteria_generator.py` | Reference topology → `EvaluationCriteria`; renders and re-parses `instructions.txt`. |
 | `src/evaluator.py` | Student topology + criteria → `EvaluationReport`. **The score is decided here and is final.** |
 | `src/feedback.py` | Deterministic per-checkpoint guidance and ranked study topics. |
+| `src/topics/registry.py` | Which configuration topics exist, which rule categories each owns, and deterministic detection of each topic in a reference. |
+| `src/topics/weights.py` | Splits a lab's points between topics: defaults, validation, apportionment, and the weights-panel rows. |
+| `src/topics/static_routes.py` | Static-route rules and grading: destination plus correct neighbor. |
 | `src/llm.py` | Optional local Ollama client. Never raises, never blocks, never sees a score. |
 | `src/narrative.py` | The only place a model is used. Student summary, class briefing. |
+| `src/chat_guard.py` | Student-chat checks before and after the model: injection, off-topic and full-solution refusals; config blocks cut from replies. |
+| `src/integrity.py` | HMAC signatures for the report findings and the chat replies the browser sends back. |
 | `src/app.py` | FastAPI application and nine endpoints. |
 | `validation/` | SOP #3 measurement instrument. Imported by nothing in `src/`. |
 
@@ -82,7 +88,7 @@ Upload (.pkt / .pka / .xml / .zip / .txt)
 
 ### 3.1 Rule categories
 
-A rubric is a list of `EvaluationRule`. Eleven categories exist:
+A rubric is a list of `EvaluationRule`. Twelve categories exist:
 
 | Category | Checks |
 |---|---|
@@ -94,13 +100,15 @@ A rubric is a list of `EvaluationRule`. Eleven categories exist:
 | `vlan_trunk` | Trunk mode and access VLAN assignment. |
 | `link_agreement` | **Both ends of a link agree.** See §4. |
 | `gateway` | Hosts and switches have a gateway inside the connected router's subnet. |
-| `routing` | Networks advertised into the right OSPF area. |
+| `routing` | Every subnet the reference runs OSPF on in an area is covered by the student in that area. Either style counts: `network` statements (wildcard-aware, so a summary covers several subnets) or interface-mode `ip ospf P area A`, read through one view in `src/ospf.py`. Partial coverage earns proportional credit but does not pass. Under dynamic subnetting the student's corresponding interface must be in the area. |
+| `static_route` | Each static route the reference configures exists on the student's device, reaches the same destination (the student's own subnet under dynamic subnetting; `0.0.0.0/0` for a default route) and hands traffic to the counterpart of the same neighbor, by next hop or exit interface. Partial coverage earns proportional credit but does not pass. Graded by `src/topics/static_routes.py`. |
 | `security` | `enable secret`, `service password-encryption`, `line vty` login. |
 | `documentation` | Interface descriptions naming the correct peer. |
 
-Points are apportioned across all rules by largest-remainder (Hamilton)
-apportionment in tenths of a point, so a rubric always totals exactly its
-target and no rule can ever be worth zero or less.
+Points are apportioned by largest-remainder (Hamilton) apportionment in
+tenths of a point, so a rubric always totals exactly its target. A graded rule
+is never worth zero or less. Only a rule whose topic the instructor set to 0%
+carries zero points, and that rule is not graded (§3.3).
 
 ### 3.2 Policy switches
 
@@ -122,6 +130,38 @@ is reproducible from the file alone.
 
 These are what separate the tool from Packet Tracer's own Activity Wizard,
 which only does exact-match grading.
+
+### 3.3 Topics and weights
+
+A *topic* is what an instructor teaches ("Static Routing", "VLANs &
+Trunking"). A category is what a rule checks. `src/topics/registry.py` maps
+every category to exactly one topic, so points can be split by topic without
+touching grading.
+
+**Detection.** After Generate, the Teacher Studio lists every topic in the
+reference: the gradeable topics that produced rules, and twelve detected-only
+topics (STP, EtherChannel, port security, HSRP, DHCP, inter-VLAN routing,
+ACLs, NAT, SSH, EIGRP, RIP, IPv6). The detected-only topics are found by
+deterministic patterns over the running-config, kept on
+`ParsedDevice.config_lines`, which is never serialized. Lines every config
+prints by default (`spanning-tree mode pvst`, `no ipv6 cef`) never count.
+Detected-only topics carry no points.
+
+**Defaults.** The rubric is first normalized exactly as before topic weights
+existed. Each topic's share of those points, rounded to one decimal, is its
+default percent. Accepting the defaults reproduces that rubric point for
+point.
+
+**Applying weights** (`src/topics/weights.py`). The total is split across
+topics by percent, then inside each topic by the rules' base points, both by
+largest-remainder apportionment in tenths. A topic at 0% stays in the rubric
+with `graded=False` and 0 points. `instructions.txt` still prints its tables,
+marked reference only, and the evaluator still uses its rules to match
+devices, but the topic neither earns nor costs anything. Weights must be
+0–100 with one decimal place and sum to 100 (±0.05). A graded topic needs at
+least 0.1 pt per checkpoint. The chosen split is stored in
+`EvaluationCriteria.topic_weights` and printed in the sheet's Grading Weights
+section.
 
 ---
 
@@ -291,7 +331,7 @@ Enforced structurally, not by convention:
 | Student "what to study next" | `/api/report/narrative` | Study topics and counts | Template, `source: "template"` |
 | Class briefing | `/api/class/briefing` | Concepts × students affected | Template, `source: "template"` |
 | Student follow-up chat | `/api/chat/report` | Study topics **plus each missed checkpoint**: device, interface, description, feedback and *Found:* value | `503` with the reason |
-| Instructor follow-up chat | `/api/chat/class` | **Results table with names** (from submission filenames), score, grade, missed concepts, plus server-computed ranking, lowest/highest (ties included), average and students per concept | `503` with the reason |
+| Instructor follow-up chat | `/api/chat/class` | **Results table with names** (from submission filenames), score, percentage, missed concepts, plus server-computed ranking, lowest/highest (ties included), average and students per concept | `503` with the reason |
 
 Every response says who wrote it (`source: "model"` or `"template"`), and the
 UI shows it as a badge. The header's AI indicator reads `/api/llm/status` on
@@ -306,7 +346,7 @@ chatbox disables itself and says so.
 R1?", the student chat includes each missed checkpoint's *Found:* value, for
 example `172.16.50.1/24` or `No matching OSPF config`. That is a fragment the
 grader extracted, not the student's configuration text, and it carries no name.
-The score, percentage and grade are not sent. `tests/test_chat.py` asserts the
+The score and percentage are not sent. `tests/test_chat.py` asserts the
 findings contain no score-like text.
 
 **Chat guard rails** (`src/narrative.py`):
@@ -319,6 +359,26 @@ findings contain no score-like text.
   Because they are rebuilt on every request, history trimming cannot drop them.
 - Client history is sanitised: `user`/`assistant` roles only, 1,000 characters
   per message, the last 12 messages, and it must end with the user's question.
+- **Signed context** (`src/integrity.py`). `/api/evaluate` signs the report's
+  findings with an HMAC (`findings_signature`), and `/api/chat/report` returns
+  `400` for a report that does not verify, so text edited in the browser can
+  never become model context. Each reply carries a `signature`. An assistant
+  turn sent back without a valid one is dropped, so a student cannot plant
+  replies the model never wrote. The key is random per server process, so a
+  restart means grading again before chatting.
+- **Checked before the model** (`src/chat_guard.py`). Injection phrasing,
+  off-topic tasks (essays, poems, recipes) and requests for the whole
+  configuration get a fixed refusal (`source: "template"`), and the model is
+  not called. A question with no networking or lab term in it goes through a
+  one-word yes/no topic check first. Short follow-ups in a conversation skip
+  that check.
+- **Checked after the model.** Runs of more than 4 configuration lines are cut
+  from a reply. A reply that walks through more than 6 commands in any
+  layout (for example a numbered list of inline code, which llama3.2:3b
+  produced when asked) is withheld whole.
+- Findings are marked as data in the system prompt, and the findings marker
+  cannot be spoofed from inside a question.
+- Red-team set: `tests/test_chat_safeguards.py`.
 - The student prompt says the grade is final, disputes go to the instructor,
   only answer about this lab, never invent an error, and do not write the full
   fixing configuration.
@@ -354,18 +414,27 @@ from `src/`; nothing in `src/` imports it, and a test enforces that.
    side by side. Anything the parser drops makes them diverge and is named by
    rule id.
 
-### Twenty-two cases
+### Twenty-nine cases
 
-**Sixteen injected faults** measure recall: native VLAN mismatch, trunk left
+Four of them (`static_route_deleted`, `static_route_wrong_neighbor`,
+`static_route_exit_interface`, `static_lan_renumbered`) run against
+`build_static_reference()`, the same network routed statically instead of
+with OSPF.
+
+**Twenty injected faults** measure recall: native VLAN mismatch, trunk left
 as access, populated VLAN pruned, interface shutdown, wrong IP, wrong mask,
 subnet mismatch, device missing, cable unplugged, wrong access VLAN, gateway
-removed, gateway in wrong subnet, OSPF missing, `enable secret` removed, OSPF
-hello mismatch, duplex hard-set against auto.
+removed, gateway in wrong subnet, OSPF missing, one OSPF network left out of
+its area, `enable secret` removed, plaintext `enable password` instead of
+`enable secret`, OSPF hello mismatch, duplex hard-set against auto, a static
+route left out, a static route aimed at the wrong neighbor.
 
-**Six negative cases** measure specificity — correct work that merely differs
+**Nine negative cases** measure specificity — correct work that merely differs
 from the reference: renamed devices, the student's own addressing plan, a
 native VLAN both ends agree on, an unused VLAN pruned, non-default OSPF timers
-agreed by both ends, a spare loopback.
+agreed by both ends, OSPF enabled per interface instead of by `network`
+statements, a spare loopback, a static route written with an exit interface,
+a static route to a student-chosen subnet under dynamic subnetting.
 
 The negative cases matter more. A grader that fails everything scores 100%
 recall; only specificity distinguishes a strict grader from an accurate one.
@@ -406,6 +475,9 @@ worse than no instrument.
   batch-grade a whole class to a gradebook CSV. Each batch row has a
   **Review** button that shows that student's missed checkpoints grouped by
   device, and can draw their topology with the faulty devices ringed in red.
+  After Generate, a **Grading Weights** panel lists the configuration topics
+  found in the reference with a percentage each (Focus, Reset to defaults,
+  Distribute evenly). `instructions.txt` is offered only after **Finalize**.
   Rendered only for the instructor (see *Instructor access* below).
 - **Student Grading** — upload `instructions.txt` plus an attempt, get a
   scorecard with per-checkpoint guidance.
@@ -416,14 +488,14 @@ worse than no instrument.
 |---|---|---|
 | GET | `/` | The application. |
 | POST | `/api/analyze` | Upload → `TopologyResult`. |
-| POST | `/api/criteria/generate` | Reference + policies → `instructions.txt`. **Instructor only.** |
+| POST | `/api/criteria/generate` | Reference + policies (+ optional `topic_weights`) → `instructions.txt`, plus `topics` for the weights panel and `reference_warnings`. **Instructor only.** |
 | POST | `/api/criteria/parse` | `instructions.txt` → `EvaluationCriteria`. |
 | POST | `/api/evaluate` | Criteria + submission → `EvaluationReport`. |
 | POST | `/api/evaluate/batch` | Whole class → per-student results + CSV. Each graded row carries the full `EvaluationReport` under `report` (`null` for an error row). **Instructor only.** |
 | GET | `/api/llm/status` | Narrative layer availability. |
 | POST | `/api/report/narrative` | Student summary. |
 | POST | `/api/class/briefing` | Instructor class briefing. **Instructor only.** |
-| POST | `/api/chat/report` | Follow-up question about one report → model answer, or `503` if no model. |
+| POST | `/api/chat/report` | Follow-up question about one report → model answer, a template refusal, `400` if the report's `findings_signature` does not verify, or `503` if no model. |
 | POST | `/api/chat/class` | Follow-up question about the class results table (with names) → model answer, or `503`. **Instructor only.** |
 
 ### Instructor access
@@ -465,7 +537,9 @@ login added on top.
 | Non-CLI devices | IP phones, printers, access points and TVs parse as `unknown` with no interfaces. On the 66-device lab, 13 of 66. |
 | Parse-fidelity breadth | Four devices' worth of config text. A parser bug in a construct those bundles do not contain still hides. |
 | Group invariants | HSRP, VRRP, GLBP, STP root election, VTP domain consistency and MST region matching are not yet expressible. They need a rule whose subject is a *set* of devices. |
-| Protocol coverage | EIGRP, BGP, DHCP, NAT, ACLs, port-security and spanning-tree are not parsed or graded. |
+| Protocol coverage | EIGRP, RIP, BGP, DHCP, NAT, ACLs, HSRP, port security, spanning tree, EtherChannel (as its own topic), SSH and IPv6 are not graded. All but BGP are detected and shown to the instructor as 'not graded yet'. |
+| Static routes | Administrative distance is not parsed, so a primary route and its floating backup are graded as two independent requirements. IPv6 static routes are not graded. A reference route whose next hop is not directly connected (recursive) is skipped with a warning. Under dynamic subnetting, a summary route that matches no interface is checked by neighbor only. |
+| Topic weights | Weights are per topic. One checkpoint cannot be weighted above another in the same topic. EtherChannel mode agreement stays under Link Agreement until EtherChannel has its own grader. |
 | Undocumented file format | `.pkt`/`.pka` is a proprietary format Cisco does not publish. Reading it relies on community reverse engineering of its encryption (`cisco-pka-to-xml/`), not a Cisco API, so a new Packet Tracer version can change the format without notice. A file that decrypts but yields no devices is reported as a likely version mismatch, with the config-bundle upload as the fallback. Whether reading the format is acceptable under Packet Tracer's license terms should be confirmed for the institution's use. |
 
 ---

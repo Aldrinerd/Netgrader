@@ -2,6 +2,7 @@
 import csv
 import io
 import ipaddress
+import json
 import os
 import zipfile
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -26,6 +27,7 @@ from src.models import (
 )
 from src.parsers import parse_device_bundle
 from src.pkt_parser import parse_pkt_file
+from src.topics.weights import TopicWeightError, topic_summary
 
 app = FastAPI(
     title="Network Configuration Evaluation & Topology Discovery Tool",
@@ -271,7 +273,8 @@ async def api_generate_criteria(
     strict_cable_type: bool = Form(True),
     allow_flexible_process_ids: bool = Form(True),
     grade_security_baseline: bool = Form(False),
-    grade_interface_descriptions: bool = Form(False)
+    grade_interface_descriptions: bool = Form(False),
+    topic_weights: str = Form(""),
 ):
     """
     Teacher Studio: Ingests an instructor's reference Packet Tracer file (.pkt/.xml)
@@ -294,19 +297,38 @@ async def api_generate_criteria(
         grade_interface_descriptions=grade_interface_descriptions
     )
 
-    criteria = generate_criteria_from_topology(
-        topology=topology,
-        lab_title=lab_title,
-        lab_description=lab_description,
-        target_total_points=total_points,
-        policies=policies
-    )
+    requested_weights = None
+    if topic_weights.strip():
+        try:
+            requested_weights = json.loads(topic_weights)
+        except json.JSONDecodeError:
+            requested_weights = None
+        if not isinstance(requested_weights, dict):
+            raise HTTPException(status_code=400, detail="topic_weights must be a JSON object of topic -> percent")
+
+    try:
+        criteria = generate_criteria_from_topology(
+            topology=topology,
+            lab_title=lab_title,
+            lab_description=lab_description,
+            target_total_points=total_points,
+            policies=policies,
+            topic_weights=requested_weights,
+        )
+    except TopicWeightError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     # Guard against a reference file that parses but carries nothing gradeable.
     # A plain text file produces one device named after the filename and a
     # single "this device must exist" rule -- a rubric that looks valid and is
     # worthless. Better to refuse it than to let an instructor hand it out.
-    gradeable_rules = [r for r in criteria.rules if r.category != "device"]
+    gradeable_rules = [r for r in criteria.rules if r.category != "device" and r.graded]
     if not gradeable_rules:
+        if any(r.category != "device" for r in criteria.rules):
+            raise HTTPException(
+                status_code=400,
+                detail=("Every configuration topic is set to 0%. At least one topic other than "
+                        "Device Presence must carry points."),
+            )
         device_names = ", ".join(sorted(topology.devices)) or "none"
         raise HTTPException(
             status_code=400,
@@ -324,7 +346,9 @@ async def api_generate_criteria(
     return {
         "criteria": criteria,
         "instructions_txt": instructions_txt,
-        "topology": topology
+        "topology": topology,
+        "topics": topic_summary(criteria, topology),
+        "reference_warnings": criteria.reference_summary.get("reference_warnings", []),
     }
 
 
@@ -371,6 +395,8 @@ async def api_evaluate_student_submission(
 
     # 3. Run automated grading
     report = evaluate_student_submission(criteria, student_topology)
+    from src.integrity import sign_report
+    report.findings_signature = sign_report(report)
     return report
 
 
@@ -399,7 +425,7 @@ def _csv_safe(value):
     names, so both are student-controlled. A leading apostrophe makes Excel
     and Sheets show the text literally (OWASP CSV injection guidance).
     Numbers are left alone, so a real negative value stays a number, and so
-    is a lone "-" (the grade shown on an error row), which cannot be a formula.
+    is a lone "-", which cannot be a formula.
     """
     if isinstance(value, str) and len(value) > 1 and value.startswith(_CSV_FORMULA_PREFIXES):
         return "'" + value
@@ -416,7 +442,7 @@ def _build_gradebook_csv(lab_title: str, rows: list[dict]) -> str:
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\n")
     writer.writerow([
-        "Student", "Lab", "Score", "Max Score", "Percentage", "Grade",
+        "Student", "Lab", "Score", "Max Score", "Percentage",
         "Checkpoints Passed", "Checkpoints Failed", "Missed Checkpoints", "Status",
     ])
     for row in rows:
@@ -426,7 +452,6 @@ def _build_gradebook_csv(lab_title: str, rows: list[dict]) -> str:
             row.get("total_score", ""),
             row.get("max_score", ""),
             row.get("percentage", ""),
-            row.get("grade_letter", ""),
             row.get("passed_count", ""),
             row.get("failed_count", ""),
             "; ".join(row.get("missed", [])),
@@ -472,7 +497,6 @@ async def api_evaluate_batch(
                 "total_score": round(report.total_score, 1),
                 "max_score": round(report.max_score, 1),
                 "percentage": report.percentage,
-                "grade_letter": report.grade_letter,
                 "passed_count": report.passed_count,
                 "failed_count": report.failed_count,
                 "missed": [r.description for r in report.results if not r.passed],
@@ -492,9 +516,8 @@ async def api_evaluate_batch(
                 "total_score": 0.0,
                 "max_score": round(sum(r.points for r in criteria.rules), 1),
                 "percentage": 0.0,
-                "grade_letter": "-",
                 "passed_count": 0,
-                "failed_count": len(criteria.rules),
+                "failed_count": sum(1 for r in criteria.rules if r.graded),
                 "missed": [],
                 "failed_categories": [],
                 "status": f"ERROR: {e}",
@@ -602,8 +625,12 @@ def _answer_or_503(reply: str | None) -> dict:
     the client is told so, and why.
     """
     from src import llm
+    from src.integrity import sign_reply
     if reply:
-        return {"reply": reply, "source": "model", "model": llm.model_name()}
+        # Signed so it can come back as history; unsigned "assistant" turns
+        # are dropped (clean_chat_messages), so none can be forged.
+        return {"reply": reply, "source": "model", "model": llm.model_name(),
+                "signature": sign_reply(reply)}
     status = llm.status()
     detail = (
         f"The local AI model did not answer ({status['detail']})."
@@ -611,6 +638,12 @@ def _answer_or_503(reply: str | None) -> dict:
         else "The local AI model did not answer in time. Try again, or ask a shorter question."
     )
     raise HTTPException(status_code=503, detail=detail)
+
+
+def _template_reply(text: str) -> dict:
+    """A fixed refusal. Deterministic, and marked as not written by the model."""
+    from src.integrity import sign_reply
+    return {"reply": text, "source": "template", "signature": sign_reply(text)}
 
 
 @app.post("/api/chat/report")
@@ -622,16 +655,39 @@ def api_chat_report(payload: dict):
     The topology may be sent empty; only the checkpoint findings are used.
     Asked after grading and separate from it, so no answer can move a score.
     """
-    from src import llm
+    from src import chat_guard, llm
+    from src.integrity import verify_report
     from src.narrative import report_chat
     try:
         report = EvaluationReport.model_validate(payload.get("report") or {})
     except Exception:
         raise HTTPException(status_code=400, detail="Send the graded 'report' the question is about.")
+    # The findings become the model's context, so they must be the ones the
+    # grader produced, not text edited in the browser (issue #19).
+    if not verify_report(report):
+        raise HTTPException(
+            status_code=400,
+            detail="These results could not be verified (the page was edited, or the server "
+                   "restarted). Grade the lab again to ask questions about it.")
     messages = _chat_messages_or_400(payload)
+    question = messages[-1]["content"]
+
+    # Checked before the model: injection, off-topic tasks, "write it all".
+    refusal = chat_guard.gate_question(question)
+    if refusal:
+        return _template_reply(refusal)
     if not llm.is_available():
         return _answer_or_503(None)
-    return _answer_or_503(report_chat(report, messages))
+    if chat_guard.needs_classifier(question, report, has_history=len(messages) > 1):
+        verdict = llm.chat([{"role": "user", "content": chat_guard.classifier_prompt(question)}],
+                           system=chat_guard.CLASSIFIER_SYSTEM, max_tokens=3)
+        if chat_guard.classifier_says_off_topic(verdict):
+            return _template_reply(chat_guard.REFUSE_OFF_TOPIC)
+
+    reply = report_chat(report, messages)
+    if reply:
+        reply, _ = chat_guard.filter_reply(reply)
+    return _answer_or_503(reply)
 
 
 @app.post("/api/chat/class", dependencies=[Depends(require_instructor)])

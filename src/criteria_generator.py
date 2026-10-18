@@ -8,71 +8,18 @@ formats student lab assignment instructions (.txt), and parses them back for aut
 import json
 import re
 from src.link_attributes import LINK_ATTRIBUTES, applicable_attributes, compare as compare_link_attribute
+from src.ospf import ospf_areas, ospf_enablements
 from src.models import EvaluationCriteria, EvaluationPolicies, EvaluationRule, TopologyResult
-
-# Rule points are stored to one decimal place, so all apportionment is done in
-# tenths of a point using integers. This avoids float drift entirely.
-_TENTHS = 10
-
-
-def _normalize_rule_points(rules: list[EvaluationRule], target_total: float) -> None:
-    """
-    Rescale rule weights in place so they sum to exactly `target_total`.
-
-    Uses largest-remainder (Hamilton) apportionment in tenths of a point.
-    Every rule is guaranteed a strictly positive score whenever the target
-    allows it, because a rule worth zero or fewer points corrupts grading:
-    a negative weight means PASSING a checkpoint would lower a student's
-    percentage.
-    """
-    if not rules or target_total <= 0:
-        return
-
-    total_tenths = int(round(target_total * _TENTHS))
-    count = len(rules)
-
-    # Degenerate case: fewer tenths than rules, so not every rule can be worth
-    # something. Spread what exists as evenly as possible rather than going
-    # negative, and let the caller's total stand.
-    if total_tenths < count:
-        base, remainder = divmod(total_tenths, count)
-        for i, rule in enumerate(rules):
-            rule.points = round((base + (1 if i < remainder else 0)) / _TENTHS, 1)
-        return
-
-    weights = [max(float(r.points), 0.0) for r in rules]
-    weight_sum = sum(weights)
-    if weight_sum <= 0:
-        weights = [1.0] * count
-        weight_sum = float(count)
-
-    # Ideal share for each rule, floored, with a guaranteed minimum of one tenth.
-    exact = [total_tenths * w / weight_sum for w in weights]
-    allocation = [max(1, int(share)) for share in exact]
-
-    # Hand out or claw back tenths until the allocation sums exactly to target.
-    drift = total_tenths - sum(allocation)
-    if drift > 0:
-        # Largest fractional remainder gets the surplus tenths first.
-        order = sorted(range(count), key=lambda i: exact[i] - int(exact[i]), reverse=True)
-        for step in range(drift):
-            allocation[order[step % count]] += 1
-    elif drift < 0:
-        # Over-allocated by the minimum floor: reclaim from the largest rules,
-        # never dropping any rule below one tenth of a point.
-        order = sorted(range(count), key=lambda i: allocation[i], reverse=True)
-        step = 0
-        while drift < 0:
-            index = order[step % count]
-            if allocation[index] > 1:
-                allocation[index] -= 1
-                drift += 1
-            step += 1
-            if step > count * total_tenths + count:  # safety valve
-                break
-
-    for rule, tenths in zip(rules, allocation):
-        rule.points = round(tenths / _TENTHS, 1)
+from src.topics.registry import TOPICS, TOPICS_BY_KEY
+from src.topics.static_routes import destination_label
+from src.topics.weights import (
+    apply_weights,
+    default_weights,
+    normalize_rule_points,
+    rules_by_topic,
+    same_weights,
+    validate_weights,
+)
 
 
 def generate_criteria_from_topology(
@@ -80,11 +27,15 @@ def generate_criteria_from_topology(
     lab_title: str = "Packet Tracer Lab Assignment",
     lab_description: str = "",
     target_total_points: float = 100.0,
-    policies: EvaluationPolicies | None = None
+    policies: EvaluationPolicies | None = None,
+    topic_weights: dict[str, float] | None = None,
 ) -> EvaluationCriteria:
     """
     Generates an EvaluationCriteria object with discrete grading rules extracted
     from an instructor's gold-standard reference topology according to evaluation policies.
+
+    topic_weights: topic key -> percent; None (or the defaults) keeps today's
+    split. Raises TopicWeightError for an invalid split.
     """
     if policies is None:
         policies = EvaluationPolicies()
@@ -153,26 +104,34 @@ def generate_criteria_from_topology(
                 }
             ))
 
-        # Routing Rules: one per OSPF area advertised by the reference device.
+        # Routing Rules: one per OSPF area the reference device runs in.
+        # Either config style counts (network statements or interface-mode
+        # `ip ospf P area A`, issue #2), and the rule records every connected
+        # subnet the reference puts into that area, so advertising one of
+        # five networks no longer earns full marks (issue #1).
         # The process ID itself is only enforced when allow_flexible_process_ids is off.
-        for proc in dev.ospf_processes:
-            areas = {
-                n.get("area") for n in proc.get("networks", [])
-                if isinstance(n, dict) and n.get("area") is not None
-            }
-            for area in sorted(areas):
-                add_rule(EvaluationRule(
-                    rule_id=f"ospf_{dev.hostname.lower()}_area{area}",
-                    category="routing",
-                    description=f"Advertise networks into OSPF Area {area} on {dev_name}",
-                    points=8.0,
-                    target_device=dev.hostname,
-                    expected_value={
-                        "protocol": "ospf",
-                        "area": area,
-                        "process_id": proc.get("process_id", 1),
-                    }
-                ))
+        enablements = ospf_enablements(dev)
+        for area in sorted(ospf_areas(dev)):
+            in_area = [e for e in enablements if e["area"] == area]
+            pids = [e["process_id"] for e in in_area if e["process_id"] is not None]
+            pids += [p.get("process_id") for p in dev.ospf_processes
+                     if any(n.get("area") == area for n in p.get("networks", []) if isinstance(n, dict))]
+            add_rule(EvaluationRule(
+                rule_id=f"ospf_{dev.hostname.lower()}_area{area}",
+                category="routing",
+                description=f"Advertise networks into OSPF Area {area} on {dev_name}",
+                points=8.0,
+                target_device=dev.hostname,
+                expected_value={
+                    "protocol": "ospf",
+                    "area": area,
+                    "process_id": pids[0] if pids else 1,
+                    "networks": [
+                        {"interface": e["interface"], "subnet": e["subnet"]}
+                        for e in in_area if e["subnet"]
+                    ],
+                }
+            ))
 
         # Interface Operational Status & IP / Relational Subnet Rules
         for intf_name, intf in dev.interfaces.items():
@@ -409,16 +368,40 @@ def generate_criteria_from_topology(
                         }
                     ))
 
-    # Point Normalization so total equals target_total_points (e.g. 100.0 pts)
+    # 3. Topic graders (src/topics/): topics added after the registry existed
+    # generate their own rules. Their warnings name reference configuration
+    # that could not be graded, for the instructor to see.
+    reference_warnings: list[str] = []
+    for topic in TOPICS:
+        if topic.generate is not None:
+            topic_rules, topic_warnings = topic.generate(topology, policies)
+            for rule in topic_rules:
+                add_rule(rule)
+            reference_warnings.extend(topic_warnings)
+
+    # Point normalization. Base points first split the total across all rules
+    # exactly as before topic weights existed (the "legacy" rubric). Its
+    # topic split is the default the weights panel shows, so an instructor who
+    # accepts the defaults gets this rubric, point for point.
+    base_points = {r.rule_id: r.points for r in raw_rules}
     if raw_rules:
-        _normalize_rule_points(raw_rules, target_total_points)
+        normalize_rule_points(raw_rules, target_total_points)
+    defaults = default_weights(raw_rules)
+    applied = defaults
+    if topic_weights is not None:
+        requested = validate_weights(topic_weights, defaults)
+        if not same_weights(requested, defaults):
+            apply_weights(raw_rules, base_points, requested, target_total_points)
+            applied = requested
 
     ref_summary = {
         "device_count": len([d for d in topology.devices.values() if not d.is_placeholder]),
         "link_count": len(topology.links),
         "rule_count": len(raw_rules),
         "ip_count": len([r for r in raw_rules if r.category in ("interface_ip", "relational_subnet")]),
-        "policy_summary": policies.model_dump()
+        "policy_summary": policies.model_dump(),
+        "reference_warnings": reference_warnings,
+        "default_topic_weights": defaults,
     }
 
     return EvaluationCriteria(
@@ -427,26 +410,44 @@ def generate_criteria_from_topology(
         total_points=target_total_points,
         policies=policies,
         rules=raw_rules,
-        reference_summary=ref_summary
+        reference_summary=ref_summary,
+        topic_weights=applied,
     )
+
+
+_REFERENCE_ONLY = " (REFERENCE ONLY, NOT GRADED)"
 
 
 def format_criteria_to_instructions_txt(criteria: EvaluationCriteria) -> str:
     """
     Formats the evaluation criteria into a clean, human-readable student lab instructions document
     with policy indicators and an embedded machine-verifiable criteria schema at the end.
+
+    Sections are numbered in output order. A section whose topic the
+    instructor weighted 0% still prints, marked reference only, because
+    students still need it to build the lab.
     """
     lines: list[str] = []
+    graded_rules = [r for r in criteria.rules if r.graded]
+    groups = rules_by_topic(criteria.rules)
+    section_number = 0
+
+    def heading(title: str, section_rules: list[EvaluationRule] | None = None, width: int = 80) -> None:
+        nonlocal section_number
+        section_number += 1
+        reference_only = bool(section_rules) and not any(r.graded for r in section_rules)
+        lines.append(f"{section_number}. {title}{_REFERENCE_ONLY if reference_only else ''}")
+        lines.append("-" * width)
+
     lines.append("=" * 80)
     lines.append("CISCO LAB ASSIGNMENT & INSTRUCTION SHEET")
     lines.append("=" * 80)
     lines.append(f"Assignment Title : {criteria.lab_title}")
     lines.append(f"Total Points     : {criteria.total_points:.1f} pts")
-    lines.append(f"Total Checkpoints: {len(criteria.rules)} items")
+    lines.append(f"Total Checkpoints: {len(graded_rules)} items")
     lines.append("-" * 80)
     lines.append("")
-    lines.append("1. LAB OVERVIEW & OBJECTIVES")
-    lines.append("-" * 40)
+    heading("LAB OVERVIEW & OBJECTIVES", width=40)
     lines.append(criteria.lab_description or "Complete the topology configuration according to the criteria below.")
     lines.append("When finished, upload your Packet Tracer file (.pkt, .pka, .xml) or configuration archive (.zip, .txt)")
     lines.append("to the automated evaluation engine for instant grading and diagnostic feedback.")
@@ -454,8 +455,7 @@ def format_criteria_to_instructions_txt(criteria: EvaluationCriteria) -> str:
 
     # Instructor Policy Summary
     p = criteria.policies
-    lines.append("2. INSTRUCTOR EVALUATION POLICIES")
-    lines.append("-" * 80)
+    heading("INSTRUCTOR EVALUATION POLICIES")
     lines.append(f"• Dynamic Subnetting     : {'ENABLED (Custom IP schemes permitted; relational mutual subnets checked)' if p.allow_dynamic_subnetting else 'STRICT (Exact assigned IP addresses required)'}")
     lines.append(f"• Prefix Enforcement     : {'ENABLED (Prefix lengths /30, /24 must match)' if p.enforce_prefix_length else 'FLEXIBLE'}")
     lines.append(f"• Default Gateway Check  : {'ENABLED (Host/Switch gateway must match router subnet)' if p.verify_default_gateways else 'DISABLED'}")
@@ -468,11 +468,25 @@ def format_criteria_to_instructions_txt(criteria: EvaluationCriteria) -> str:
     lines.append(f"• Link Agreement Values  : {'STRICT (Agreed value must also match the reference)' if p.enforce_reference_link_values else 'FLEXIBLE (Both ends need only agree with each other)'}")
     lines.append("")
 
+    # Grading Weights: how the instructor split the points between topics.
+    if criteria.topic_weights:
+        heading("GRADING WEIGHTS")
+        lines.append(f"{'Topic':<25} | {'Weight':<7} | {'Points':<9} | Checkpoints")
+        lines.append("-" * 80)
+        for key, topic_rules in groups.items():
+            label = TOPICS_BY_KEY[key].label
+            percent = criteria.topic_weights.get(key, 0.0)
+            if any(r.graded for r in topic_rules):
+                points = sum(r.points for r in topic_rules)
+                lines.append(f"{label:<25} | {percent:5.1f} % | {points:5.1f} pts | {len(topic_rules):>3}")
+            else:
+                lines.append(f"{label:<25} | {percent:5.1f} % | reference only, not graded")
+        lines.append("")
+
     # Addressing Section
     if p.allow_dynamic_subnetting:
         rel_rules = [r for r in criteria.rules if r.category == "relational_subnet"]
-        lines.append("3. DYNAMIC & RELATIONAL SUBNETTING POLICY")
-        lines.append("-" * 80)
+        heading("DYNAMIC & RELATIONAL SUBNETTING POLICY", rel_rules)
         lines.append("You are free to design and apply your own custom IPv4 subnetting plan subject to the following rules:")
         lines.append(" 1. Mutual Subnet: Connected device interfaces must share the same IPv4 network address.")
         lines.append(" 2. Host Uniqueness: IP addresses on each link must be unique (no IP collisions).")
@@ -492,8 +506,7 @@ def format_criteria_to_instructions_txt(criteria: EvaluationCriteria) -> str:
     else:
         ip_rules = [r for r in criteria.rules if r.category == "interface_ip"]
         if ip_rules:
-            lines.append("3. IP ADDRESSING SPECIFICATION TABLE")
-            lines.append("-" * 80)
+            heading("IP ADDRESSING SPECIFICATION TABLE", ip_rules)
             lines.append(f"{'Device':<18} | {'Interface':<20} | {'IP Address / CIDR':<22} | {'Subnet Mask':<16}")
             lines.append("-" * 80)
             for r in ip_rules:
@@ -506,8 +519,7 @@ def format_criteria_to_instructions_txt(criteria: EvaluationCriteria) -> str:
     # Cabling Table
     cabling_rules = [r for r in criteria.rules if r.category == "cabling"]
     if cabling_rules:
-        lines.append("4. PHYSICAL CABLING & PORT CONNECTIONS")
-        lines.append("-" * 80)
+        heading("PHYSICAL CABLING & PORT CONNECTIONS", cabling_rules)
         lines.append(f"{'Source Device':<18} | {'Port':<16} | {'Target Device':<18} | {'Port':<16}")
         lines.append("-" * 80)
         for r in cabling_rules:
@@ -518,8 +530,7 @@ def format_criteria_to_instructions_txt(criteria: EvaluationCriteria) -> str:
     # VLAN & Switchport Requirements
     vlan_rules = [r for r in criteria.rules if r.category == "vlan_trunk"]
     if vlan_rules:
-        lines.append("5. SWITCHING & VLAN SPECIFICATIONS")
-        lines.append("-" * 80)
+        heading("SWITCHING & VLAN SPECIFICATIONS", vlan_rules)
         for r in vlan_rules:
             exp = r.expected_value or {}
             mode = exp.get("switchport_mode", "access")
@@ -529,11 +540,30 @@ def format_criteria_to_instructions_txt(criteria: EvaluationCriteria) -> str:
                 lines.append(f"• {r.target_device} on {r.target_interface}: Access Port in VLAN {exp.get('access_vlan', 1)}")
         lines.append("")
 
+    # Static Routing Requirements
+    static_rules = [r for r in criteria.rules if r.category == "static_route"]
+    if static_rules:
+        heading("STATIC ROUTING REQUIREMENTS", static_rules)
+        lines.append("Configure a static route for each destination below, through the neighbor listed.")
+        lines.append("Either a next-hop address on the shared link or the exit interface toward that")
+        lines.append("neighbor is accepted.")
+        lines.append("")
+        lines.append(f"{'Device':<12} | {'Destination':<42} | Via neighbor")
+        lines.append("-" * 80)
+        for r in static_rules:
+            for route in (r.expected_value or {}).get("routes", []):
+                dest = destination_label(route, p.allow_dynamic_subnetting)
+                if p.allow_dynamic_subnetting and route.get("dest_device"):
+                    dest += f" (/{route['cidr']})"
+                elif p.allow_dynamic_subnetting and not route.get("is_default"):
+                    dest += f" summary, any static route via {route['via_device']} accepted"
+                lines.append(f"{r.target_device:<12} | {dest:<42} | {route['via_device']}")
+        lines.append("")
+
     # Link Agreement Requirements
     link_rules = [r for r in criteria.rules if r.category == "link_agreement"]
     if link_rules:
-        lines.append("6. LINK AGREEMENT REQUIREMENTS")
-        lines.append("-" * 80)
+        heading("LINK AGREEMENT REQUIREMENTS", link_rules)
         lines.append("Both ends of each link below must agree on the listed setting. Where the value")
         if p.enforce_reference_link_values:
             lines.append("is given, both ends must use exactly that value.")
@@ -557,12 +587,30 @@ def format_criteria_to_instructions_txt(criteria: EvaluationCriteria) -> str:
             lines.append(f"{ep_a:<24} | {ep_b:<24} | {label:<24} | {value:<12}")
         lines.append("")
 
-    # Evaluation Checklist
-    lines.append("7. RUBRIC & POINT BREAKDOWN")
-    lines.append("-" * 80)
-    for i, r in enumerate(criteria.rules, 1):
-        lines.append(f"[{r.points:4.1f} pts] #{i:02d}: {r.description}")
-    lines.append("")
+    # Evaluation Checklist, grouped by topic. Topics weighted 0% follow as
+    # reference only, so checkpoints with no table of their own (OSPF,
+    # gateways, ...) are still visible to students.
+    heading("RUBRIC & POINT BREAKDOWN")
+    number = 0
+    reference_groups = []
+    for key, topic_rules in groups.items():
+        graded_here = [r for r in topic_rules if r.graded]
+        if not graded_here:
+            reference_groups.append((key, topic_rules))
+            continue
+        subtotal = sum(r.points for r in graded_here)
+        lines.append(f"{TOPICS_BY_KEY[key].label} ({subtotal:.1f} pts)")
+        for r in graded_here:
+            number += 1
+            lines.append(f"  [{r.points:4.1f} pts] #{number:02d}: {r.description}")
+        lines.append("")
+    if reference_groups:
+        lines.append("REFERENCE ONLY (NOT GRADED)")
+        for key, topic_rules in reference_groups:
+            lines.append(TOPICS_BY_KEY[key].label)
+            for r in topic_rules:
+                lines.append(f"  - {r.description}")
+        lines.append("")
     lines.append("=" * 80)
     lines.append("DO NOT MODIFY BELOW THIS LINE - MACHINE EVALUATION CRITERIA SPECIFICATION")
     lines.append("=" * 80)

@@ -111,6 +111,33 @@ def test_teacher_generate_then_student_evaluate(live_server):
 
     # The reference file graded against its own rubric must score perfectly.
     assert eval_data["percentage"] == 100.0
-    assert eval_data["grade_letter"] in ("A", "A+")
     assert eval_data["passed_count"] > 0
     assert eval_data["failed_count"] == 0
+
+
+def test_teacher_finalizes_a_weighted_rubric(live_server):
+    import json
+    from src.topics.weights import largest_remainder
+
+    sample_xml_path = os.path.join(PROJECT_ROOT, "tests", "fixtures", "sample_topology.xml")
+    with open(sample_xml_path, "rb") as f:
+        xml_bytes = f.read()
+    files = [("files", ("sample_topology.xml", xml_bytes, "application/xml"))]
+
+    first = requests.post(live_server + "/api/criteria/generate", files=files, timeout=60)
+    assert first.status_code == 200
+    defaults = {t["key"]: t["default_percent"] for t in first.json()["topics"] if t["gradeable"]}
+    assert "ospf" in defaults
+
+    others = [k for k in defaults if k != "ospf"]
+    units = largest_remainder([defaults[k] for k in others], 500)
+    weights = {k: u / 10 for k, u in zip(others, units)}
+    weights["ospf"] = 50.0
+
+    final = requests.post(live_server + "/api/criteria/generate", files=files,
+                          data={"topic_weights": json.dumps(weights)}, timeout=60)
+    assert final.status_code == 200
+    data = final.json()
+    assert "GRADING WEIGHTS" in data["instructions_txt"]
+    ospf = next(t for t in data["topics"] if t["key"] == "ospf")
+    assert ospf["percent"] == 50.0 and ospf["points"] == 50.0
