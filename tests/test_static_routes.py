@@ -220,3 +220,42 @@ def test_full_pipeline_explains_a_wrong_neighbor():
     assert "it should go via R2" in failed[0].feedback
     assert "wrong neighbour" in failed[0].guidance
     assert "Static routing and next-hop selection" in [t.topic for t in report.study_topics]
+
+
+def test_classful_routing_table_children_take_the_subnetted_prefix():
+    """IOS prints `10.0.0.0/30 is subnetted` and then child lines with no prefix."""
+    extra = "ip route 10.0.99.0 255.255.255.252 10.0.12.2\n"
+    table = """R1# show ip route
+     10.0.0.0/30 is subnetted, 3 subnets
+C       10.0.12.0 is directly connected, GigabitEthernet0/0
+C       10.0.13.0 is directly connected, GigabitEthernet0/1
+S       10.0.99.0 [1/0] via 10.0.12.2
+"""
+    reference = _topology(R1=[(R1_TO_R3_LAN, R1_TO_R3_LAN + extra),
+                              ("R1# show cdp neighbors detail", table + "R1# show cdp neighbors detail")])
+    rules, _ = generate_rules(reference, STRICT)
+    r1_routes = next(r for r in rules if r.target_device == "R1").expected_value["routes"]
+    assert sorted((r["network"], r["cidr"]) for r in r1_routes if r["network"].startswith("10.")) == [("10.0.99.0", 30)]
+    outcomes, _, _ = _grade(reference, _topology(R1=[(R1_TO_R3_LAN, R1_TO_R3_LAN + extra)]))
+    assert outcomes["R1"].passed
+
+
+def test_recursive_reference_next_hop_is_skipped_and_reported():
+    recursive = "ip route 192.168.3.0 255.255.255.0 10.0.13.2\n"
+    reference = _topology(R2=[(R2_DEFAULT, R2_DEFAULT + recursive)])
+    outcomes, rules, warnings = _grade(reference, _topology(R2=[(R2_DEFAULT, R2_DEFAULT + recursive)]))
+    assert warnings == ["R2: static route to 192.168.3.0/24 was not graded because "
+                        "next hop 10.0.13.2 is not on a network directly connected to R2."]
+    assert len(next(r for r in rules if r.target_device == "R2").expected_value["routes"]) == 1
+    assert outcomes["R2"].passed
+
+
+def test_floating_routes_are_graded_regardless_of_line_order():
+    primary = "ip route 192.168.2.0 255.255.255.0 10.0.12.2\n"
+    backup = "ip route 192.168.2.0 255.255.255.0 10.0.13.2 5\n"
+    reference = _topology(R1=[(primary, primary + backup)])
+    rules, _ = generate_rules(reference, STRICT)
+    r1_routes = next(r for r in rules if r.target_device == "R1").expected_value["routes"]
+    assert sorted(r["via_device"] for r in r1_routes if r["network"] == "192.168.2.0") == ["R2", "R3"]
+    outcomes, _, _ = _grade(reference, _topology(R1=[(primary, backup + primary)]))
+    assert outcomes["R1"].passed

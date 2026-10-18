@@ -125,6 +125,12 @@ def _resolve_neighbor(topology: TopologyResult, hostname: str,
             return f"next hop {route.next_hop} belongs to no device"
         if owner[0] == hostname:
             return f"next hop {route.next_hop} is one of {hostname}'s own addresses"
+        # A recursive next hop would fail the grader's directly-connected
+        # check for an identical student, so it cannot become a requirement.
+        device = topology.devices[hostname]
+        hop = ipaddress.ip_address(route.next_hop)
+        if not any(net is not None and hop in net for net in map(_network_of, device.interfaces.values())):
+            return f"next hop {route.next_hop} is not on a network directly connected to {hostname}"
         return owner[0], owner[1], "next_hop"
     if route.outgoing_interface:
         far = _far_end(topology.links, hostname, route.outgoing_interface)

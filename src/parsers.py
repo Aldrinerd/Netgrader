@@ -177,13 +177,20 @@ def parse_running_config(content: str, start_line: int, device: ParsedDevice) ->
                 cidr = 24
                 net_addr = net
             
-            if not any(r.network == net_addr and r.cidr == cidr and r.protocol == "S" for r in device.routes):
+            is_ip = bool(re.match(r"^\d+\.\d+\.\d+\.\d+$", nh))
+            next_hop = nh if is_ip else None
+            out_intf = normalize_interface_name(nh) if not is_ip else None
+            # Keyed by destination AND next hop: a primary route and its
+            # floating backup (or two equal-cost routes) are both kept.
+            if not any(r.network == net_addr and r.cidr == cidr and r.protocol == "S"
+                       and r.next_hop == next_hop and r.outgoing_interface == out_intf
+                       for r in device.routes):
                 device.routes.append(RouteEntry(
                     network=net_addr,
                     cidr=cidr,
                     protocol="S",
-                    next_hop=nh if re.match(r"^\d+\.\d+\.\d+\.\d+$", nh) else None,
-                    outgoing_interface=normalize_interface_name(nh) if not re.match(r"^\d+\.\d+\.\d+\.\d+$", nh) else None,
+                    next_hop=next_hop,
+                    outgoing_interface=out_intf,
                     evidence_line=line_no
                 ))
             continue
@@ -462,10 +469,18 @@ def parse_ip_int_brief(content: str, start_line: int, device: ParsedDevice) -> N
 
 def parse_ip_route(content: str, start_line: int, device: ParsedDevice) -> None:
     lines = content.splitlines()
+    # `10.0.0.0/30 is subnetted, 3 subnets` heads child lines that print no
+    # prefix of their own; they all carry that one mask.
+    subnetted_prefix: int | None = None
     for idx, line in enumerate(lines):
         line_no = start_line + idx
         stripped = line.strip()
         if not stripped or stripped.startswith("Gateway") or stripped.startswith("Codes:"):
+            continue
+
+        header = re.match(r"^[0-9\.]+/(\d+)\s+is\s+(variably\s+)?subnetted", stripped)
+        if header:
+            subnetted_prefix = None if header.group(2) else int(header.group(1))
             continue
         
         # Route entry matching:
@@ -477,7 +492,7 @@ def parse_ip_route(content: str, start_line: int, device: ParsedDevice) -> None:
             proto = route_match.group(1).strip()
             net = route_match.group(2).strip()
             cidr_str = route_match.group(3)
-            cidr = int(cidr_str) if cidr_str else 24
+            cidr = int(cidr_str) if cidr_str else (subnetted_prefix if subnetted_prefix is not None else 24)
             next_hop = route_match.group(6)
             out_intf = normalize_interface_name(route_match.group(7)) if route_match.group(7) else None
             
